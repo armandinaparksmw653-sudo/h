@@ -84,6 +84,16 @@ class GfParseDiagnosticMatrix(unittest.TestCase):
         )
         return completed.stdout
 
+    def linearize(self, tree: str) -> str:
+        completed = subprocess.run(
+            [str(self.engine), "linearize", tree],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=ROOT,
+        )
+        return completed.stdout.strip()
+
     def assert_parses(self, sentence: str) -> str:
         output = self.parse(sentence)
         if output.startswith("The parser failed"):
@@ -188,6 +198,58 @@ class GfParseDiagnosticMatrix(unittest.TestCase):
         self.assert_parses(
             "Waterloo announces a programme, because Napoleon announces a programme"
         )
+
+    # -- Diagnostic only (deliberately fails, surfacing the actual
+    # linearized string in the CI log): three straight rounds of
+    # different BecauseS/SBecauseS implementations (SentenceEng.ExtAdvS/
+    # SSubjS; SyntaxEng.mkAdv+hand-rolled comma; fully hand-rolled
+    # literals) all failed parsing identically on real CI, at the exact
+    # same token positions, despite fundamentally different comma/
+    # capitalization handling each round. That recurrence means the
+    # hand-typed test sentence's own literal text may not exactly match
+    # what this grammar's own rule actually produces -- `linearize`
+    # (engine/app/Main.hs's new diagnostic-only command, wired to the
+    # already-existing `linearize` function) reveals the real generated
+    # string directly, instead of guessing a fourth time from parser
+    # error positions alone. --
+
+    def test_diagnose_fronted_because_s_linearization(self) -> None:
+        tree = (
+            'BecauseS '
+            '(Pred (OpenPN "Napoleon") (Compl Announce (OpenIndefCN "programme" "programmes"))) '
+            '(Pred (OpenPN "Waterloo") (Compl Announce (OpenIndefCN "programme" "programmes")))'
+        )
+        surface = self.linearize(tree)
+        self.fail(f"BecauseS tree linearizes to: {surface!r}")
+
+    def test_diagnose_trailing_s_because_s_linearization(self) -> None:
+        tree = (
+            'SBecauseS '
+            '(Pred (OpenPN "Waterloo") (Compl Announce (OpenIndefCN "programme" "programmes"))) '
+            '(Pred (OpenPN "Napoleon") (Compl Announce (OpenIndefCN "programme" "programmes")))'
+        )
+        surface = self.linearize(tree)
+        self.fail(f"SBecauseS tree linearizes to: {surface!r}")
+
+    def test_diagnose_fronted_because_s_round_trip(self) -> None:
+        """If GF's own generated surface string (not my hand-typed test
+        sentence) parses back successfully, the bug is a literal-text
+        mismatch between what I typed and what this grammar actually
+        produces (e.g. spacing around the comma). If even GF's own output
+        fails to parse, the bug is structural -- BecauseS's rule itself
+        cannot be recovered by the parser regardless of input text."""
+        tree = (
+            'BecauseS '
+            '(Pred (OpenPN "Napoleon") (Compl Announce (OpenIndefCN "programme" "programmes"))) '
+            '(Pred (OpenPN "Waterloo") (Compl Announce (OpenIndefCN "programme" "programmes")))'
+        )
+        surface = self.linearize(tree)
+        output = self.parse(surface)
+        if output.startswith("The parser failed"):
+            self.fail(
+                f"GF's own linearization of the BecauseS tree, {surface!r}, "
+                f"does not parse back either: {output.strip()!r}"
+            )
 
     def test_short_one_word_appositive_subject_parses(self) -> None:
         self.assert_parses("Waterloo, Ontario, announces a programme")

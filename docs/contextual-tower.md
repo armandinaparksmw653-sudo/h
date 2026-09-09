@@ -584,17 +584,41 @@ any grammar code, and both deliberately scoped to what GF can do safely:
      nothing in this toy grammar capitalizes it automatically. `"Because
      Napoleon..."` (natural English capitalization) can never match a
      hardcoded lowercase `"because"` token.
-  **Fixed** by dropping `SyntaxEng.mkAdv`/`because_Subj`/`Subj` entirely
-  too, hand-rolling every one of the eight functions with plain literal
-  words -- capitalized for the fronted forms, lowercase for the trailing
-  ones -- the exact same idiom `OpenPN`/`EveryCN`/`ApposCommaPN1`/
-  `ApposCommaPN2` already use successfully: `BecauseS embedded main = lin
-  S {s = "Because" ++ embedded.s ++ "," ++ main.s}`. `S`'s RGL record
-  (`CatEng.gf`: `S = {s : Str}`) is exactly as simple as `NP`'s, so this
-  hand-rolls cleanly. This removes every remaining RGL-machinery
-  assumption this session could not verify locally (`mkAdv`'s overload
-  resolution, `SubjS`/`cc2`'s exact spacing behavior) in one move, rather
-  than guessing at which specific RGL quirk was responsible a third time.
+  3. Dropped `SyntaxEng.mkAdv`/`because_Subj`/`Subj` entirely too,
+     hand-rolling every one of the eight functions with plain literal
+     words instead -- capitalized for the fronted forms, lowercase for
+     the trailing ones -- the exact same idiom
+     `OpenPN`/`EveryCN`/`ApposCommaPN1`/`ApposCommaPN2` already use
+     successfully: `BecauseS embedded main = lin S {s = "Because" ++
+     embedded.s ++ "," ++ main.s}`. `S`'s RGL record (`CatEng.gf`: `S =
+     {s : Str}`) is exactly as simple as `NP`'s, so this hand-rolls
+     cleanly, no leftover RGL-machinery assumptions at all (`mkAdv`'s
+     overload resolution, `SubjS`/`cc2`'s exact spacing) --
+     **still failed, identically, a third time**: same sentences, same
+     token positions, on a freshly-migrated repository (see below), so
+     not an artifact of anything CI-environment-specific either.
+  Three attempts converging on the exact same failure, despite touching
+  every part of the construct each round (the comma mechanism twice, the
+  vocabulary/capitalization once), means the bug is not in anything any
+  of the three rounds actually changed. The likely remaining explanation:
+  a structural GF-parser limitation around `"literal" ++ <S> ++ "," ++
+  <S>`, where *both* sides of the literal comma are recursive,
+  unbounded-length categories (`S`) rather than the single-token `String`
+  slots `ApposCommaPN1`/`ApposCommaPN2` use successfully in the same
+  position -- but this is inference from repeated symptoms, not confirmed
+  from a source the way the previous two root causes were.
+  **Next step, not yet resolved**: added a diagnostic-only `linearize`
+  command to the engine (`engine/app/Main.hs`'s `runLinearize`, wired to
+  the already-existing `linearize` function in `Metonymy.GF`) and two new
+  tests in `test_gf_parse_diagnostic_matrix.py` that linearize a
+  `BecauseS`/`SBecauseS` tree directly and print the real generated
+  surface string into the CI log (deliberately failing so the string is
+  guaranteed visible), plus a round-trip test that feeds GF's *own*
+  generated string back into `parse` -- distinguishing a literal-text
+  mismatch (my hand-typed test sentence differs from what the grammar
+  actually produces) from a genuinely structural parsing limitation (even
+  GF's own output doesn't parse back). Not yet run for real; the next CI
+  round's Job Summary will say which one this is.
 - **`ApposCommaPN1`/`ApposCommaPN2 : String -> ... -> NP`** -- a short
   (1- or 2-word) comma-delimited appositive ("Waterloo, Ontario,
   announces a programme"), via the exact same hand-rolled

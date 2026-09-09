@@ -85,6 +85,7 @@ main = do
     ["contract", scenarioName', targetName] ->
       runContract knowledgeBase predicates scenarioName' (EntityId targetName)
     ["parse", sentence] -> runParse sentence
+    ["linearize", tree] -> runLinearize tree
     ["evaluate", ablation, direction, sentence] ->
       runEvaluation
         knowledgeBase
@@ -400,6 +401,19 @@ runParse sentence = do
   case result of
     Left message -> die message
     Right trees -> mapM_ putStrLn trees
+
+-- Diagnostic-only command: reveals what GeneratedMetonymyEng actually
+-- linearizes a hand-built abstract tree to, so a compiles-but-doesn't-
+-- parse mismatch (grammar/MetonymyEng.gf's own subordinate-clause
+-- constructors, confirmed to fail this way three times in a row on real
+-- CI runs -- see docs/contextual-tower.md) can be diagnosed directly
+-- instead of guessed at from parser error positions alone.
+runLinearize :: String -> IO ()
+runLinearize tree = do
+  result <- linearize pgfPath tree
+  case result of
+    Left message -> die message
+    Right surface -> putStrLn surface
 
 printCandidate ::
   KnowledgeBase ->
@@ -927,6 +941,7 @@ usage =
         , "  metonymy expand SCENARIO"
         , "  metonymy contract SCENARIO TARGET-ID"
         , "  metonymy parse \"English sentence\""
+        , "  metonymy linearize \"GF abstract tree\"  # diagnostic only"
         , "  metonymy evaluate ABLATION expand|contract \"English sentence\""
         , "  metonymy open-evaluate ABLATION DATASET CATEGORY TARGET \"English sentence\""
         , "  metonymy open-batch ABLATION [--evidence FILE]  # TSV on stdin"
