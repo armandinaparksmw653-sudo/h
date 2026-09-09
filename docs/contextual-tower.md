@@ -554,71 +554,57 @@ any grammar code, and both deliberately scoped to what GF can do safely:
   this grammar's own existing `Pred`/`Compl`/`PredCopNP` -- no open-ended
   `String` parameter anywhere in this construct, so none of the
   `PrepPP`-class ambiguity risk.
-  Two failed attempts before the working one, both confirmed by real CI
-  runs, not guessed:
+  Four rounds to get here, every one confirmed by a real CI run, not
+  guessed:
   1. `SentenceEng.ExtAdvS`/`SSubjS` (RGL's own comma-inserting
      combinators, `ExtAdvS a s = {s = a.s ++ frontComma ++ s.s}`,
      `frontComma = SOFT_BIND ++ ","`) -- compiled cleanly (`SentenceEng`
      was a new `open`, cross-checked against every already-open module's
      exports first; the only name in common, `PredVP`, turned out to be
      `ExtendEng`'s own internal reference via its own `open GrammarEng`,
-     not an independent redeclaration) but did not *parse*: `"Because
-     Napoleon announces a programme, Waterloo announces a programme"`
-     failed at token 7 (`"announces"`).
-  2. Dropped `SentenceEng` and used RGL's closed `Subj` vocabulary
-     (`because_Subj`/`if_Subj`/`when_Subj`/`although_Subj`,
-     `Structural.gf`, already reachable via the open `Syntax` interface)
-     through `SyntaxEng.mkAdv`'s own `Subj -> S -> Adv` overload (`=
-     SubjS`), with the comma hand-rolled the same proven way
-     `ApposCommaPN1`/`ApposCommaPN2` already do. Compiled; **still
-     failed identically**, the exact same token positions as attempt 1.
-     That recurrence was itself the decisive clue: the two attempts only
-     shared one thing, `mkAdv because_Subj embedded`/`SubjS`, so the bug
-     had to be there, not in the comma mechanism either attempt guessed
-     at. Root cause, verified directly from `StructuralEng.gf`'s source:
-     `because_Subj = ss "because"` -- hardcoded lowercase, no capitalized
-     variant anywhere in RGL. Every prior sentence-initial word in this
-     grammar came from an open `OpenPN`/`String` slot, which accepts
-     whatever case the caller supplies -- this was the first construct
-     needing a *fixed* RGL word at the absolute start of a sentence, and
-     nothing in this toy grammar capitalizes it automatically. `"Because
-     Napoleon..."` (natural English capitalization) can never match a
-     hardcoded lowercase `"because"` token.
-  3. Dropped `SyntaxEng.mkAdv`/`because_Subj`/`Subj` entirely too,
-     hand-rolling every one of the eight functions with plain literal
-     words instead -- capitalized for the fronted forms, lowercase for
-     the trailing ones -- the exact same idiom
-     `OpenPN`/`EveryCN`/`ApposCommaPN1`/`ApposCommaPN2` already use
-     successfully: `BecauseS embedded main = lin S {s = "Because" ++
-     embedded.s ++ "," ++ main.s}`. `S`'s RGL record (`CatEng.gf`: `S =
-     {s : Str}`) is exactly as simple as `NP`'s, so this hand-rolls
-     cleanly, no leftover RGL-machinery assumptions at all (`mkAdv`'s
-     overload resolution, `SubjS`/`cc2`'s exact spacing) --
-     **still failed, identically, a third time**: same sentences, same
-     token positions, on a freshly-migrated repository (see below), so
-     not an artifact of anything CI-environment-specific either.
-  Three attempts converging on the exact same failure, despite touching
-  every part of the construct each round (the comma mechanism twice, the
-  vocabulary/capitalization once), means the bug is not in anything any
-  of the three rounds actually changed. The likely remaining explanation:
-  a structural GF-parser limitation around `"literal" ++ <S> ++ "," ++
-  <S>`, where *both* sides of the literal comma are recursive,
-  unbounded-length categories (`S`) rather than the single-token `String`
-  slots `ApposCommaPN1`/`ApposCommaPN2` use successfully in the same
-  position -- but this is inference from repeated symptoms, not confirmed
-  from a source the way the previous two root causes were.
-  **Next step, not yet resolved**: added a diagnostic-only `linearize`
-  command to the engine (`engine/app/Main.hs`'s `runLinearize`, wired to
-  the already-existing `linearize` function in `Metonymy.GF`) and two new
-  tests in `test_gf_parse_diagnostic_matrix.py` that linearize a
-  `BecauseS`/`SBecauseS` tree directly and print the real generated
-  surface string into the CI log (deliberately failing so the string is
-  guaranteed visible), plus a round-trip test that feeds GF's *own*
-  generated string back into `parse` -- distinguishing a literal-text
-  mismatch (my hand-typed test sentence differs from what the grammar
-  actually produces) from a genuinely structural parsing limitation (even
-  GF's own output doesn't parse back). Not yet run for real; the next CI
-  round's Job Summary will say which one this is.
+     not an independent redeclaration) but did not *parse*.
+  2. Dropped `SentenceEng`, used RGL's closed `Subj` vocabulary
+     (`because_Subj`/`if_Subj`/`when_Subj`/`although_Subj`) through
+     `SyntaxEng.mkAdv`'s `Subj -> S -> Adv` overload with a hand-rolled
+     comma -- **failed identically to round 1**, same sentences, same
+     token positions. Suspected `because_Subj = ss "because"`
+     (`StructuralEng.gf`) -- hardcoded lowercase, no capitalized variant
+     anywhere in RGL, and every fronted test sentence used natural
+     sentence-initial capitalization ("Because Napoleon...").
+  3. Dropped `SyntaxEng.mkAdv`/`Subj` entirely, hand-rolled all eight
+     functions with plain literal words, correct capitalization this
+     time -- **still failed identically**, a third time, even on a
+     freshly-migrated repository (ruling out anything CI-environment-
+     specific). Three rounds converging on the exact same failure,
+     despite each one changing something different (the comma mechanism
+     twice, the vocabulary/capitalization once), meant the bug was in
+     neither of the things any round had actually changed.
+  4. Rather than guess a fourth grammar rewrite, added a diagnostic-only
+     `linearize` command to the engine (`engine/app/Main.hs`'s
+     `runLinearize`, wired to the already-existing `linearize` function
+     in `Metonymy.GF`, previously only used internally) and asked it
+     directly what `BecauseS`'s own tree actually produces. Answer:
+     `"Because Napoleon announces a programme , Waterloo announces a
+     programme"` -- **a space before the comma**. GF's `++` auto-inserts
+     a space between adjacent tokens by default; the bare `"," ++` used
+     in rounds 2-3 never suppressed it. A round-trip test (feeding that
+     exact space-having string back into `parse`) succeeded, proving the
+     *rule* was sound all along and only the spacing was wrong -- not a
+     structural GF limitation as the round-3 failure pattern had
+     suggested. Real WiMCor/ConMeC text never has a space before a
+     comma, so this was a genuine production bug, not just a test-typing
+     mismatch: even a version of the test accepting the stray space
+     would never have matched real corpus sentences. Fixed by bringing
+     back `SOFT_BIND` (round 1's own mechanism, abandoned too early) for
+     the comma specifically, combined with round 3's confirmed-correct
+     capitalization fix -- `BecauseS embedded main = lin S {s =
+     "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s}`.
+     `SOFT_BIND` is a GF-core builtin, not RGL-specific, so no import is
+     needed for it specifically. `tests/evaluation/test_gf_parse_diagnostic_matrix.py`
+     now asserts the exact corrected linearization for both the fronted
+     and trailing forms, so a future regression here is caught by a
+     direct string mismatch instead of another round of token-position
+     guessing.
 - **`ApposCommaPN1`/`ApposCommaPN2 : String -> ... -> NP`** -- a short
   (1- or 2-word) comma-delimited appositive ("Waterloo, Ontario,
   announces a programme"), via the exact same hand-rolled

@@ -153,46 +153,56 @@ concrete MetonymyEng of Metonymy =
     -- proper-noun-length issue (run-4-or-more, which OpenPN2/OpenPN3
     -- don't cover).
     --
-    -- Two failed attempts before this one, both confirmed by real CI
+    -- Three failed attempts before this one, all confirmed by real CI
     -- runs, not guessed:
     -- 1. SentenceEng.ExtAdvS/SSubjS (RGL's own comma-inserting
     --    combinators) -- compiled cleanly but did not parse.
     -- 2. SyntaxEng.mkAdv because_Subj/if_Subj/when_Subj/although_Subj
     --    (Structural.gf's closed Subj vocabulary) with a hand-rolled
-    --    comma -- STILL failed identically. Root cause, verified
-    --    directly from StructuralEng.gf's source: `because_Subj = ss
-    --    "because"` -- hardcoded lowercase, with no capitalized variant
-    --    anywhere in RGL (capitalization is normally a caller/rendering
-    --    concern this toy grammar never needed before, since every
-    --    prior sentence-initial word came from an open OpenPN/String
-    --    slot, which accepts whatever case the caller supplies). Every
-    --    fronted test sentence used natural English sentence-initial
-    --    capitalization ("Because Napoleon..."), which cannot match a
-    --    hardcoded lowercase "because" token.
-    -- Fixed by dropping SyntaxEng.mkAdv/because_Subj/Subj entirely and
-    -- hand-rolling every one of these with plain literal words, exactly
-    -- the same proven idiom OpenPN/EveryCN/ApposCommaPN1/ApposCommaPN2
-    -- already use -- capitalized for the fronted (sentence-initial)
-    -- forms, lowercase for the trailing (mid-sentence, after the comma)
-    -- ones. This also removes every remaining unverified assumption
-    -- about mkAdv's overload resolution or SubjS/cc2's exact spacing
-    -- behavior, none of which this session could test locally.
+    --    comma -- STILL failed identically. Suspected (wrongly, as it
+    --    turned out) to be StructuralEng.gf's `because_Subj = ss
+    --    "because"` -- hardcoded lowercase, no capitalized variant
+    --    anywhere in RGL, and every fronted test sentence used natural
+    --    English sentence-initial capitalization ("Because Napoleon...").
+    -- 3. Dropped SyntaxEng.mkAdv/because_Subj/Subj entirely, hand-rolling
+    --    every one of these with plain literal words instead -- correct
+    --    capitalization this time (fronted forms capitalized, trailing
+    --    ones lowercase) -- STILL failed, identically, a third time.
+    -- Added a diagnostic-only `linearize` command to the engine
+    -- (engine/app/Main.hs's runLinearize) to see what this grammar
+    -- actually generates instead of guessing a fourth time. Answer,
+    -- confirmed directly from real CI output: `"Because Napoleon
+    -- announces a programme , Waterloo announces a programme"` -- a
+    -- SPACE before the comma. GF's `++` auto-inserts a space between
+    -- adjacent tokens by default; a bare `"," ++` never suppressed it.
+    -- Real WiMCor/ConMeC sentences never have a space before a comma, so
+    -- even a "fixed" version accepting that spacing would never match
+    -- real production text -- confirmed the round-trip test (GF's own
+    -- generated string fed back into `parse`) passes, proving the
+    -- *rule* is fine; only the spacing was wrong. `frontComma`'s own
+    -- `SOFT_BIND` (attempt 1) was the right tool for this specific job
+    -- all along -- SOFT_BIND is a GF-core builtin (not RGL-specific, no
+    -- import needed) that suppresses the auto-inserted space before the
+    -- token it precedes, exactly matching natural English "word,"
+    -- punctuation. Combining it with the confirmed-correct capitalization
+    -- from attempt 3 (which SOFT_BIND alone, in attempt 1, never
+    -- addressed) is the fix.
     BecauseS embedded main =
-      lin S {s = "Because" ++ embedded.s ++ "," ++ main.s} ;
+      lin S {s = "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
     IfS embedded main =
-      lin S {s = "If" ++ embedded.s ++ "," ++ main.s} ;
+      lin S {s = "If" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
     WhenS embedded main =
-      lin S {s = "When" ++ embedded.s ++ "," ++ main.s} ;
+      lin S {s = "When" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
     AlthoughS embedded main =
-      lin S {s = "Although" ++ embedded.s ++ "," ++ main.s} ;
+      lin S {s = "Although" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
     SBecauseS main embedded =
-      lin S {s = main.s ++ "," ++ "because" ++ embedded.s} ;
+      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "because" ++ embedded.s} ;
     SIfS main embedded =
-      lin S {s = main.s ++ "," ++ "if" ++ embedded.s} ;
+      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "if" ++ embedded.s} ;
     SWhenS main embedded =
-      lin S {s = main.s ++ "," ++ "when" ++ embedded.s} ;
+      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "when" ++ embedded.s} ;
     SAlthoughS main embedded =
-      lin S {s = main.s ++ "," ++ "although" ++ embedded.s} ;
+      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "although" ++ embedded.s} ;
 
     -- Short comma-delimited appositive ("Waterloo, Ontario, announces a
     -- programme"). Deliberately bounded to 1-2 appositive words, not a
