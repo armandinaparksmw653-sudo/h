@@ -151,45 +151,48 @@ concrete MetonymyEng of Metonymy =
     -- comma is present in 87%/67% of the remaining WiMCor/ConMeC
     -- gf-parse-empty rows, far more than the 24%/3% that are still a
     -- proper-noun-length issue (run-4-or-more, which OpenPN2/OpenPN3
-    -- don't cover). because_Subj/if_Subj/when_Subj/although_Subj are
-    -- already reachable via SyntaxEng (Structural.gf is part of the
-    -- already-open Syntax interface), likewise SyntaxEng.mkAdv's own
-    -- Subj->S->Adv overload.
+    -- don't cover).
     --
-    -- First attempt used SentenceEng.ExtAdvS/SSubjS directly (RGL's own
-    -- comma-inserting combinators, `a.s ++ frontComma ++ s.s` with
-    -- `frontComma = SOFT_BIND ++ ","`) -- confirmed by a real CI run to
-    -- NOT parse ("Because Napoleon announces a programme, Waterloo
-    -- announces a programme" failed at token 7, "announces"; the
-    -- trailing form failed similarly). SOFT_BIND fuses the comma onto
-    -- the preceding word as one glued terminal for linearization, which
-    -- does not match how this grammar's own String-based vocabulary
-    -- (OpenIndefCN's "programme", etc.) is tokenized elsewhere, so the
-    -- two derivations disagree at the token level. The very same CI run
-    -- proved the fix: ApposCommaPN1/ApposCommaPN2 below, which splice in
-    -- a *plain* literal "," (no BIND) via ordinary Str concatenation,
-    -- parsed successfully. So these fronted/trailing clauses now use
-    -- that identical, already-proven idiom instead of ExtAdvS/SSubjS --
-    -- hand-rolling the S record directly (S = {s : Str} in RGL's
-    -- CatEng.gf, exactly as simple as NP's own s field) rather than
-    -- going through SentenceEng at all, which also means no new `open`
-    -- is needed here any more.
+    -- Two failed attempts before this one, both confirmed by real CI
+    -- runs, not guessed:
+    -- 1. SentenceEng.ExtAdvS/SSubjS (RGL's own comma-inserting
+    --    combinators) -- compiled cleanly but did not parse.
+    -- 2. SyntaxEng.mkAdv because_Subj/if_Subj/when_Subj/although_Subj
+    --    (Structural.gf's closed Subj vocabulary) with a hand-rolled
+    --    comma -- STILL failed identically. Root cause, verified
+    --    directly from StructuralEng.gf's source: `because_Subj = ss
+    --    "because"` -- hardcoded lowercase, with no capitalized variant
+    --    anywhere in RGL (capitalization is normally a caller/rendering
+    --    concern this toy grammar never needed before, since every
+    --    prior sentence-initial word came from an open OpenPN/String
+    --    slot, which accepts whatever case the caller supplies). Every
+    --    fronted test sentence used natural English sentence-initial
+    --    capitalization ("Because Napoleon..."), which cannot match a
+    --    hardcoded lowercase "because" token.
+    -- Fixed by dropping SyntaxEng.mkAdv/because_Subj/Subj entirely and
+    -- hand-rolling every one of these with plain literal words, exactly
+    -- the same proven idiom OpenPN/EveryCN/ApposCommaPN1/ApposCommaPN2
+    -- already use -- capitalized for the fronted (sentence-initial)
+    -- forms, lowercase for the trailing (mid-sentence, after the comma)
+    -- ones. This also removes every remaining unverified assumption
+    -- about mkAdv's overload resolution or SubjS/cc2's exact spacing
+    -- behavior, none of which this session could test locally.
     BecauseS embedded main =
-      lin S {s = (SyntaxEng.mkAdv because_Subj embedded).s ++ "," ++ main.s} ;
+      lin S {s = "Because" ++ embedded.s ++ "," ++ main.s} ;
     IfS embedded main =
-      lin S {s = (SyntaxEng.mkAdv if_Subj embedded).s ++ "," ++ main.s} ;
+      lin S {s = "If" ++ embedded.s ++ "," ++ main.s} ;
     WhenS embedded main =
-      lin S {s = (SyntaxEng.mkAdv when_Subj embedded).s ++ "," ++ main.s} ;
+      lin S {s = "When" ++ embedded.s ++ "," ++ main.s} ;
     AlthoughS embedded main =
-      lin S {s = (SyntaxEng.mkAdv although_Subj embedded).s ++ "," ++ main.s} ;
+      lin S {s = "Although" ++ embedded.s ++ "," ++ main.s} ;
     SBecauseS main embedded =
-      lin S {s = main.s ++ "," ++ (SyntaxEng.mkAdv because_Subj embedded).s} ;
+      lin S {s = main.s ++ "," ++ "because" ++ embedded.s} ;
     SIfS main embedded =
-      lin S {s = main.s ++ "," ++ (SyntaxEng.mkAdv if_Subj embedded).s} ;
+      lin S {s = main.s ++ "," ++ "if" ++ embedded.s} ;
     SWhenS main embedded =
-      lin S {s = main.s ++ "," ++ (SyntaxEng.mkAdv when_Subj embedded).s} ;
+      lin S {s = main.s ++ "," ++ "when" ++ embedded.s} ;
     SAlthoughS main embedded =
-      lin S {s = main.s ++ "," ++ (SyntaxEng.mkAdv although_Subj embedded).s} ;
+      lin S {s = main.s ++ "," ++ "although" ++ embedded.s} ;
 
     -- Short comma-delimited appositive ("Waterloo, Ontario, announces a
     -- programme"). Deliberately bounded to 1-2 appositive words, not a
