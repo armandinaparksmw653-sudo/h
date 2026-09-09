@@ -594,13 +594,25 @@ any grammar code, and both deliberately scoped to what GF can do safely:
      suggested. Real WiMCor/ConMeC text never has a space before a
      comma, so this was a genuine production bug, not just a test-typing
      mismatch: even a version of the test accepting the stray space
-     would never have matched real corpus sentences. Fixed by bringing
-     back `SOFT_BIND` (round 1's own mechanism, abandoned too early) for
-     the comma specifically, combined with round 3's confirmed-correct
+     would never have matched real corpus sentences. Brought back
+     `SOFT_BIND` (round 1's own mechanism, abandoned too early) for the
+     comma specifically, combined with round 3's confirmed-correct
      capitalization fix -- `BecauseS embedded main = lin S {s =
-     "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s}`.
-     `SOFT_BIND` is a GF-core builtin, not RGL-specific, so no import is
-     needed for it specifically. `tests/evaluation/test_gf_parse_diagnostic_matrix.py`
+     "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s}`. First push
+     of this hit a genuine *compile* error (the first of the four
+     rounds), not another parse mismatch: `"constant not found:
+     SOFT_BIND"`. `SOFT_BIND` turned out not to be a bare-word GF
+     builtin after all -- it comes from GF's own compiler-hardcoded
+     `Predef` resource (`gf-rgl`'s `src/prelude/Predef.gf`:
+     `resource Predef = { ... oper SOFT_BIND : Str = variants {} ; ...
+     }`), which needs its own `open Predef`. Cross-checked first, same
+     discipline as every other new module this session: two
+     generic-sounding names overlap with already-open modules (`BIND` in
+     `ExtendEng`, `nonExist` in `ExtraEng`), both confirmed to be only
+     internal references via explicit `Predef.BIND`/`Predef.nonExist`
+     qualification, the same false-positive shape `PredVP` turned out to
+     be earlier -- not independent redeclarations.
+     `tests/evaluation/test_gf_parse_diagnostic_matrix.py`
      now asserts the exact corrected linearization for both the fronted
      and trailing forms, so a future regression here is caught by a
      direct string mismatch instead of another round of token-position

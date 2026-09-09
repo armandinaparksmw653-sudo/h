@@ -1,5 +1,5 @@
 concrete MetonymyEng of Metonymy =
-  open SyntaxEng, ExtendEng, VerbEng, ParadigmsEng, ExtraEng, (R=ResEng) in {
+  open SyntaxEng, ExtendEng, VerbEng, ParadigmsEng, ExtraEng, Predef, (R=ResEng) in {
 
   lincat
     S = S ;
@@ -181,12 +181,22 @@ concrete MetonymyEng of Metonymy =
     -- generated string fed back into `parse`) passes, proving the
     -- *rule* is fine; only the spacing was wrong. `frontComma`'s own
     -- `SOFT_BIND` (attempt 1) was the right tool for this specific job
-    -- all along -- SOFT_BIND is a GF-core builtin (not RGL-specific, no
-    -- import needed) that suppresses the auto-inserted space before the
+    -- all along -- it suppresses the auto-inserted space before the
     -- token it precedes, exactly matching natural English "word,"
     -- punctuation. Combining it with the confirmed-correct capitalization
     -- from attempt 3 (which SOFT_BIND alone, in attempt 1, never
-    -- addressed) is the fix.
+    -- addressed) is the fix. SOFT_BIND is GF's own compiler-hardcoded
+    -- `Predef` module (`resource Predef = { ... oper SOFT_BIND : Str =
+    -- variants {} ; ... }`, gf-rgl's src/prelude/Predef.gf) -- not
+    -- usable bare without opening it (confirmed by a real CI compile
+    -- error, "constant not found: SOFT_BIND", the first genuine
+    -- compile-time failure any of these four rounds actually hit).
+    -- `Predef` is a new `open`, cross-checked first: its two
+    -- generic-sounding overlaps with already-open modules (`BIND` in
+    -- ExtendEng, `nonExist` in ExtraEng) are both only internal
+    -- references via explicit `Predef.BIND`/`Predef.nonExist`
+    -- qualification, not independent redeclarations -- the same
+    -- false-positive shape `PredVP` turned out to be earlier.
     BecauseS embedded main =
       lin S {s = "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
     IfS embedded main =
