@@ -183,6 +183,17 @@ EXIT4_KNOWN_FAILURE_TOKENS = (
 )
 
 
+# "malformed or incomplete GF tree" can now carry its own
+# "; unrecognized constructor(s): <Name>,<Name>" suffix
+# (contextual_rule_compiler.parse_gf_tree) -- the specific GF constructor
+# name(s) missing from ARITIES that most likely caused the tree to be
+# left unconsumed. A constructor name is this grammar's own closed
+# vocabulary (grammar/Metonymy.gf's `fun` declarations), never sentence
+# text, so exit4_suffixed_token below reports it the same way
+# exit1_suffixed_token reports a UD deprel or verb lemma.
+EXIT4_SUFFIXED_TOKENS = ("malformed or incomplete GF tree",)
+
+
 def exit4_reason_bucket(failure_text: str) -> str:
     """Bucket an exit-4 (semantic-composition-failed) row by which of
     compile_gf_constraints's own fixed ValueError messages it raised.
@@ -194,7 +205,9 @@ def exit4_reason_bucket(failure_text: str) -> str:
     EXIT4_KNOWN_FAILURE_TOKENS's own comment). Falls back to
     "unrecognized" both when the field isn't parseable JSON with a
     "detail" key and when "detail" doesn't contain any of the known fixed
-    messages, the same degrade-gracefully policy as its siblings.
+    messages, the same degrade-gracefully policy as its siblings. One
+    entry (EXIT4_SUFFIXED_TOKENS) gets a further suffix via
+    exit4_suffixed_token -- see that function's own docstring.
     """
     try:
         detail = json.loads(failure_text)["detail"]
@@ -202,8 +215,32 @@ def exit4_reason_bucket(failure_text: str) -> str:
         return "unrecognized"
     for token in EXIT4_KNOWN_FAILURE_TOKENS:
         if token in detail:
-            return token.strip()
+            bucket = token.strip()
+            if bucket in EXIT4_SUFFIXED_TOKENS:
+                return exit4_suffixed_token(bucket, detail)
+            return bucket
     return "unrecognized"
+
+
+def exit4_suffixed_token(token: str, detail: str) -> str:
+    """Recover parse_gf_tree's own unrecognized-constructor suffix.
+
+    Unlike exit1_suffixed_token, ``detail`` here is already the clean,
+    JSON-isolated string exit4_reason_bucket extracted (no risk of
+    capturing a JSON string's own closing quote), and the marker this
+    looks for is a fixed string this project's own code writes, not a
+    bare ":" that could collide with unrelated text -- so a plain
+    ``str.find`` is enough, no regex needed. Falls back to the bare token
+    when the marker isn't present (a "malformed or incomplete GF tree"
+    with no identifiable unrecognized constructor -- parse_gf_tree's own
+    fallback case).
+    """
+    marker = "; unrecognized constructor(s): "
+    index = detail.find(marker)
+    if index == -1:
+        return token
+    suffix = detail[index + len(marker) :]
+    return f"{token}:{suffix}" if suffix else token
 
 
 def exit1_suffixed_token(token: str, failure_text: str) -> str:

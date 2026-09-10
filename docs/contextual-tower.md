@@ -1125,14 +1125,69 @@ tests reproducing the exact real shape.
   an unlisted constructor as 0-ary). WiMCor barely reaches `exit4` at all
   (2 rows total) since more of its rows fail earlier, at `exit1`/`exit7`.
 
-**Next step**: these are strong, evidenced leads (not guesses) for Phase
-2, but which constructor triggers ConMeC's `"malformed or incomplete GF
-tree"` majority is not yet known -- the current instrumentation reports
-only the bucket name, not the unconsumed constructor. Before writing any
-Phase 2 fix, decide the concrete plan with the user: (a) fix
-`resolve_action`'s `obl` lookup to fall back to the bare verb lemma
-alone when the phrasal key misses, (b) a further safe, text-free
-diagnostic pass reporting which GF constructor name (closed vocabulary,
-always safe) is unconsumed at `exit4`, and (c) whether the `nmod`-
-dominant nested-modifier gap is worth a `PositiveGFTree`/`Elaborator.hs`
-widening now or needs its own follow-up measurement first.
+### Phase 2, round 1: the phrasal-lookup fix and the exit4 constructor diagnostic
+
+Two of the three leads above turned into concrete fixes, landed together
+(the third -- whether `nmod`-dominant nested-modifier is worth a
+`PositiveGFTree`/`Elaborator.hs` widening -- is deliberately deferred,
+since that touches Haskell/Agda and its own real effect still needs its
+own measurement first, the same "one risky thing at a time" discipline
+used throughout this document):
+
+- **`resolve_action`'s `obl` bare-verb fallback.** When the phrasal
+  `"<verb> <preposition>"` key misses `by_form` (the confirmed-structural
+  cause of essentially all of WiMCor's `unsupported-action-role` count
+  above), retry with just the bare verb -- the first word of
+  `governing_lemma`. The retry narrows the matched span to the verb's
+  own token, found via a simple, well-justified heuristic (the first
+  word-token inside `[governing_start:governing_end]`): English always
+  places an `obl`'s governing verb before its case-marking preposition,
+  with or without an intervening adverb ("argued strongly against" ->
+  "argued"). This matters because `propose_contextual_scenario.py`
+  replaces exactly `sentence[action["start"]:action["end"]]` with
+  `action["gf_form"]` -- reusing the full phrasal span for a bare-verb
+  replacement would have deleted the preposition from the sentence
+  entirely (e.g. "...is based in Hertfordshire..." ->
+  "...is bases Hertfordshire..."). An exact phrasal match, if the
+  vocabulary ever gains one, still wins outright and skips the fallback
+  -- confirmed by a dedicated test using the full phrasal span. If the
+  bare verb also has no coverage, the raised message still names the
+  full original phrase (`unsupported-action-role:base in`, not just
+  `:base`) -- more informative for whatever comes after this round.
+  Covered by `tests/evaluation/test_resolve_action_obl_phrasal_fallback.py`
+  (6 tests).
+
+- **`parse_gf_tree`'s unrecognized-constructor diagnostic.** When a tree
+  is left unconsumed (`"malformed or incomplete GF tree"`), scan its own
+  tokens for anything shaped like a GF constructor (this grammar's own
+  PascalCase `fun` naming convention) that ARITIES doesn't know about --
+  excluding the confirmed-0-ary pronoun constants (`HePN`/`ShePN`/`ItPN`/
+  `TheyPN`), which are legitimately absent from ARITIES rather than
+  missing entries. When found, the raised message grows a
+  `"; unrecognized constructor(s): <Name>,<Name>"` suffix -- still a
+  prefix match for every existing `"malformed or incomplete GF tree"`
+  consumer, so this only adds information, never changes existing
+  behavior. A constructor name is grammar/Metonymy.gf's own closed
+  vocabulary, never sentence text, the same safety class as
+  `EXIT4_KNOWN_FAILURE_TOKENS` itself.
+  `scripts/evaluation/score_contextual_detection.py`'s `exit4_reason_bucket`
+  now recovers this suffix via `exit4_suffixed_token`, so
+  `literal_prediction_reasons` can report e.g.
+  `failed:exit4:malformed or incomplete GF tree:SomeConstructor` instead
+  of the bare bucket. Covered by
+  `tests/evaluation/test_parse_gf_tree_unrecognized_constructor.py` (5
+  tests) and new cases in `test_score_contextual_detection.py`.
+
+Full local suite after both fixes: 304 tests, same pre-existing 2
+failures/13 errors/8 skipped baseline (Windows `python3`-alias), no
+regressions.
+
+**Next step**: re-run `contextual-tower-evaluation.yml` once more. The
+`unsupported-action-role` histogram should shrink sharply in WiMCor if
+the bare-verb-fallback hypothesis is right; any rows still failing after
+it name genuine vocabulary gaps, not lookup-format ones. ConMeC's
+`exit4` breakdown should now name the actual missing constructor(s), if
+any single one dominates -- the concrete, evidenced basis for deciding
+whether that specific GF construction is worth adding next, and whether
+the `nmod`-dominant nested-modifier gap deserves the deferred
+`PositiveGFTree`/`Elaborator.hs` work.

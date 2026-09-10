@@ -293,6 +293,48 @@ def resolve_action(
             for role in by_form.get(governing_lemma, [])
             if role.hole_role == hint_hole_role
         ]
+        if not candidates and " " in governing_lemma:
+            # governing_lemma is "<verb> <preposition>" -- reconstructed
+            # by annotate_dependency_hints.py for an "obl"+"case" phrase
+            # ("based in", "raised in Hertfordshire") -- but by_form is
+            # built from action_forms() over data/predicates.tsv and
+            # data/verbnet-action-roles.tsv, and both files contain zero
+            # lemmas with a space (confirmed by grepping both, not
+            # guessed): every ActionRole is indexed by a single bare
+            # verb. A phrasal key can therefore never hit that index,
+            # regardless of whether the bare verb itself ("arrive",
+            # "raise", "base", ...) already has real ActionRole coverage
+            # under its own lemma -- confirmed as the dominant real cause
+            # of unsupported-action-role in a live corpus evaluation (see
+            # docs/contextual-tower.md's "Sub-bucketing the three new
+            # dominant abstain reasons" section). Retry with just the
+            # bare verb.
+            #
+            # governing_start/governing_end span the *whole* phrase
+            # (verb through the case-marking preposition), so re-matching
+            # on the bare verb also needs the verb's own, narrower span --
+            # otherwise the later gf_sentence substitution
+            # (propose_contextual_scenario.py replaces exactly
+            # [action["start"]:action["end"]] with action["gf_form"])
+            # would delete the preposition from the sentence entirely,
+            # e.g. turning "...is based in Hertfordshire..." into
+            # "...is bases Hertfordshire...". English always places an
+            # obl's governing verb before its case-marking preposition,
+            # so the first word-token in the combined span is reliably
+            # just the verb, with or without an adverb separating them
+            # ("argued strongly against" -> "argued").
+            bare_lemma = governing_lemma.split(" ", 1)[0]
+            verb_match = re.search(
+                r"[A-Za-z][A-Za-z'-]*", sentence[governing_start:governing_end]
+            )
+            if verb_match:
+                verb_start = governing_start + verb_match.start()
+                verb_end = governing_start + verb_match.end()
+                candidates = [
+                    (0, verb_start, verb_end, sentence[verb_start:verb_end].casefold(), role)
+                    for role in by_form.get(bare_lemma, [])
+                    if role.hole_role == hint_hole_role
+                ]
     else:
         target_span = _mention_span(sentence, target_surfaces)
         if target_span is None:
@@ -433,6 +475,43 @@ def tokenize_gf(tree: str) -> list[str]:
     return re.findall(r'"(?:\\.|[^"\\])*"|[()]|[^\s()]+', tree)
 
 
+# GF constructor names this grammar itself defines (grammar/Metonymy.gf's
+# `fun` declarations), never sentence text -- unlike ARITIES, these
+# genuinely take zero arguments (HePN/ShePN/ItPN/TheyPN), so their
+# absence from ARITIES (which only lists arity>=1 constructors, relying
+# on ARITIES.get(token, 0) for everything else) is expected, not a sign
+# of a missing entry the way any other unrecognized constructor-shaped
+# token is.
+_KNOWN_ZERO_ARITY_CONSTRUCTORS = {"HePN", "ShePN", "ItPN", "TheyPN"}
+
+
+def _unrecognized_constructors(tokens: list[str]) -> list[str]:
+    """Constructor-shaped tokens in a GF tree that ARITIES doesn't know.
+
+    A GF tree's own function-application tokens (this grammar's own
+    naming convention: PascalCase, e.g. "PredCopNP", "OpenPN2") are a
+    closed vocabulary defined entirely by grammar/Metonymy.gf -- never
+    sentence text, the same safety class already established for
+    exit4_reason_bucket's fixed message set. String leaves (quoted) and
+    parentheses are excluded by construction; ``?`` metavariables by their
+    own leading character. Order-preserving and de-duplicated, so a
+    single one-word answer names the actual gap when there is one.
+    """
+    seen: list[str] = []
+    for token in tokens:
+        if (
+            token not in ("(", ")")
+            and not token.startswith('"')
+            and not token.startswith("?")
+            and re.fullmatch(r"[A-Z][A-Za-z0-9]*", token)
+            and token not in ARITIES
+            and token not in _KNOWN_ZERO_ARITY_CONSTRUCTORS
+            and token not in seen
+        ):
+            seen.append(token)
+    return seen
+
+
 def parse_gf_tree(tree: str) -> GFNode:
     tokens = tokenize_gf(tree)
 
@@ -458,6 +537,21 @@ def parse_gf_tree(tree: str) -> GFNode:
 
     parsed, index = parse(0)
     if not isinstance(parsed, GFNode) or index != len(tokens):
+        # The most common real cause (confirmed by a live corpus
+        # evaluation: this is exit4's dominant failure) is a GF
+        # constructor missing from ARITIES entirely -- ARITIES.get(token,
+        # 0) silently treats it as 0-ary, so every one of its intended
+        # arguments is left dangling as unconsumed top-level tokens
+        # instead of being parsed as its children. When that's
+        # identifiable, name it; the resulting message is still a prefix
+        # match for every existing "malformed or incomplete GF tree"
+        # consumer (KNOWN semantics unchanged, only extended).
+        unrecognized = _unrecognized_constructors(tokens)
+        if unrecognized:
+            raise ValueError(
+                "malformed or incomplete GF tree; unrecognized constructor(s): "
+                + ",".join(unrecognized)
+            )
         raise ValueError("malformed or incomplete GF tree")
     return parsed
 

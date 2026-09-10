@@ -12,6 +12,7 @@ import json  # noqa: E402
 from score_contextual_detection import (  # noqa: E402
     exit1_suffixed_token,
     exit4_reason_bucket,
+    exit4_suffixed_token,
     exit7_gf_sentence_bucket,
     exit7_gf_sentence_signals,
     exit7_max_capitalized_run,
@@ -539,6 +540,67 @@ class Exit4ReasonBucketTests(unittest.TestCase):
             }
         )
         self.assertEqual(exit4_reason_bucket(failure), "has no role rule for")
+
+    def test_malformed_tree_with_an_unrecognized_constructor_includes_it(
+        self,
+    ) -> None:
+        failure = json.dumps(
+            {
+                "status": "semantic-composition-failed",
+                "gf_tree": "x",
+                "detail": (
+                    "malformed or incomplete GF tree; unrecognized "
+                    "constructor(s): GlorbNode"
+                ),
+            }
+        )
+        self.assertEqual(
+            exit4_reason_bucket(failure),
+            "malformed or incomplete GF tree:GlorbNode",
+        )
+
+    def test_malformed_tree_with_no_identifiable_constructor_stays_bare(
+        self,
+    ) -> None:
+        failure = json.dumps(
+            {
+                "status": "semantic-composition-failed",
+                "gf_tree": "x",
+                "detail": "malformed or incomplete GF tree",
+            }
+        )
+        self.assertEqual(exit4_reason_bucket(failure), "malformed or incomplete GF tree")
+
+
+class Exit4SuffixedTokenTests(unittest.TestCase):
+    def test_recovers_a_single_unrecognized_constructor(self) -> None:
+        self.assertEqual(
+            exit4_suffixed_token(
+                "malformed or incomplete GF tree",
+                "malformed or incomplete GF tree; unrecognized constructor(s): GlorbNode",
+            ),
+            "malformed or incomplete GF tree:GlorbNode",
+        )
+
+    def test_recovers_multiple_comma_joined_constructors(self) -> None:
+        self.assertEqual(
+            exit4_suffixed_token(
+                "malformed or incomplete GF tree",
+                (
+                    "malformed or incomplete GF tree; unrecognized "
+                    "constructor(s): FooBar,BazQux"
+                ),
+            ),
+            "malformed or incomplete GF tree:FooBar,BazQux",
+        )
+
+    def test_falls_back_to_the_bare_token_when_the_marker_is_absent(self) -> None:
+        self.assertEqual(
+            exit4_suffixed_token(
+                "malformed or incomplete GF tree", "malformed or incomplete GF tree"
+            ),
+            "malformed or incomplete GF tree",
+        )
 
 
 class FingerprintFailureTextTests(unittest.TestCase):
