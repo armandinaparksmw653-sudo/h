@@ -218,6 +218,42 @@ def exit4_tree_source(failure_text: str) -> str:
         return "unrecognized"
 
 
+# exit codes reached *before* run_automatic_contextual_pipeline.py ever
+# attempts tree-building at all (propose_contextual_scenario.py itself
+# failed, or no source QID resolved) -- "tree_source" is meaningless for
+# these, not merely missing.
+_EXIT_CODES_BEFORE_TREE_BUILDING = {1, 2}
+
+
+def row_tree_source(inference_row: dict) -> str:
+    """Which tree source produced this row's tree, across *every*
+    outcome -- not just exit4 failures.
+
+    run_automatic_contextual_pipeline.py records "tree_source" two
+    different ways depending on how the row ended: a top-level
+    "tree-source=" stdout line (picked up directly onto the row by
+    run_contextual_corpus.py's own line-scan) for every row that
+    successfully obtained a tree (a full success, exit 5, or exit 6);
+    a "tree_source" key inside the row's own JSON-encoded "failure"
+    text for exit 3/4/7 (the three ways tree-building or the semantic-
+    composition step that follows it can fail). This unifies both into
+    one lookup so score()'s own aggregate doesn't need to special-case
+    "did this row succeed or fail" first. Answers "not-applicable" for
+    exit 1/2 (tree-building was never attempted at all for those), and
+    "unrecognized" if a row that should have the field doesn't (a
+    genuinely unexpected shape, degrading gracefully rather than
+    crashing the scorer).
+    """
+    if "tree_source" in inference_row:
+        return inference_row["tree_source"]
+    exit_code = inference_row.get("exit_code")
+    if exit_code in _EXIT_CODES_BEFORE_TREE_BUILDING:
+        return "not-applicable"
+    if exit_code in (3, 4, 7):
+        return exit4_tree_source(inference_row.get("failure", ""))
+    return "unrecognized"
+
+
 def exit4_reason_bucket(failure_text: str) -> str:
     """Bucket an exit-4 (semantic-composition-failed) row by which of
     compile_gf_constraints's own fixed ValueError messages it raised.
@@ -520,11 +556,13 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     )
     exit7_rows_seen = 0
     exit4_tree_source_counts: Counter[str] = Counter()
+    tree_source_counts: Counter[str] = Counter()
     for gold in gold_rows:
         inference_row = inference_by_id.get(gold["id"])
         if inference_row is None:
             missing += 1
             continue
+        tree_source_counts[row_tree_source(inference_row)] += 1
         predicted = predict(inference_row)
         actual = gold["gold_label"]
         if predicted == "metonymic" and actual == "metonymic":
@@ -586,6 +624,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "exit7_rows_seen": exit7_rows_seen,
         "exit7_signal_counts": dict(sorted(exit7_signal_counts.items())),
         "exit4_tree_source_counts": dict(sorted(exit4_tree_source_counts.items())),
+        "tree_source_counts": dict(sorted(tree_source_counts.items())),
         "unrecognized_fingerprints": [
             {"sha256_prefix": prefix, "length": length, "count": count}
             for (prefix, length), count in sorted(

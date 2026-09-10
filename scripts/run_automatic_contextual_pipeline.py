@@ -292,6 +292,15 @@ def main() -> None:
             if validated.returncode == 0:
                 stanza_built_tree = built_tree
 
+    # Recorded once here and reused everywhere below (the exit-3/4/7
+    # JSON payloads and the unconditional "tree-source=" stdout line on
+    # success) -- see docs/contextual-tower.md's "Phase 1, round 3" for
+    # why this exists: isolating a real mystery (bare, unquoted
+    # capitalized words in some exit-4 rows' trees) needed to know which
+    # of the two tree sources actually produced a given row's tree,
+    # across every outcome, not just failures.
+    tree_source = "stanza" if stanza_built_tree is not None else "gf-parser"
+
     if stanza_built_tree is not None:
         trees = [stanza_built_tree]
     else:
@@ -312,6 +321,7 @@ def main() -> None:
                         "status": "gf-parse-failed",
                         "gf_sentence": proposal["gf_sentence"],
                         "detail": parsed.stderr.strip(),
+                        "tree_source": tree_source,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -338,6 +348,7 @@ def main() -> None:
                 {
                     "status": "gf-parse-empty",
                     "gf_sentence": proposal["gf_sentence"],
+                    "tree_source": tree_source,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -397,7 +408,7 @@ def main() -> None:
                     # before ever reaching here (see above), which should
                     # make that source structurally incapable of this --
                     # confirming that with real data beats assuming it.
-                    "tree_source": "stanza" if stanza_built_tree is not None else "gf-parser",
+                    "tree_source": tree_source,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -405,6 +416,14 @@ def main() -> None:
         )
         raise SystemExit(4)
     print("gf-tree=" + trees[0], flush=True)
+    # Covers every outcome from here on (success, exit 5, exit 6) --
+    # scripts/evaluation/run_contextual_corpus.py's own line-scan picks
+    # this up into the result row directly, the same way it already
+    # does for "gf-tree="/"graph_sha256="/etc. Exit 1/2 never reach this
+    # line at all (tree-building isn't attempted before them); exit
+    # 3/4/7 carry their own "tree_source" in their JSON payload instead,
+    # since they never reach this line either.
+    print("tree-source=" + tree_source, flush=True)
     encoded_constraints = ";;".join(
         encode_constraint(item) for item in proposal["constraints"]
     )

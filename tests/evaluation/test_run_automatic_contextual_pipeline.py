@@ -524,6 +524,7 @@ class StanzaTreeFirstTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=stanza", printed)
         engine_calls = [call for call in calls if call[0] != "python3"]
         self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
         self.assertFalse(any(call[1] == "parse" for call in engine_calls))
@@ -562,6 +563,7 @@ class StanzaTreeFirstTests(unittest.TestCase):
         printed, code = self._run_main_with_hint(passive_ud_words, fake_run)
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=gf-parser", printed)
 
     def test_falls_back_to_engine_parse_when_linearize_validation_fails(self) -> None:
         def fake_run(command, **kwargs):

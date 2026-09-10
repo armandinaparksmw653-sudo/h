@@ -115,6 +115,14 @@ def run_one(
     for line in completed.stdout.splitlines():
         if line.startswith("gf-tree="):
             result["gf_tree"] = line.split("=", 1)[1]
+        elif line.startswith("tree-source="):
+            # "stanza" or "gf-parser" -- which of
+            # run_automatic_contextual_pipeline.py's two tree sources
+            # produced this row's tree, printed unconditionally once a
+            # tree was successfully obtained (see that module's own
+            # comment on its "tree-source=" print). Content-free: just
+            # names one of two known code paths, never sentence text.
+            result["tree_source"] = line.split("=", 1)[1]
         elif line.startswith("graph_sha256="):
             result["graph_sha256"] = line.split("=", 1)[1]
         elif line.startswith("contract="):

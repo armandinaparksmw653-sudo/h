@@ -20,6 +20,7 @@ from score_contextual_detection import (  # noqa: E402
     fingerprint_failure_text,
     literal_reason,
     predict,
+    row_tree_source,
     score,
 )
 
@@ -637,6 +638,55 @@ class Exit4TreeSourceTests(unittest.TestCase):
         self.assertEqual(exit4_tree_source("not json"), "unrecognized")
 
 
+class RowTreeSourceTests(unittest.TestCase):
+    def test_reads_the_top_level_field_for_a_successful_row(self) -> None:
+        row = {"id": "a", "status": "ok", "fiber": ["Q1"], "tree_source": "stanza"}
+        self.assertEqual(row_tree_source(row), "stanza")
+
+    def test_reads_the_top_level_field_for_an_ambiguous_exit6_row(self) -> None:
+        row = {
+            "id": "a", "status": "failed", "exit_code": 6, "tree_source": "gf-parser",
+        }
+        self.assertEqual(row_tree_source(row), "gf-parser")
+
+    def test_falls_back_to_parsing_the_failure_json_for_exit4(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "y",
+                    "tree_source": "stanza",
+                }
+            ),
+        }
+        self.assertEqual(row_tree_source(row), "stanza")
+
+    def test_falls_back_to_parsing_the_failure_json_for_exit3_and_exit7(self) -> None:
+        for exit_code, status in ((3, "gf-parse-failed"), (7, "gf-parse-empty")):
+            with self.subTest(exit_code=exit_code):
+                row = {
+                    "id": "a",
+                    "status": "failed",
+                    "exit_code": exit_code,
+                    "failure": json.dumps({"status": status, "tree_source": "gf-parser"}),
+                }
+                self.assertEqual(row_tree_source(row), "gf-parser")
+
+    def test_exit1_and_exit2_are_not_applicable(self) -> None:
+        for exit_code in (1, 2):
+            with self.subTest(exit_code=exit_code):
+                row = {"id": "a", "status": "failed", "exit_code": exit_code}
+                self.assertEqual(row_tree_source(row), "not-applicable")
+
+    def test_an_unexpected_shape_is_unrecognized_not_a_crash(self) -> None:
+        row = {"id": "a", "status": "failed", "exit_code": 99}
+        self.assertEqual(row_tree_source(row), "unrecognized")
+
+
 class FingerprintFailureTextTests(unittest.TestCase):
     def test_same_text_gives_same_fingerprint(self) -> None:
         a = fingerprint_failure_text("metonymy: Prelude.head: empty list")
@@ -948,6 +998,39 @@ class ScoreTests(unittest.TestCase):
         report = score(inference, gold)
         self.assertEqual(
             report["exit4_tree_source_counts"], {"gf-parser": 2, "stanza": 1}
+        )
+
+    def test_tree_source_counts_aggregate_across_every_outcome_not_just_exit4(
+        self,
+    ) -> None:
+        successful = ok_row("a", ["Q1"])
+        successful["tree_source"] = "stanza"
+        exit1_row = failed_row("b", exit_code=1)
+        exit4_row = {
+            "id": "c",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "y",
+                    "tree_source": "gf-parser",
+                }
+            ),
+            "fiber": [],
+            "stages": [],
+        }
+        inference = [successful, exit1_row, exit4_row]
+        gold = [
+            {"id": "a", "gold_label": "metonymic", "gold_bridge_family": "x"},
+            {"id": "b", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "c", "gold_label": "literal", "gold_bridge_family": None},
+        ]
+        report = score(inference, gold)
+        self.assertEqual(
+            report["tree_source_counts"],
+            {"gf-parser": 1, "not-applicable": 1, "stanza": 1},
         )
 
     def test_repeated_unrecognized_failure_text_groups_into_one_fingerprint(

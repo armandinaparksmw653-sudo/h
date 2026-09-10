@@ -1504,3 +1504,59 @@ this mystery is coming from the brand-new Stanza path (a real bug in
 this session's own new code, needing a fix there) or the long-existing
 `engine parse` path (a previously-invisible bug in code that predates
 this session entirely) -- decisive either way, not another guess.
+
+## Phase 1, round 4: tree_source for every outcome, not just exit4
+
+Asked directly: how well does the Stanza path actually work on real
+text? The honest answer at the time was "no idea" -- round 3's
+`tree_source` tag only covered exit-4 *failures* (added specifically to
+chase the "Albright" mystery), so there was no way to see how often the
+Stanza path even ran, let alone succeeded, across the rest of the
+corpus -- successes, exit 5, exit 6, and exit 3/7 all carried no tag at
+all.
+
+Generalized: `run_automatic_contextual_pipeline.py` now records
+`tree_source` (`"stanza"` or `"gf-parser"`, computed once, right after
+`stanza_built_tree` is decided) on *every* outcome that reaches tree-
+building at all --
+- exit 3 (`gf-parse-failed`) and exit 7 (`gf-parse-empty`): added to
+  their own JSON payload (always `"gf-parser"` by construction -- the
+  Stanza path structurally cannot reach either exit code, since a
+  Stanza-built `trees[0]` is never empty and never starts with "The
+  parser failed", but explicit beats a reader needing to know that
+  invariant).
+- Every outcome past a successful `compile_gf_constraints` call
+  (success, exit 5, exit 6): a new, unconditional `"tree-source=..."`
+  stdout line printed right next to the existing `"gf-tree=..."` one.
+  `scripts/evaluation/run_contextual_corpus.py`'s own line-scan picks
+  it up onto the result row directly (`result["tree_source"]`), the
+  same way it already does for `"gf-tree="`/`"graph_sha256="`/etc.
+- Exit 1/2 (before tree-building is even attempted) still carry no
+  field at all -- correctly `"not-applicable"`, not a gap.
+
+`scripts/evaluation/score_contextual_detection.py`'s new
+`row_tree_source(inference_row)` unifies both representations (the
+row's own top-level field for the first case, JSON-embedded for exit
+3/4/7) into one lookup, aggregated across *every* row (not just literal
+predictions) into the score report's new `tree_source_counts` field --
+the first real answer to "what fraction of this corpus's rows actually
+went through the Stanza path, and how many of those then failed
+downstream vs. succeeded."
+
+Tests: `tests/evaluation/test_run_contextual_corpus.py` (new file, 3
+tests -- no prior test file existed for `run_one`'s line-scan at all,
+scoped narrowly to the new field rather than retroactively covering
+everything else in the same change), 2 new assertions in
+`test_run_automatic_contextual_pipeline.py`'s existing Stanza-path
+tests confirming the stdout line appears correctly for both sources,
+and a new `RowTreeSourceTests` class (6 tests) plus one new `ScoreTests`
+case in `test_score_contextual_detection.py`. Full local suite: 364
+tests, same pre-existing baseline, no regressions.
+
+**Next step**: re-run `contextual-tower-evaluation.yml` once more.
+`tree_source_counts` will finally answer the question this round set
+out to answer -- what fraction of real WiMCor/ConMeC rows the Stanza
+path actually reaches and resolves, versus falling through to (or never
+even reaching) the legacy `engine parse` path -- alongside whatever
+`exit4_tree_source_counts` says about the "Albright" mystery from round
+3.
