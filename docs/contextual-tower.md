@@ -1299,3 +1299,123 @@ show some `exit7` `run-1`/`run-2`/`run-3` rows (simple proper-noun-only
 clauses previously failing GF's own parser) now succeeding via the
 Stanza-built path instead -- confirming the mechanism end-to-end before
 investing in the wider UD-shape coverage above.
+
+## Phase 1, round 2: widening the tree-builder -- and a cheaper way to verify it
+
+The plan's own next-phase list, above, assumed each UD shape would need
+its own CI round to verify. It doesn't have to: `compile_gf_constraints`
+only ever consumes tree *text*, never calls GF at all (confirmed in
+Phase 1's own section above), and the local GF toolchain
+(`C:\Users\Administrator\gf-local`) can `l -lang=MetonymyEng` any
+hand-built tree in seconds. That closes almost the entire risk gap this
+plan's per-phase CI rounds existed to manage -- the only thing that
+genuinely needs a real corpus run is whether real WiMCor/ConMeC text
+actually contains the UD shapes each addition targets, not whether the
+code is correct. So this round adds six of the plan's remaining items at
+once, each verified two ways before being trusted: a pure-Python unit
+test per accept/decline case, and the actual generated tree text
+round-tripped through the local GF toolchain's own linearizer to
+confirm it is real, well-typed grammar/Metonymy.gf syntax -- not just
+text this module's own code happens to produce.
+
+**Added, each mapping a UD shape directly onto an existing grammar
+construction (no semantic reinterpretation, only structural mapping)**:
+
+- Common-noun NPs with a determiner (`a`/`an`/`the` only -- anything
+  else declines) and an optional single adjective ->
+  `OpenIndefCN`/`OpenDefCN`/`OpenAdjIndefCN`/`OpenAdjDefCN`. Foundational
+  for the rest: it's what lets a copula-free sentence like "Waterloo
+  announces a programme" build at all, and what a passive's own agent or
+  a relative clause's own object can now be, not just a proper noun or
+  pronoun.
+- Passive (`nsubj:pass` + `aux:pass` + a "by"-agent `obl`) ->
+  `PassCompl`. Declines without a "by" agent -- confirmed directly
+  against the grammar: `PassCompl : V2 -> NP -> VP` always needs an
+  agent argument, so a bare passive has no representation in
+  grammar/Metonymy.gf today regardless of who builds the tree.
+- Relative clause (`acl:relcl`, object position only) -> `ModifyRelVP`.
+  Declines when the embedded clause has its own separate subject
+  (`ModifyRelVP`'s "NP which VP" shape has no room for one -- the
+  relativized noun fills the subject role implicitly).
+- Fronted subordinate clause (`advcl`+`mark`, one of because/if/when/
+  although) -> `BecauseS`/`IfS`/`WhenS`/`AlthoughS` (fronted) or
+  `SBecauseS`/`SIfS`/`SWhenS`/`SAlthoughS` (trailing), chosen by
+  comparing the embedded clause's own position against the main
+  clause's subject.
+- Fronted date/time oblique (`obl`+`case`, restricted to exactly "on"/
+  "in"/"from" and positioned before the subject) ->
+  `OnFrontedS`/`InFrontedS`/`FromFrontedS`.
+
+A `_clause` helper builds "SubjectNP (Compl/PassCompl V2 ObjectNP)"
+generically for any verb, shared by the main action clause, a relative
+clause's own embedded verb, and a subordinate clause's own embedded
+verb -- each of those verbs is looked up in `gf_function_by_lemma` by
+its *own* UD lemma, not the caller-resolved one; only the main action's
+own root verb is cross-checked against `resolve_action`'s resolved
+lemma (a real safety fix found while designing this: `resolve_action`'s
+positional fallback -- used whenever `dependency_hint`'s `dep_status`
+isn't `"direct-argument"` -- can match a *different* word than UD's own
+root, which the original Phase 1 code never guarded against; it now
+declines instead of silently building a tree around the wrong clause).
+
+**Found, not fixed, while verifying against the local GF toolchain --
+each is why the corresponding item was dropped from this round rather
+than attempted**:
+
+- `PossNP`/`DefCN`/`IndefCN`/`ModifyRelCN`/`ModifyRelCNVP` cannot
+  actually be constructed in grammar/Metonymy.gf today: it declares no
+  function that *produces* a bare `CN` from scratch, only ones that
+  *consume* one. Confirmed directly: `l -lang=MetonymyEng PossNP
+  (OpenPN "Tolstoy") (OpenIndefCN "book" "books")` is rejected by GF's
+  own type checker ("Couldn't match expected type CN against inferred
+  type NP"). A handful of pre-existing pure-Python tests in
+  `tests/evaluation/test_compile_gf_constraints_copula_relative_genitive.py`
+  exercise exactly this ill-typed shape -- they test
+  `compile_gf_constraints`'s tree-walking code against text no real GF
+  parse could ever produce, the same false-confidence trap as the
+  ApposCommaPN/OpenPN2 story earlier in this document. Not fixed here
+  (out of scope for a tree-builder-only round); a possessive needs a
+  grammar addition first, not just a mapping rule.
+- Copula ("Waterloo is a county") is UD-structured with a NOUN as its
+  own root, not a VERB/AUX -- `annotate_dependency_hints.py`'s
+  `classify_word` never classifies that as `"direct-argument"` (its
+  `GOVERNING_UPOS` check requires VERB/AUX), so `resolve_action` never
+  resolves an action for it and the pipeline never reaches the tree-
+  builder at all for such a sentence. Needs a new `dep_status`/
+  `resolve_action` branch, not a tree-builder change.
+- A verb-level oblique PP adjunct ("announces X in Y", the general
+  case) has no VP-level attachment point in the grammar at all --
+  `ModifyNP` only attaches a PP to a specific NP. Folding it into the
+  object NP anyway ("announces (X in Y)") would silently reinterpret
+  which constituent the PP modifies -- exactly the "wrong but type-
+  correct" failure mode this whole approach exists to avoid, so it
+  wasn't attempted (the fronted date/time case above is the one
+  exception, safe because those constructors take the PP's own NP
+  directly with no attachment ambiguity).
+- Coordination (`conj`/`cc`) needs a closer read of how
+  `compile_gf_constraints`'s `first_node` (a depth-first search for the
+  *first* `Compl`/`PassCompl`) would attribute constraints when a tree
+  ends up with more than one such node -- a real subtlety that could go
+  wrong silently if rushed, so it waits for its own dedicated round.
+- Nested UD `nmod` (an NP modified by another NP/PP, "the museum in
+  Kent") stays unreachable for a different reason: a target sitting
+  inside one is rejected by `resolve_action` itself
+  (`dep_status == "nested-modifier"`) *before* the tree-builder would
+  ever run -- the same "Deliberately left unresolved" gap
+  `annotate_dependency_hints.py`'s own module docstring already names.
+
+Tests: `tests/evaluation/test_build_gf_tree_from_dependencies.py` grew
+from 17 to 35 (one fixture bug of its own caught along the way -- a
+`mark` word's UD `head` must point at the embedded clause's own verb,
+not its subject). All 13 distinct new tree shapes verified against the
+local GF toolchain directly, not just against this module's own
+expected strings -- listed inline in the commit, all linearizing to
+plausible English ("Because Tolstoy announces Henry, Waterloo announces
+Mary", "On 2010, Waterloo announces Henry", "Waterloo announces a large
+county", ...). Full local suite: 347 tests, same pre-existing baseline,
+no regressions.
+
+**Next step**: same as before, just with more coverage behind it --
+commit, push, `ci.yml`, then a real `contextual-tower-evaluation.yml`
+run to see how much of `exit7` these six additions actually reach in
+real WiMCor/ConMeC text.

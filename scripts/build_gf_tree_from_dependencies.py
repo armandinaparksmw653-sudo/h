@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a GF abstract-syntax tree directly from a UD dependency parse.
 
-Phase 1 of the "Stanza instead of GF-as-parser" transition (see
+Phase 1+ of the "Stanza instead of GF-as-parser" transition (see
 docs/contextual-tower.md's own section on this and the plan file this
 session used). Today, run_automatic_contextual_pipeline.py asks GF's own
 parser to turn a raw English sentence into a tree -- meaning every
@@ -20,33 +20,68 @@ formal core) changes shape at all. See run_automatic_contextual_pipeline.py
 for where this plugs in: try this first, and only fall back to asking
 GF's own parser to read the raw sentence when this returns None.
 
-Deliberately narrow on purpose (see docs/contextual-tower.md for why an
-incremental, CI-measured rollout beats trying to cover all of UD at
-once): only the simplest possible transitive clause -- a single root
-verb with exactly one nsubj and exactly one obj/iobj, each a proper noun
-(1-3 compound-chained tokens, matching OpenPN/OpenPN2/OpenPN3's own
-existing token-count limit) or a personal pronoun (he/she/it/they).
-Anything else -- a passive, a PP modifier, coordination, a relative
-clause, a determiner, more than one clause -- returns None rather than
-risk building an inaccurate tree; the caller's contract is to fall back
-to the legacy GF-parser-on-raw-text path whenever this does, so the
-worst case is byte-identical to today's behaviour, never a regression.
+Every accept path here was verified directly against the local GF
+toolchain (`gf.exe`'s own `l -lang=MetonymyEng`, not just read from
+source) before being written into this module -- including one real,
+previously undocumented finding: PossNP/DefCN/IndefCN/ModifyRelCN/
+ModifyRelCNVP (grammar/Metonymy.gf) cannot actually be constructed at
+all today -- Metonymy.gf declares no function that *produces* a bare CN
+from scratch, only ones that *consume* one, confirmed by GF's own type
+checker rejecting `DefCN (OpenIndefCN ...)` with "Couldn't match
+expected type CN against inferred type NP". (A handful of existing pure-
+Python tests in tests/evaluation/test_compile_gf_constraints_copula_
+relative_genitive.py exercise PossNP/DefCN with exactly that ill-typed
+shape -- they test compile_gf_constraints's own tree-walking code
+against text no real GF parse could ever produce, the same false-
+confidence trap as the ApposCommaPN/OpenPN2 story earlier this project's
+history; not fixed here, out of scope for this module.) Consequently
+this module never builds a possessive (UD "nmod:poss") -- doing so needs
+a grammar/Metonymy.gf addition first (a CN-producing base function), not
+just a tree-builder change.
+
+Also deliberately not built here, each for its own reason (see the
+plan file / docs/contextual-tower.md for the full writeup):
+- A copula clause ("Waterloo is a county") is UD-structured with a NOUN
+  (not VERB/AUX) as its own root, which annotate_dependency_hints.py's
+  classify_word never classifies as "direct-argument" (its
+  GOVERNING_UPOS check requires VERB/AUX) -- so resolve_action itself
+  never resolves an action for it, and the whole pipeline never reaches
+  this module for such a sentence in the first place. Fixing this needs
+  a new dep_status/resolve_action branch, not a tree-builder change.
+- A verb-level oblique PP adjunct ("announces X in Y", the "in Y" part)
+  has no VP-level attachment point in grammar/Metonymy.gf at all --
+  ModifyNP only attaches a PP to a specific NP, not to a VP. Folding it
+  into the object NP anyway ("announces (X in Y)") would silently
+  reinterpret which constituent the PP modifies -- exactly the "wrong
+  but type-correct" failure mode this module exists to avoid, so it
+  isn't attempted. The one narrow exception: a *fronted* date/time PP at
+  the very start of a sentence (OnFrontedS/InFrontedS/FromFrontedS)
+  *is* built (below) -- those constructors take the PP's own NP
+  directly and hardcode the preposition, so there is no attachment
+  ambiguity to resolve.
+- Coordination (UD "conj"/"cc") is deferred pending a closer read of
+  how compile_gf_constraints's first_node (a depth-first search for the
+  first Compl/PassCompl) would attribute constraints when a tree has
+  more than one -- a real subtlety a rushed implementation could get
+  wrong silently, so it waits for its own dedicated round.
+- Nested UD nmod (an NP modified by another NP/PP, "the museum in
+  Kent") stays out of reach here for a different reason than the above:
+  a target sitting inside one is rejected by resolve_action itself
+  (dep_status == "nested-modifier") *before* this module would ever
+  run, the same "Deliberately left unresolved" gap
+  annotate_dependency_hints.py's own module docstring already names.
+
+Every accept path tracks the set of word ids it has legitimately
+consumed; if any word in the sentence is left over at the end (besides
+punctuation, always silently ignored), the whole build declines
+(returns None) rather than silently drop or misrepresent content -- the
+same "only build when confident, otherwise fall back" contract Phase
+1's original narrower version already used.
 """
 
 from __future__ import annotations
 
 from typing import Any
-
-# Every UD word in the sentence must have one of these deprels for Phase
-# 1 to even attempt a tree -- anything else (obl, amod, nmod, advcl,
-# xcomp, ccomp, aux:pass, mark, cc, conj, appos, acl, det, ...) means the
-# sentence needs a construction this narrow first slice doesn't build,
-# so build_gf_tree bails out to None rather than silently drop or
-# misrepresent that content. "det" is deliberately excluded too: proper
-# nouns/pronouns (the only NPs this phase builds) essentially never take
-# one in real WiMCor/ConMeC text, and silently ignoring a real one would
-# mean dropping meaningful content, which this module never does.
-_PHASE1_ALLOWED_DEPRELS = {"root", "nsubj", "obj", "iobj", "compound", "punct"}
 
 _PRONOUN_CONSTRUCTORS = {
     "he": "HePN",
@@ -57,47 +92,347 @@ _PRONOUN_CONSTRUCTORS = {
 
 _PROPER_NOUN_CONSTRUCTORS = {1: "OpenPN", 2: "OpenPN2", 3: "OpenPN3"}
 
+_INDEFINITE_DETERMINERS = {"a", "an"}
+_DEFINITE_DETERMINERS = {"the"}
 
-def _np_pieces(words: list[dict[str, Any]], head: dict[str, Any]) -> tuple[str, ...] | None:
-    """The (constructor, *string-args) pieces for one NP, or None.
+# grammar/MetonymyEng.gf's own fixed preposition words for the fronted
+# date/time clause constructors -- the one exception to this module's
+# "no verb-level oblique PP" rule (see the module docstring for why).
+_FRONTED_DATE_CONSTRUCTORS = {
+    "on": "OnFrontedS",
+    "in": "InFrontedS",
+    "from": "FromFrontedS",
+}
 
-    Only ever builds from a PROPN (via its own direct "compound"
-    children -- one level, matching this phase's own narrow scope) or a
-    PRON whose lemma is one of he/she/it/they. Any other UPOS (a common
-    noun, a numeral, ...) is out of scope for Phase 1.
+
+class _Bail(Exception):
+    """Internal control-flow only: this narrow builder hit a UD shape it
+    doesn't (yet, safely) model. Always caught at build_gf_tree's own
+    top level and turned into a plain ``None`` return -- never leaks.
     """
-    if head["upos"] == "PROPN":
-        chain = [head] + [
-            word
-            for word in words
-            if word["head"] == head["id"]
-            and word["deprel"] == "compound"
-            and word["upos"] == "PROPN"
-        ]
-        chain.sort(key=lambda word: word["start_char"])
-        constructor = _PROPER_NOUN_CONSTRUCTORS.get(len(chain))
-        if constructor is None:
-            return None
-        return (constructor, *(word["text"] for word in chain))
-    if head["upos"] == "PRON":
-        constructor = _PRONOUN_CONSTRUCTORS.get(head["lemma"].casefold())
-        if constructor is None:
-            return None
-        return (constructor,)
-    return None
 
 
-def _render_np(pieces: tuple[str, ...]) -> str | None:
-    constructor, *args = pieces
-    if any('"' in arg or "\\" in arg for arg in args):
+def _quote(text: str) -> str:
+    if '"' in text or "\\" in text:
         # Defensive only -- Stanza tokenizes a literal quote as its own
-        # token, so a PROPN/PRON surface form realistically never
-        # contains one. Bail rather than emit unparseable GF syntax.
-        return None
+        # token, so a real word surface form realistically never
+        # contains one.
+        raise _Bail()
+    return f'"{text}"'
+
+
+def _apply(constructor: str, *args: str) -> str:
     if not args:
         return constructor
-    quoted = " ".join(f'"{arg}"' for arg in args)
-    return f"({constructor} {quoted})"
+    return f"({constructor} {' '.join(args)})"
+
+
+def _strip_outer_parens(tree: str) -> str:
+    """GF's own tree printer (and every hand-written tree elsewhere in
+    this project) never parenthesizes the outermost expression, only
+    nested ones -- _apply above parenthesizes unconditionally (simplest
+    to get right when composing arbitrarily deep, always-nested
+    subexpressions), so build_gf_tree strips exactly one such layer off
+    its own final result before returning it.
+    """
+    if tree.startswith("(") and tree.endswith(")"):
+        return tree[1:-1]
+    return tree
+
+
+def _children(words: list[dict[str, Any]], head_id: int) -> list[dict[str, Any]]:
+    return [word for word in words if word["head"] == head_id]
+
+
+def _children_with_deprel(
+    words: list[dict[str, Any]], head_id: int, deprel: str
+) -> list[dict[str, Any]]:
+    return [word for word in _children(words, head_id) if word["deprel"] == deprel]
+
+
+def _np_from_proper_noun(
+    words: list[dict[str, Any]], head: dict[str, Any], accounted: set[int]
+) -> str:
+    chain = [head] + [
+        word
+        for word in words
+        if word["head"] == head["id"]
+        and word["deprel"] == "compound"
+        and word["upos"] == "PROPN"
+    ]
+    chain.sort(key=lambda word: word["start_char"])
+    constructor = _PROPER_NOUN_CONSTRUCTORS.get(len(chain))
+    if constructor is None:
+        raise _Bail()
+    for word in chain:
+        accounted.add(word["id"])
+    return _apply(constructor, *(_quote(word["text"]) for word in chain))
+
+
+def _np_from_common_noun(
+    words: list[dict[str, Any]], noun: dict[str, Any], accounted: set[int]
+) -> str:
+    determiners = _children_with_deprel(words, noun["id"], "det")
+    adjectives = _children_with_deprel(words, noun["id"], "amod")
+    if len(determiners) != 1 or len(adjectives) > 1:
+        # No determiner at all, or more than one of either -- not
+        # confident enough to guess a shape (OpenIndefCN/OpenDefCN/
+        # OpenAdjIndefCN/OpenAdjDefCN each take exactly one determiner-
+        # implied article and at most one adjective).
+        raise _Bail()
+    determiner = determiners[0]
+    det_lemma = determiner["lemma"].casefold()
+    if det_lemma in _DEFINITE_DETERMINERS:
+        is_definite = True
+    elif det_lemma in _INDEFINITE_DETERMINERS:
+        is_definite = False
+    else:
+        raise _Bail()
+    accounted.add(determiner["id"])
+    accounted.add(noun["id"])
+    noun_text = _quote(noun["text"])
+    if adjectives:
+        accounted.add(adjectives[0]["id"])
+        constructor = "OpenAdjDefCN" if is_definite else "OpenAdjIndefCN"
+        adjective_text = _quote(adjectives[0]["text"])
+        # OpenAdjDefCN/OpenAdjIndefCN's third argument (grammar/Metonymy.gf:
+        # String -> String -> String -> NP, "plural") is never read by
+        # its own linearization (only "singular" is used) nor by
+        # compile_gf_constraints's _noun_lemma (only arguments[1]) -- see
+        # each's own comment. Reusing the same surface text for it loses
+        # nothing.
+        return _apply(constructor, adjective_text, noun_text, noun_text)
+    constructor = "OpenDefCN" if is_definite else "OpenIndefCN"
+    return _apply(constructor, noun_text, noun_text)
+
+
+def _np(
+    words: list[dict[str, Any]],
+    head: dict[str, Any],
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """Build one NP, including an attached relative clause if present.
+
+    Dispatches on the head word's own UPOS for the base NP shape
+    (proper noun / pronoun / common noun), then separately checks for a
+    UD "acl:relcl" child of the *same* head -- relative clauses can
+    modify any of those three NP shapes, so this check lives above the
+    per-UPOS dispatch, not inside any one branch of it.
+    """
+    if head["upos"] == "PROPN":
+        base = _np_from_proper_noun(words, head, accounted)
+    elif head["upos"] == "PRON":
+        constructor = _PRONOUN_CONSTRUCTORS.get(head["lemma"].casefold())
+        if constructor is None:
+            raise _Bail()
+        accounted.add(head["id"])
+        base = _apply(constructor)
+    elif head["upos"] == "NOUN":
+        base = _np_from_common_noun(words, head, accounted)
+    else:
+        raise _Bail()
+    relative_clauses = _children_with_deprel(words, head["id"], "acl:relcl")
+    if not relative_clauses:
+        return base
+    if len(relative_clauses) != 1:
+        raise _Bail()
+    embedded_vp = _relative_clause_vp(
+        words, relative_clauses[0], accounted, gf_function_by_lemma
+    )
+    return _apply("ModifyRelVP", base, embedded_vp)
+
+
+def _object_np(
+    words: list[dict[str, Any]],
+    verb_id: int,
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    objects = _children_with_deprel(words, verb_id, "obj") + _children_with_deprel(
+        words, verb_id, "iobj"
+    )
+    if len(objects) != 1:
+        # grammar/Metonymy.gf has no intransitive VP (Compl/PassCompl
+        # both require an object NP) -- an object-less clause is out of
+        # scope for the whole grammar today, not just this module.
+        raise _Bail()
+    return _np(words, objects[0], accounted, gf_function_by_lemma)
+
+
+def _relative_clause_vp(
+    words: list[dict[str, Any]],
+    verb: dict[str, Any],
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """The VP for a relative clause's own embedded verb.
+
+    UD's "acl:relcl" attaches the embedded verb directly to the noun it
+    modifies; the relativized noun itself fills the embedded clause's
+    subject slot implicitly (no separate "nsubj" word for it), so this
+    only ever looks for the embedded verb's own object -- and, unlike
+    the main clause, does not need a caller-resolved lemma: it looks
+    itself up by the embedded verb's own UD lemma directly, since it is
+    a genuinely different predicate from the main action (a faithful
+    structural mapping, not a semantic reinterpretation -- see the
+    module docstring for why that distinction is what rules out a
+    general oblique-PP attachment but not this).
+    """
+    if verb["upos"] not in {"VERB", "AUX"}:
+        raise _Bail()
+    if _children_with_deprel(words, verb["id"], "nsubj") or _children_with_deprel(
+        words, verb["id"], "nsubj:pass"
+    ):
+        # A relative clause with its own separate subject isn't "which
+        # VERB OBJECT" (ModifyRelVP's only shape) -- out of scope.
+        raise _Bail()
+    gf_function = gf_function_by_lemma.get(verb["lemma"].casefold())
+    if gf_function is None:
+        raise _Bail()
+    object_np = _object_np(words, verb["id"], accounted, gf_function_by_lemma)
+    accounted.add(verb["id"])
+    return _apply("Compl", gf_function, object_np)
+
+
+def _fronted_date_clause(
+    words: list[dict[str, Any]], root: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any], str] | None:
+    """(oblique_word, case_word, constructor) for a fronted date/time
+    oblique on the root verb, or None if there isn't one.
+
+    Narrow by construction: the case word's own text must be exactly
+    one of the three fixed prepositions grammar/MetonymyEng.gf's
+    OnFrontedS/InFrontedS/FromFrontedS actually hardcode, and the whole
+    oblique phrase must sit before the subject (a real fronted
+    position), not merely exist somewhere in the sentence.
+    """
+    obliques = _children_with_deprel(words, root["id"], "obl")
+    if len(obliques) != 1:
+        return None
+    oblique = obliques[0]
+    case_children = _children_with_deprel(words, oblique["id"], "case")
+    if len(case_children) != 1:
+        return None
+    case_word = case_children[0]
+    constructor = _FRONTED_DATE_CONSTRUCTORS.get(case_word["text"].casefold())
+    if constructor is None:
+        return None
+    subjects = _children_with_deprel(words, root["id"], "nsubj")
+    if len(subjects) != 1 or oblique["start_char"] >= subjects[0]["start_char"]:
+        return None
+    return oblique, case_word, constructor
+
+
+# grammar/MetonymyEng.gf's own fixed subordinating conjunctions -- each
+# maps to a (fronted_constructor, trailing_constructor) pair
+# ("Because EMBEDDED, MAIN" vs "MAIN, because EMBEDDED").
+_SUBORDINATE_CLAUSE_CONSTRUCTORS = {
+    "because": ("BecauseS", "SBecauseS"),
+    "if": ("IfS", "SIfS"),
+    "when": ("WhenS", "SWhenS"),
+    "although": ("AlthoughS", "SAlthoughS"),
+}
+
+
+def _clause(
+    words: list[dict[str, Any]],
+    verb: dict[str, Any],
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """"SubjectNP (Compl/PassCompl V2 ObjectNP)" for any verb -- shared
+    by the main action clause and any embedded clause (relative,
+    fronted/trailing subordinate) this module builds, since each is
+    structurally the same shape, just with a different governing verb.
+    """
+    gf_function = gf_function_by_lemma.get(verb["lemma"].casefold())
+    if gf_function is None:
+        raise _Bail()
+
+    passive_subjects = _children_with_deprel(words, verb["id"], "nsubj:pass")
+    if passive_subjects:
+        aux_pass = _children_with_deprel(words, verb["id"], "aux:pass")
+        if len(aux_pass) != 1:
+            raise _Bail()
+        agents = [
+            oblique
+            for oblique in _children_with_deprel(words, verb["id"], "obl")
+            if any(
+                case["text"].casefold() == "by"
+                for case in _children_with_deprel(words, oblique["id"], "case")
+            )
+        ]
+        if len(agents) != 1:
+            # grammar/Metonymy.gf's PassCompl always needs an agent NP
+            # (V2 -> NP -> VP, no bare-passive alternative) -- a passive
+            # without a "by"-agent is out of scope for the whole grammar
+            # today, not just this module.
+            raise _Bail()
+        agent_np = _np(words, agents[0], accounted, gf_function_by_lemma)
+        subject_np = _np(words, passive_subjects[0], accounted, gf_function_by_lemma)
+        accounted.add(aux_pass[0]["id"])
+        for case in _children_with_deprel(words, agents[0]["id"], "case"):
+            accounted.add(case["id"])
+        accounted.add(verb["id"])
+        return _apply("Pred", subject_np, _apply("PassCompl", gf_function, agent_np))
+
+    subjects = _children_with_deprel(words, verb["id"], "nsubj")
+    if len(subjects) != 1:
+        raise _Bail()
+    subject_np = _np(words, subjects[0], accounted, gf_function_by_lemma)
+    object_np = _object_np(words, verb["id"], accounted, gf_function_by_lemma)
+    accounted.add(verb["id"])
+    return _apply("Pred", subject_np, _apply("Compl", gf_function, object_np))
+
+
+def _main_clause(
+    words: list[dict[str, Any]],
+    root: dict[str, Any],
+    lemma: str,
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """The S built around the resolved action's own root verb -- active
+    or passive, matching whichever UD shape is actually present.
+    """
+    if root["lemma"].casefold() != lemma.casefold():
+        # The resolved action's own lemma must be this same root verb's
+        # lemma -- guards against resolve_action's positional fallback
+        # (used whenever dependency_hint's dep_status isn't
+        # "direct-argument") having matched an entirely different word
+        # than UD's own root, which would otherwise silently build a
+        # tree around the wrong clause.
+        raise _Bail()
+    return _clause(words, root, accounted, gf_function_by_lemma)
+
+
+def _subordinate_clause(
+    words: list[dict[str, Any]], root: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any], str, str] | None:
+    """(embedded_verb, mark_word, fronted_constructor, trailing_constructor)
+    for a UD "advcl"+"mark" subordinate clause attached to the root verb,
+    or None if there isn't exactly one recognizable one.
+
+    UD attaches the embedded clause's own verb to the main verb via
+    "advcl", with the subordinating word itself ("because"/"if"/"when"/
+    "although") as that embedded verb's own "mark" child -- whichever of
+    grammar/MetonymyEng.gf's four fixed subordinators it actually is.
+    """
+    advcls = _children_with_deprel(words, root["id"], "advcl")
+    if len(advcls) != 1:
+        return None
+    embedded_verb = advcls[0]
+    if embedded_verb["upos"] not in {"VERB", "AUX"}:
+        return None
+    marks = _children_with_deprel(words, embedded_verb["id"], "mark")
+    if len(marks) != 1:
+        return None
+    mark = marks[0]
+    pair = _SUBORDINATE_CLAUSE_CONSTRUCTORS.get(mark["text"].casefold())
+    if pair is None:
+        return None
+    return embedded_verb, mark, pair[0], pair[1]
 
 
 def build_gf_tree(
@@ -105,54 +440,58 @@ def build_gf_tree(
     lemma: str,
     gf_function_by_lemma: dict[str, str],
 ) -> str | None:
-    """Build GF tree text for one clause, or None if Phase 1 can't.
+    """Build GF tree text for one sentence, or None if it can't (yet).
 
     ``words`` is a flat list of UD word dicts -- the same shape
-    annotate_dependency_hints.py's new "ud_words" hint field carries --
+    annotate_dependency_hints.py's "ud_words" hint field carries --
     each with "id", "head" (0 for the root), "deprel", "upos", "lemma",
     "text", "start_char", "end_char". ``lemma`` is the already-resolved
     action lemma (resolve_action/propose_contextual_scenario.py's
     "action" field) -- reused as-is, never recomputed here; this module
-    only places it into a tree, using ``gf_function_by_lemma`` (a
+    only places it into a tree. ``gf_function_by_lemma`` is a
     lemma -> "CTX_<hash>" reverse lookup built from
-    data/contextual-gf-actions.json, the same source
-    compile_gf_constraints already reads as its own "gf_actions") to
-    find the matching V2 constructor GF's parser would otherwise have
-    had to find via its own lexicon lookup.
+    data/contextual-gf-actions.json (see load_gf_function_by_lemma).
     """
-    if any(word["deprel"] not in _PHASE1_ALLOWED_DEPRELS for word in words):
+    try:
+        roots = [word for word in words if word["deprel"] == "root"]
+        if len(roots) != 1:
+            return None
+        root = roots[0]
+        if root["upos"] not in {"VERB", "AUX"}:
+            return None
+        accounted: set[int] = set()
+        fronted_date = _fronted_date_clause(words, root)
+        subordinate = (
+            _subordinate_clause(words, root) if fronted_date is None else None
+        )
+        if fronted_date is not None:
+            oblique, case_word, constructor = fronted_date
+            date_np = _np(words, oblique, accounted, gf_function_by_lemma)
+            accounted.add(case_word["id"])
+            main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+            tree = _apply(constructor, date_np, main)
+        elif subordinate is not None:
+            embedded_verb, mark, fronted_name, trailing_name = subordinate
+            main_subjects = _children_with_deprel(words, root["id"], "nsubj")
+            if len(main_subjects) != 1:
+                return None
+            is_fronted = embedded_verb["start_char"] < main_subjects[0]["start_char"]
+            embedded = _clause(words, embedded_verb, accounted, gf_function_by_lemma)
+            accounted.add(mark["id"])
+            main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+            tree = (
+                _apply(fronted_name, embedded, main)
+                if is_fronted
+                else _apply(trailing_name, main, embedded)
+            )
+        else:
+            tree = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+        leftover = {word["id"] for word in words if word["deprel"] != "punct"} - accounted
+        if leftover:
+            return None
+        return _strip_outer_parens(tree)
+    except _Bail:
         return None
-    roots = [word for word in words if word["deprel"] == "root"]
-    if len(roots) != 1:
-        return None
-    root = roots[0]
-    if root["upos"] not in {"VERB", "AUX"}:
-        return None
-    subjects = [
-        word for word in words if word["head"] == root["id"] and word["deprel"] == "nsubj"
-    ]
-    objects = [
-        word
-        for word in words
-        if word["head"] == root["id"] and word["deprel"] in {"obj", "iobj"}
-    ]
-    if len(subjects) != 1 or len(objects) != 1:
-        # grammar/Metonymy.gf has no intransitive VP (Compl/PassCompl
-        # both require an object NP) -- an object-less clause is out of
-        # scope for the whole grammar today, not just this phase.
-        return None
-    subject_pieces = _np_pieces(words, subjects[0])
-    object_pieces = _np_pieces(words, objects[0])
-    if subject_pieces is None or object_pieces is None:
-        return None
-    subject_np = _render_np(subject_pieces)
-    object_np = _render_np(object_pieces)
-    if subject_np is None or object_np is None:
-        return None
-    gf_function = gf_function_by_lemma.get(lemma)
-    if gf_function is None:
-        return None
-    return f"Pred {subject_np} (Compl {gf_function} {object_np})"
 
 
 def load_gf_function_by_lemma(actions_json: dict[str, Any]) -> dict[str, str]:
