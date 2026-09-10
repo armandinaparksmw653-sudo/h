@@ -209,18 +209,36 @@ def exit4_reason_bucket(failure_text: str) -> str:
 def exit1_suffixed_token(token: str, failure_text: str) -> str:
     """Recover a SUFFIXED_FAILURE_TOKENS entry's ":<suffix>", if present.
 
-    failure_text is a subprocess's full captured stdout+stderr (a Python
-    traceback in this case, not JSON like exit2/exit4/exit7's payloads),
-    so "token:suffix" appears embedded in a line like "ValueError:
-    nested-modifier-unsupported:nmod:poss" -- str(error) is exactly what
-    follows "ValueError: " and, per Python's own traceback formatting,
-    never wraps to a second line. Capturing everything up to the next
-    newline (never a fixed-width token) is therefore safe and complete;
-    falls back to the bare token when there's no ":" at all (the
+    Both suffixed tokens can only originate from resolve_action, called
+    exclusively from propose_contextual_scenario.py, which turns its
+    ValueError into `raise SystemExit(str(error))` -- printing the bare
+    message ("nested-modifier-unsupported:appos", say) to stderr with no
+    extra formatting. run_automatic_contextual_pipeline.py's exit-1
+    branch (its "propose-scenario-failed" case) then captures that
+    subprocess's combined stdout+stderr into its own JSON payload's
+    "detail" field and is what run_contextual_corpus.py in turn stores as
+    this row's "failure" text -- so, unlike this function's first
+    (real-CI-corrected) version assumed, this is JSON like exit2/exit4/
+    exit7's payloads, not a raw Python traceback. Parsing it and reading
+    only "detail" avoids a real bug a live evaluation run caught: matching
+    against the *raw* pretty-printed JSON text (as the first version did)
+    captured the value's own closing quote as part of the suffix (e.g.
+    "nested-modifier-unsupported:appos\"" instead of
+    "nested-modifier-unsupported:appos"), because a raw substring search
+    has no way to know where the JSON string value actually ends. Falls
+    back to searching failure_text directly (still excluding stray quote
+    characters, as a second line of defense) when it isn't JSON-wrapped
+    at all -- defensive only, since every known origin of these two
+    particular tokens is confirmed JSON-wrapped as described above.
+    Falls back to the bare token when there's no ":" at all (the
     backward-compatible, no-deprel/no-lemma raise still supported at each
     site -- see resolve_action's own comments).
     """
-    match = re.search(rf"{re.escape(token)}:([^\r\n]*)", failure_text)
+    try:
+        detail = json.loads(failure_text).get("detail", "")
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        detail = failure_text
+    match = re.search(rf"{re.escape(token)}:([^\r\n\"]*)", detail)
     if match and match.group(1):
         return f"{token}:{match.group(1)}"
     return token

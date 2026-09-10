@@ -1069,14 +1069,70 @@ fallback), and new cases in
 recovery, every `EXIT4_KNOWN_FAILURE_TOKENS` entry, and an explicit
 never-leaks-the-gf-tree-or-interpolated-content check).
 
-**Next step**: re-run `contextual-tower-evaluation.yml` and read the
-`literal_prediction_reasons` histogram in the Job Summary for the exact
-breakdown -- which UD relations actually dominate
-`nested-modifier-unsupported`, which verb lemmas dominate
-`unsupported-action-role`, and which of the nine known messages dominates
-`exit4`. Concrete fixes (a `PositiveGFTree`/`Elaborator.hs` widening for
-some nested-modifier shape, VerbNet vocabulary/selectional-restriction
-additions for specific lemmas, or an `exit4`-specific composition-matrix
-fix) depend entirely on that breakdown and are deliberately not guessed
-in advance -- the same "measure before fixing" discipline that already
-paid off three times earlier in this document.
+**Bug found by the first real run, fixed before drawing any conclusions
+from it**: the real breakdown's `nested-modifier-unsupported`/
+`unsupported-action-role` entries all carried a stray trailing `\"`
+(e.g. `nested-modifier-unsupported:appos\"`). `exit1_suffixed_token`'s
+first version assumed `failure_text` was a raw Python traceback and
+captured everything up to the next newline -- but the only real origin
+of these two suffixed tokens (`resolve_action`, called exclusively from
+`propose_contextual_scenario.py`, which does `raise
+SystemExit(str(error))`) is always JSON-wrapped by
+`run_automatic_contextual_pipeline.py`'s "propose-scenario-failed"
+exit-1 branch into `{"status": ..., "sentence": ..., "detail": <bare
+message>}`, printed with `json.dumps(..., indent=2)`. The naive raw-text
+regex captured the JSON string value's own closing quote as part of the
+suffix. Fixed by parsing `failure_text` as JSON first and reading only
+its `"detail"` field (falling back to the raw text, with quote
+characters excluded from the capture as a second line of defense, for
+any failure text that genuinely isn't JSON-wrapped) -- the same
+JSON-first pattern `exit2_candidate_bucket`/`exit4_reason_bucket`/
+`exit7_gf_sentence_bucket` already use. Covered by two new regression
+tests reproducing the exact real shape.
+
+**Real breakdown, first read (corrected data)**:
+
+- `nested-modifier-unsupported` is overwhelmingly `nmod` (45/50 WiMCor
+  rows, 6/11 ConMeC rows) -- a plain nominal modifier, not the
+  possessive/relative-clause/adjective shapes also in
+  `NESTED_MODIFIER_DEPRELS`, which barely register (`compound` 4+3,
+  `appos` 1+1, `nmod:poss` only 1 in ConMeC).
+- `unsupported-action-role` in WiMCor is, without a single exception,
+  a `"<verb> <preposition>"` phrasal reconstruction (41 distinct pairs,
+  each appearing 1-6 times) -- never a bare verb. Checked, not guessed:
+  `data/predicates.tsv` and `data/verbnet-action-roles.tsv` (the only
+  two sources `load_action_roles` reads) contain zero lemma entries with
+  a space in either file. `annotate_dependency_hints.py`'s `obl`+`case`
+  handling (`lemma = f"{head.lemma} {case_word.text.lower()}"`) always
+  constructs a two-word governing_lemma for this deprel shape, but
+  `resolve_action`'s `by_form` index -- built from `action_forms(role.lemma)`
+  over those same two single-word-only files -- can structurally never
+  contain a two-word key. This makes the WiMCor `obl`-path lookup fail
+  unconditionally, independent of whether the bare verb (e.g. "arrive",
+  "hold", "raise") already has real ActionRole coverage under its own
+  single-word lemma -- a lookup-format bug, not a vocabulary gap, and
+  the likely single dominant cause behind most of WiMCor's
+  `unsupported-action-role` count. ConMeC shows a mixed picture: 8 of its
+  ~24 rows are the same phrasal shape, but the rest are bare single-word
+  lemmas (`advocate`/`breed`/`consume`/`overpower`/`print`/`process`/
+  `publish`/`do`, plus a couple of likely-unlemmatized surface forms
+  like `condem`/`drank`) -- genuine vocabulary or lemmatization gaps,
+  not the same structural bug.
+- `exit4` is dominated in ConMeC by `"malformed or incomplete GF tree"`
+  (23/25 rows) -- `parse_gf_tree` leaves tokens unconsumed, most likely
+  because some GF constructor `trees[0]` uses is missing (or has the
+  wrong number) from `ARITIES` (`ARITIES.get(token, 0)` silently treats
+  an unlisted constructor as 0-ary). WiMCor barely reaches `exit4` at all
+  (2 rows total) since more of its rows fail earlier, at `exit1`/`exit7`.
+
+**Next step**: these are strong, evidenced leads (not guesses) for Phase
+2, but which constructor triggers ConMeC's `"malformed or incomplete GF
+tree"` majority is not yet known -- the current instrumentation reports
+only the bucket name, not the unconsumed constructor. Before writing any
+Phase 2 fix, decide the concrete plan with the user: (a) fix
+`resolve_action`'s `obl` lookup to fall back to the bare verb lemma
+alone when the phrasal key misses, (b) a further safe, text-free
+diagnostic pass reporting which GF constructor name (closed vocabulary,
+always safe) is unconsumed at `exit4`, and (c) whether the `nmod`-
+dominant nested-modifier gap is worth a `PositiveGFTree`/`Elaborator.hs`
+widening now or needs its own follow-up measurement first.

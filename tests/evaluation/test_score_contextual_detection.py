@@ -325,6 +325,57 @@ class LiteralReasonTests(unittest.TestCase):
         self.assertNotIn("treaty", reason)
         self.assertNotIn("some other traceback line", reason)
 
+    def test_exit1_suffix_from_the_real_json_wrapped_propose_scenario_failure(
+        self,
+    ) -> None:
+        # Regression test for a real bug a live contextual-tower-evaluation.yml
+        # run actually caught: run_automatic_contextual_pipeline.py's
+        # "propose-scenario-failed" exit-1 branch JSON-wraps
+        # propose_contextual_scenario.py's `raise SystemExit(str(error))`
+        # message into {"status": ..., "sentence": ..., "detail": <bare
+        # message>}, pretty-printed with json.dumps(indent=2) -- NOT a raw
+        # Python traceback, as this function's first version wrongly
+        # assumed. That version's naive "capture to end of line" regex
+        # matched the JSON string value's own closing quote as part of
+        # the suffix, producing literal_prediction_reasons entries like
+        # "nested-modifier-unsupported:appos\"" in real CI output.
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": json.dumps(
+                {
+                    "status": "propose-scenario-failed",
+                    "sentence": "Tolstoy's books were published widely",
+                    "detail": "nested-modifier-unsupported:appos",
+                },
+                indent=2,
+            ),
+        }
+        self.assertEqual(
+            literal_reason(row), "failed:exit1:nested-modifier-unsupported:appos"
+        )
+
+    def test_exit1_suffix_from_json_wrapped_failure_never_includes_a_stray_quote(
+        self,
+    ) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": json.dumps(
+                {
+                    "status": "propose-scenario-failed",
+                    "sentence": "The company floreated its policy",
+                    "detail": "unsupported-action-role:floreate",
+                },
+                indent=2,
+            ),
+        }
+        reason = literal_reason(row)
+        self.assertEqual(reason, "failed:exit1:unsupported-action-role:floreate")
+        self.assertNotIn('"', reason)
+
     def test_exit4_recognizes_each_known_composition_failure(self) -> None:
         cases = {
             "malformed GF tree near Because": "malformed GF tree near ",
@@ -444,6 +495,22 @@ class Exit1SuffixedTokenTests(unittest.TestCase):
                 "ValueError: unsupported-action-role:announce\nmore traceback below",
             ),
             "unsupported-action-role:announce",
+        )
+
+    def test_recovers_the_suffix_from_the_real_json_wrapped_failure_shape(
+        self,
+    ) -> None:
+        failure_text = json.dumps(
+            {
+                "status": "propose-scenario-failed",
+                "sentence": "Tolstoy's books were published widely",
+                "detail": "nested-modifier-unsupported:nmod:poss",
+            },
+            indent=2,
+        )
+        self.assertEqual(
+            exit1_suffixed_token("nested-modifier-unsupported", failure_text),
+            "nested-modifier-unsupported:nmod:poss",
         )
 
 
