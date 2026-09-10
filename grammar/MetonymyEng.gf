@@ -1,5 +1,5 @@
 concrete MetonymyEng of Metonymy =
-  open SyntaxEng, ExtendEng, VerbEng, ParadigmsEng, ExtraEng, Predef, (R=ResEng) in {
+  open SyntaxEng, ExtendEng, VerbEng, ParadigmsEng, ExtraEng, (R=ResEng) in {
 
   lincat
     S = S ;
@@ -153,66 +153,46 @@ concrete MetonymyEng of Metonymy =
     -- proper-noun-length issue (run-4-or-more, which OpenPN2/OpenPN3
     -- don't cover).
     --
-    -- Three failed attempts before this one, all confirmed by real CI
-    -- runs, not guessed:
-    -- 1. SentenceEng.ExtAdvS/SSubjS (RGL's own comma-inserting
-    --    combinators) -- compiled cleanly but did not parse.
-    -- 2. SyntaxEng.mkAdv because_Subj/if_Subj/when_Subj/although_Subj
-    --    (Structural.gf's closed Subj vocabulary) with a hand-rolled
-    --    comma -- STILL failed identically. Suspected (wrongly, as it
-    --    turned out) to be StructuralEng.gf's `because_Subj = ss
-    --    "because"` -- hardcoded lowercase, no capitalized variant
-    --    anywhere in RGL, and every fronted test sentence used natural
-    --    English sentence-initial capitalization ("Because Napoleon...").
-    -- 3. Dropped SyntaxEng.mkAdv/because_Subj/Subj entirely, hand-rolling
-    --    every one of these with plain literal words instead -- correct
-    --    capitalization this time (fronted forms capitalized, trailing
-    --    ones lowercase) -- STILL failed, identically, a third time.
-    -- Added a diagnostic-only `linearize` command to the engine
-    -- (engine/app/Main.hs's runLinearize) to see what this grammar
-    -- actually generates instead of guessing a fourth time. Answer,
-    -- confirmed directly from real CI output: `"Because Napoleon
-    -- announces a programme , Waterloo announces a programme"` -- a
-    -- SPACE before the comma. GF's `++` auto-inserts a space between
-    -- adjacent tokens by default; a bare `"," ++` never suppressed it.
-    -- Real WiMCor/ConMeC sentences never have a space before a comma, so
-    -- even a "fixed" version accepting that spacing would never match
-    -- real production text -- confirmed the round-trip test (GF's own
-    -- generated string fed back into `parse`) passes, proving the
-    -- *rule* is fine; only the spacing was wrong. `frontComma`'s own
-    -- `SOFT_BIND` (attempt 1) was the right tool for this specific job
-    -- all along -- it suppresses the auto-inserted space before the
-    -- token it precedes, exactly matching natural English "word,"
-    -- punctuation. Combining it with the confirmed-correct capitalization
-    -- from attempt 3 (which SOFT_BIND alone, in attempt 1, never
-    -- addressed) is the fix. SOFT_BIND is GF's own compiler-hardcoded
-    -- `Predef` module (`resource Predef = { ... oper SOFT_BIND : Str =
-    -- variants {} ; ... }`, gf-rgl's src/prelude/Predef.gf) -- not
-    -- usable bare without opening it (confirmed by a real CI compile
-    -- error, "constant not found: SOFT_BIND", the first genuine
-    -- compile-time failure any of these four rounds actually hit).
-    -- `Predef` is a new `open`, cross-checked first: its two
-    -- generic-sounding overlaps with already-open modules (`BIND` in
-    -- ExtendEng, `nonExist` in ExtraEng) are both only internal
-    -- references via explicit `Predef.BIND`/`Predef.nonExist`
-    -- qualification, not independent redeclarations -- the same
-    -- false-positive shape `PredVP` turned out to be earlier.
+    -- Six rounds to find the real fix (see docs/contextual-tower.md's
+    -- "Six rounds to the real fix" for the full story) -- three grammar
+    -- rewrites (SentenceEng.ExtAdvS/SSubjS; SyntaxEng.mkAdv+hand-rolled
+    -- comma; fully hand-rolled literals) all failed parsing identically,
+    -- a SOFT_BIND attempt hit a compile error and then STILL failed
+    -- identically once fixed. Installing a local GF (the official
+    -- Windows release, against this project's own pinned gf-rgl commit
+    -- -- no Cabal/GHC step needed, `gf -make` compiles .gf source
+    -- directly) finally answered why: GF's parser uses a
+    -- whitespace-only tokenizer by default, so "programme," (no
+    -- preceding space) is ONE indivisible token to the parser, and no
+    -- grammar-level device -- BIND/SOFT_BIND included -- can
+    -- retroactively split an already-tokenized input string at parse
+    -- time. Those markers only ever affect linearization *display*
+    -- (`l`), never how `p` tokenizes raw input text.
+    --
+    -- The actual fix lives in the engine, not here:
+    -- engine/src/Metonymy/GF.hs's parseEnglish now runs
+    -- spaceBeforeCommas on the sentence before handing it to GF's
+    -- parser, so every comma-using construct below can go back to a
+    -- plain literal "," -- no BIND, no SOFT_BIND, no `open Predef`.
+    -- Verified locally against all thirteen relevant sentences (every
+    -- prior working case plus every comma-using one) before and after
+    -- the engine change: zero regressions.
     BecauseS embedded main =
-      lin S {s = "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
+      lin S {s = "Because" ++ embedded.s ++ "," ++ main.s} ;
     IfS embedded main =
-      lin S {s = "If" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
+      lin S {s = "If" ++ embedded.s ++ "," ++ main.s} ;
     WhenS embedded main =
-      lin S {s = "When" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
+      lin S {s = "When" ++ embedded.s ++ "," ++ main.s} ;
     AlthoughS embedded main =
-      lin S {s = "Although" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s} ;
+      lin S {s = "Although" ++ embedded.s ++ "," ++ main.s} ;
     SBecauseS main embedded =
-      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "because" ++ embedded.s} ;
+      lin S {s = main.s ++ "," ++ "because" ++ embedded.s} ;
     SIfS main embedded =
-      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "if" ++ embedded.s} ;
+      lin S {s = main.s ++ "," ++ "if" ++ embedded.s} ;
     SWhenS main embedded =
-      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "when" ++ embedded.s} ;
+      lin S {s = main.s ++ "," ++ "when" ++ embedded.s} ;
     SAlthoughS main embedded =
-      lin S {s = main.s ++ SOFT_BIND ++ "," ++ "although" ++ embedded.s} ;
+      lin S {s = main.s ++ "," ++ "although" ++ embedded.s} ;
 
     -- Short comma-delimited appositive ("Waterloo, Ontario, announces a
     -- programme"). Deliberately bounded to 1-2 appositive words, not a

@@ -553,70 +553,11 @@ any grammar code, and both deliberately scoped to what GF can do safely:
   (trailing: "main, because EMBEDDED"). Both `S` arguments are built from
   this grammar's own existing `Pred`/`Compl`/`PredCopNP` -- no open-ended
   `String` parameter anywhere in this construct, so none of the
-  `PrepPP`-class ambiguity risk.
-  Four rounds to get here, every one confirmed by a real CI run, not
-  guessed:
-  1. `SentenceEng.ExtAdvS`/`SSubjS` (RGL's own comma-inserting
-     combinators, `ExtAdvS a s = {s = a.s ++ frontComma ++ s.s}`,
-     `frontComma = SOFT_BIND ++ ","`) -- compiled cleanly (`SentenceEng`
-     was a new `open`, cross-checked against every already-open module's
-     exports first; the only name in common, `PredVP`, turned out to be
-     `ExtendEng`'s own internal reference via its own `open GrammarEng`,
-     not an independent redeclaration) but did not *parse*.
-  2. Dropped `SentenceEng`, used RGL's closed `Subj` vocabulary
-     (`because_Subj`/`if_Subj`/`when_Subj`/`although_Subj`) through
-     `SyntaxEng.mkAdv`'s `Subj -> S -> Adv` overload with a hand-rolled
-     comma -- **failed identically to round 1**, same sentences, same
-     token positions. Suspected `because_Subj = ss "because"`
-     (`StructuralEng.gf`) -- hardcoded lowercase, no capitalized variant
-     anywhere in RGL, and every fronted test sentence used natural
-     sentence-initial capitalization ("Because Napoleon...").
-  3. Dropped `SyntaxEng.mkAdv`/`Subj` entirely, hand-rolled all eight
-     functions with plain literal words, correct capitalization this
-     time -- **still failed identically**, a third time, even on a
-     freshly-migrated repository (ruling out anything CI-environment-
-     specific). Three rounds converging on the exact same failure,
-     despite each one changing something different (the comma mechanism
-     twice, the vocabulary/capitalization once), meant the bug was in
-     neither of the things any round had actually changed.
-  4. Rather than guess a fourth grammar rewrite, added a diagnostic-only
-     `linearize` command to the engine (`engine/app/Main.hs`'s
-     `runLinearize`, wired to the already-existing `linearize` function
-     in `Metonymy.GF`, previously only used internally) and asked it
-     directly what `BecauseS`'s own tree actually produces. Answer:
-     `"Because Napoleon announces a programme , Waterloo announces a
-     programme"` -- **a space before the comma**. GF's `++` auto-inserts
-     a space between adjacent tokens by default; the bare `"," ++` used
-     in rounds 2-3 never suppressed it. A round-trip test (feeding that
-     exact space-having string back into `parse`) succeeded, proving the
-     *rule* was sound all along and only the spacing was wrong -- not a
-     structural GF limitation as the round-3 failure pattern had
-     suggested. Real WiMCor/ConMeC text never has a space before a
-     comma, so this was a genuine production bug, not just a test-typing
-     mismatch: even a version of the test accepting the stray space
-     would never have matched real corpus sentences. Brought back
-     `SOFT_BIND` (round 1's own mechanism, abandoned too early) for the
-     comma specifically, combined with round 3's confirmed-correct
-     capitalization fix -- `BecauseS embedded main = lin S {s =
-     "Because" ++ embedded.s ++ SOFT_BIND ++ "," ++ main.s}`. First push
-     of this hit a genuine *compile* error (the first of the four
-     rounds), not another parse mismatch: `"constant not found:
-     SOFT_BIND"`. `SOFT_BIND` turned out not to be a bare-word GF
-     builtin after all -- it comes from GF's own compiler-hardcoded
-     `Predef` resource (`gf-rgl`'s `src/prelude/Predef.gf`:
-     `resource Predef = { ... oper SOFT_BIND : Str = variants {} ; ...
-     }`), which needs its own `open Predef`. Cross-checked first, same
-     discipline as every other new module this session: two
-     generic-sounding names overlap with already-open modules (`BIND` in
-     `ExtendEng`, `nonExist` in `ExtraEng`), both confirmed to be only
-     internal references via explicit `Predef.BIND`/`Predef.nonExist`
-     qualification, the same false-positive shape `PredVP` turned out to
-     be earlier -- not independent redeclarations.
-     `tests/evaluation/test_gf_parse_diagnostic_matrix.py`
-     now asserts the exact corrected linearization for both the fronted
-     and trailing forms, so a future regression here is caught by a
-     direct string mismatch instead of another round of token-position
-     guessing.
+  `PrepPP`-class ambiguity risk. Final linearizations are the plain,
+  literal idiom used everywhere else in this file (`BecauseS embedded
+  main = lin S {s = "Because" ++ embedded.s ++ "," ++ main.s}`) -- no
+  BIND, no SOFT_BIND, no `open Predef`. See below for why: the real fix
+  was never in the grammar.
 - **`ApposCommaPN1`/`ApposCommaPN2 : String -> ... -> NP`** -- a short
   (1- or 2-word) comma-delimited appositive ("Waterloo, Ontario,
   announces a programme"), via the exact same hand-rolled
@@ -629,20 +570,124 @@ any grammar code, and both deliberately scoped to what GF can do safely:
   takes a `CN`, not the `NP` this grammar's `OpenPN` family already
   produces.
 
+#### Six rounds to the real fix -- and finally getting a local GF to stop guessing
+
+Every round below was confirmed by a real run, not guessed -- first CI,
+then (rounds 5-6) a GF toolchain installed directly on the development
+machine, which is why the guessing finally stopped:
+
+1. `SentenceEng.ExtAdvS`/`SSubjS` (RGL's own comma-inserting combinators,
+   `frontComma = SOFT_BIND ++ ","`) -- compiled cleanly (`SentenceEng`
+   was a new `open`, cross-checked against every already-open module's
+   exports first; the only name in common, `PredVP`, turned out to be
+   `ExtendEng`'s own internal reference via its own `open GrammarEng`,
+   not an independent redeclaration) but did not *parse*.
+2. Dropped `SentenceEng`, used RGL's closed `Subj` vocabulary through
+   `SyntaxEng.mkAdv`'s `Subj -> S -> Adv` overload with a hand-rolled
+   comma -- **failed identically to round 1**. Suspected
+   `because_Subj = ss "because"` (`StructuralEng.gf`) -- hardcoded
+   lowercase, no capitalized variant anywhere in RGL, and every fronted
+   test sentence used natural sentence-initial capitalization.
+3. Dropped `SyntaxEng.mkAdv`/`Subj` entirely, hand-rolled all eight
+   functions with plain literal words, correct capitalization this time
+   -- **still failed identically**, a third time, even on a
+   freshly-migrated repository (ruling out anything CI-environment-
+   specific). Three rounds converging on the exact same failure, despite
+   each changing something different, meant the bug was in neither of
+   the things any round had actually changed.
+4. Added a diagnostic-only `linearize` command to the engine
+   (`engine/app/Main.hs`'s `runLinearize`, wired to the already-existing
+   `linearize` function in `Metonymy.GF`) and asked it directly what
+   `BecauseS`'s own tree produces: `"Because Napoleon announces a
+   programme , Waterloo announces a programme"` -- a space before the
+   comma. A round-trip test (that exact string fed back into `parse`)
+   succeeded, proving the *rule* was sound and only the spacing was
+   wrong. Brought back `SOFT_BIND` for the comma, combined with round
+   3's capitalization fix.
+5. That push hit a genuine *compile* error instead of a parse mismatch:
+   `"constant not found: SOFT_BIND"`. `SOFT_BIND` isn't a bare-word GF
+   builtin -- it's from GF's own compiler-hardcoded `Predef` resource
+   (`gf-rgl`'s `src/prelude/Predef.gf`), which needs its own
+   `open Predef`. Added it, cross-checked first as always (`BIND` in
+   `ExtendEng`, `nonExist` in `ExtraEng` both confirmed to be only
+   internal references, the same false-positive shape `PredVP` was
+   earlier) -- **still failed identically to rounds 1-3** once it
+   compiled. Six sentences, three grammar rewrites, and now a compile
+   error too, all circling the same symptom, was the point CI-round
+   guessing stopped being worth it.
+6. Installed GF directly on the development machine instead: the
+   official Windows release (`gf-3.12-windows.zip`, from the same
+   GitHub release `ci.yml` already downloads its Ubuntu `.deb` from) plus
+   a plain `git clone` of this project's own pinned `gf-rgl` commit
+   (`e825d9223305ad3066e1ac5b276bcdedd2fcd15a`) -- no Cabal/GHC build
+   step needed, since `gf -make` compiles `.gf` source directly given a
+   `-path` pointing at the RGL source tree's own subdirectories. This
+   reproduced the CI failure exactly, then let every hypothesis below be
+   tested in seconds instead of a 10+ minute CI round: `l -bind` showed
+   `SOFT_BIND` genuinely does not collapse the space in `gf --run`'s
+   default renderer (`BIND` shows as a literal `&+` marker instead); `+`
+   (GF's morphology-gluing operator, distinct from `++`) can't glue a
+   runtime string variable at all (`"one of the arguments... is a bound
+   variable... non-exhaustive"` -- it needs compile-time-known cases).
+   The real finding: `help p` / `help ps` reveal GF's parser uses a
+   **whitespace-only tokenizer by default** (`-words`, "tokens separated
+   by spaces") -- "programme," with no preceding space is *one
+   indivisible token*, and no grammar-level device, BIND-family included,
+   can retroactively split an already-tokenized input string at parse
+   time; BIND/SOFT_BIND only ever affected *linearization* display, never
+   what the parser's tokenizer does to raw input text. Confirmed the
+   fix directly: `ps -lextext "..." | p` (GF's own text-lexer,
+   piped into parse) succeeds; feeding the *identical* sentence with a
+   manually-inserted space before the comma also succeeds, using a plain
+   `","` literal with no BIND anywhere. That also explained why
+   `ApposCommaPN1`/`ApposCommaPN2` had appeared to work in every prior CI
+   run: they never actually matched at all -- `OpenPN2` (matching *any*
+   two whitespace-delimited tokens) was silently absorbing the
+   comma-fused tokens themselves (`OpenPN2 "Waterloo," "Ontario,"`,
+   comma included in the string) as an accidental two-word proper name,
+   producing a real parse tree with the *wrong* semantics that happened
+   to satisfy `assert_parses`.
+
+**The actual fix lives in the engine, not the grammar.**
+`engine/src/Metonymy/GF.hs`'s `parseEnglish` now runs `spaceBeforeCommas`
+on the sentence before handing it to GF: inserts a space before any
+comma that doesn't already have one immediately preceding it, a no-op
+for every sentence that doesn't reach a comma-using construct (which,
+before this session's comma-based grammar additions, was every sentence
+this engine had ever parsed). With that in place, `grammar/Metonymy.gf`/
+`MetonymyEng.gf` went back to the plain `","` idiom for all ten
+comma-using functions (`BecauseS`-family, `SBecauseS`-family,
+`ApposCommaPN1`/`ApposCommaPN2`) -- no BIND, no SOFT_BIND, no
+`open Predef`. Verified locally against all thirteen relevant sentences
+at once (every prior working case plus every comma-using one) both
+before and after the engine change: zero regressions, and
+`ApposCommaPN1`/`ApposCommaPN2` now genuinely match (confirmed by
+inspecting the returned tree, not just that *some* tree came back).
+
+This machine now has a working local GF (`gf.exe` at
+`C:\Users\Administrator\gf-local\gf.exe`, RGL source cloned at the pinned
+commit under `C:\Users\Administrator\gf-local\gf-rgl-src`) for any future
+grammar work: compile with `gf -path="<rgl>/src/english:<rgl>/src/abstract:<rgl>/src/api:<rgl>/src/prelude:<rgl>/src/common"
+-make grammar/MetonymyEng.gf`, then `gf --run Metonymy.pgf` for an
+interactive `p`/`l` session -- no more spending a CI round on something
+testable in seconds. The compiled `.gfo`/`.pgf` artifacts are already
+gitignored (`*.gfo`, `*.pgf`), so nothing from this needs cleanup before
+committing grammar changes.
+
 **Deliberately deferred, with reasoning, not just noted:**
 
 - **Appositives/parenthetical asides of arbitrary length.** GF's `String`
-  category matches exactly one token during parsing -- confirmed, not
-  assumed (the same limit that motivated `OpenPN2`/`OpenPN3`). A real
-  appositive is often longer than two words ("a county in the U.S. state
-  of Alabama"), and no fixed arity scales to cover that combinatorially.
-  The only GF-native path to unbounded length is a recursive
-  comma-bracketed "list of words" category -- but that is a materially
-  different, higher-ambiguity-risk mechanism than anything in this
-  grammar so far, the same class of risk that made the original `PrepPP`
-  experiment fail, at a scale this repository's toolchain-free machine
-  cannot verify locally. Asked the user explicitly before scoping this
-  batch; the answer was to defer it, not attempt it blind.
+  category matches exactly one token during parsing (the same limit that
+  motivated `OpenPN2`/`OpenPN3`). A real appositive is often longer than
+  two words ("a county in the U.S. state of Alabama"), and no fixed
+  arity scales to cover that combinatorially. The only GF-native path to
+  unbounded length is a recursive comma-bracketed "list of words"
+  category -- a materially different, higher-ambiguity-risk mechanism
+  than anything in this grammar so far, the same class of risk that made
+  the original `PrepPP` experiment fail. Asked the user explicitly before
+  scoping this batch; the answer was to defer it, not attempt it blind --
+  this is now testable locally (see above) if it's revisited, rather than
+  needing another multi-CI-round investigation.
 - **Numerals** (the `has_digit` signal: 49%/28%). Weaker, less isolated
   evidence than `has_comma` -- the two signals are not mutually
   exclusive, so a comma-caused failure can just as easily also contain an
@@ -655,11 +700,16 @@ any grammar code, and both deliberately scoped to what GF can do safely:
 covers the tree-walker contract for both families in pure Python (arity,
 that `first_node` recurses into the wrapped clauses the same way it
 already does for `AndS`/`OrS`, that a short appositive subject degrades
-safely). `tests/evaluation/test_gf_parse_diagnostic_matrix.py` gained
-five real-sentence regression cases (a representative fronted clause, a
-second fronted conjunction, a trailing clause, and both appositive
-arities) -- the decisive check that these constructs actually parse in
-the real compiled grammar, not just compile without error.
+safely). `tests/evaluation/test_gf_parse_diagnostic_matrix.py`'s real
+compiled-grammar cases (a representative fronted clause, a second
+fronted conjunction, a trailing clause, both appositive arities, plus a
+`linearize` smoke test) are the decisive regression coverage --
+confirmed passing against the real engine, `spaceBeforeCommas` included,
+not just compiling. `engine/test/Main.hs` covers `spaceBeforeCommas`
+itself directly (a pure function, no GF/PGF dependency): inserts exactly
+one space before a bare comma, is a no-op when one is already there or
+there's no comma at all, handles multiple commas in one sentence, and
+handles a comma as the very first character safely.
 
 ### Cumulative constituent layers
 

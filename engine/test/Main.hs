@@ -48,6 +48,34 @@ main = do
         buildActionRoleIndex predicates verbNetActionRoles
       waterlooContext = waterlooContextFor waterlooSnapshot
 
+  -- spaceBeforeCommas (Metonymy/GF.hs): confirmed by direct testing
+  -- against a real gf.exe build (the official Windows release of GF
+  -- 3.12, against this project's own pinned gf-rgl commit) that GF's
+  -- default whitespace-only tokenizer treats "word," as one indivisible
+  -- token, and no grammar-level device (BIND/SOFT_BIND included) can
+  -- split it back apart at parse time -- every comma-using construct in
+  -- grammar/MetonymyEng.gf (BecauseS/SBecauseS-family,
+  -- ApposCommaPN1/ApposCommaPN2) needs the comma to already be its own
+  -- token by the time it reaches GF's parser, exactly like real English
+  -- commas already are whenever they happen to be preceded by a space.
+  assert
+    "spaceBeforeCommas inserts a space before a comma that lacks one"
+    (spaceBeforeCommas "Waterloo, Ontario" == "Waterloo , Ontario")
+  assert
+    "spaceBeforeCommas is a no-op when a space already precedes the comma"
+    (spaceBeforeCommas "Waterloo , Ontario" == "Waterloo , Ontario")
+  assert
+    "spaceBeforeCommas handles multiple commas in one sentence"
+    ( spaceBeforeCommas "Because X, Y announces Z, W"
+        == "Because X , Y announces Z , W"
+    )
+  assert
+    "spaceBeforeCommas is a no-op on a sentence with no comma at all"
+    (spaceBeforeCommas "Waterloo announces a programme" == "Waterloo announces a programme")
+  assert
+    "spaceBeforeCommas handles a comma as the very first character"
+    (spaceBeforeCommas ",Waterloo" == ",Waterloo")
+
   readScenario <- require "read-tolstoy"
   glassScenario <- require "drink-glass"
   moscowScenario <- require "moscow-signs"

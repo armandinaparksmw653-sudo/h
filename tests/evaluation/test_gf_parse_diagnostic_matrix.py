@@ -199,48 +199,49 @@ class GfParseDiagnosticMatrix(unittest.TestCase):
             "Waterloo announces a programme, because Napoleon announces a programme"
         )
 
-    # -- Regression checks for the real bug the `linearize` command found
-    # (engine/app/Main.hs's runLinearize, diagnostic-only, wired to the
-    # already-existing `linearize` function): a real CI run showed
-    # BecauseS's own linearization was `"Because Napoleon announces a
-    # programme , Waterloo announces a programme"` -- a SPACE before the
-    # comma, from GF's default auto-spacing between `++`-joined tokens,
-    # which a bare `"," ++` never suppressed. Real WiMCor/ConMeC text
-    # never has a space before a comma, so that was a real production
-    # bug, not just a test-typing mismatch -- confirmed separately
-    # because the *round-trip* (that exact space-having string fed back
-    # into `parse`) succeeded, proving the rule itself was sound and only
-    # the spacing was wrong. Fixed with `SOFT_BIND` (the same GF-core
-    # token RGL's own `frontComma` uses for this exact purpose). These
-    # two tests assert the corrected, natural-English linearization
-    # directly, so any future regression here is caught by an exact
-    # string mismatch instead of a token-position guessing game. --
-
-    def test_fronted_because_s_linearizes_without_a_space_before_the_comma(
-        self,
-    ) -> None:
+    def test_linearize_command_round_trips_a_because_s_tree(self) -> None:
+        """Smoke test for the `linearize` diagnostic command itself (see
+        the comment block below) -- confirms it still runs and produces
+        a string containing every word the tree should linearize to,
+        without pinning the exact spacing GF's raw `l` output happens to
+        use (that spacing is a debug-display detail, not something
+        either this command or `parse` depends on -- see below)."""
         tree = (
             'BecauseS '
             '(Pred (OpenPN "Napoleon") (Compl Announce (OpenIndefCN "programme" "programmes"))) '
             '(Pred (OpenPN "Waterloo") (Compl Announce (OpenIndefCN "programme" "programmes")))'
         )
-        self.assertEqual(
-            self.linearize(tree),
-            "Because Napoleon announces a programme, Waterloo announces a programme",
-        )
+        surface = self.linearize(tree)
+        for word in ("Because", "Napoleon", "announces", "Waterloo"):
+            self.assertIn(word, surface)
 
-    def test_trailing_s_because_s_linearizes_without_a_space_before_the_comma(
-        self,
-    ) -> None:
-        tree = (
-            'SBecauseS '
-            '(Pred (OpenPN "Waterloo") (Compl Announce (OpenIndefCN "programme" "programmes"))) '
-            '(Pred (OpenPN "Napoleon") (Compl Announce (OpenIndefCN "programme" "programmes")))'
-        )
-        self.assertEqual(
-            self.linearize(tree),
-            "Waterloo announces a programme, because Napoleon announces a programme",
-        )
+    # -- The real bug, found decisively using a local gf.exe build (the
+    # official Windows release of GF 3.12, plus the pinned gf-rgl commit
+    # this project already targets) instead of guessing through more CI
+    # rounds: GF's parser uses a whitespace-only tokenizer by default, so
+    # "programme," (no space) is ONE indivisible token, not two -- and no
+    # grammar-level device can retroactively split an already-fused
+    # input token at parse time. This was confirmed directly: BIND and
+    # SOFT_BIND (RGL's own `frontComma` mechanism) both leave "programme,
+    # Waterloo" unparseable, identically to a bare `"," ++`, because none
+    # of them change how the *input string* gets tokenized -- they only
+    # affect linearization/display. `linearize`'s raw output legitimately
+    # shows a space before the comma by default (`gf --run`'s `l` command
+    # without `-bind`); that is expected GF debug-display behavior, not a
+    # bug, and irrelevant to parsing either way.
+    #
+    # The actual fix lives in engine/src/Metonymy/GF.hs's parseEnglish:
+    # a space is inserted before any comma that doesn't already have one,
+    # right before the sentence reaches GF's parser -- so grammar/
+    # MetonymyEng.gf's comma-using constructs (BecauseS/SBecauseS-family,
+    # ApposCommaPN1/ApposCommaPN2) can all go back to a plain `","`
+    # literal, no BIND/SOFT_BIND machinery, no `open Predef`. Verified
+    # locally against all thirteen sentences in this file at once (every
+    # existing case plus every comma-using one) before touching the
+    # engine, then again after -- zero regressions. The parsing tests
+    # above and below this comment are the real regression coverage; this
+    # class's own `parse` helper goes through the compiled engine, so it
+    # exercises `spaceBeforeCommas` exactly as production does. --
 
     def test_short_one_word_appositive_subject_parses(self) -> None:
         self.assert_parses("Waterloo, Ontario, announces a programme")
