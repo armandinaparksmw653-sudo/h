@@ -437,5 +437,167 @@ class GfParseEmptyTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 7)
 
 
+def liverpool_announces_henry_ud_words() -> list[dict]:
+    # "Liverpool announces Henry" -- deliberately independent of
+    # propose_proposal's own "gf_sentence" text (that field is only used
+    # by the legacy `engine parse`-on-raw-text path, never read at all
+    # once the Stanza-built tree validates).
+    return [
+        {
+            "id": 1, "head": 2, "deprel": "nsubj", "upos": "PROPN",
+            "lemma": "Liverpool", "text": "Liverpool",
+            "start_char": 0, "end_char": 9,
+        },
+        {
+            "id": 2, "head": 0, "deprel": "root", "upos": "VERB",
+            "lemma": "announce", "text": "announces",
+            "start_char": 10, "end_char": 19,
+        },
+        {
+            "id": 3, "head": 2, "deprel": "obj", "upos": "PROPN",
+            "lemma": "Henry", "text": "Henry",
+            "start_char": 20, "end_char": 25,
+        },
+    ]
+
+
+class StanzaTreeFirstTests(unittest.TestCase):
+    """Phase 1 of the "Stanza instead of GF-as-parser" transition (see
+    scripts/build_gf_tree_from_dependencies.py and
+    docs/contextual-tower.md): build_gf_tree is tried before `engine
+    parse` on raw text, using --dependency-hint's "ud_words". Uses the
+    real, on-disk data/contextual-gf-actions.json (only subprocess.run is
+    mocked here, not file reads) -- "announce" maps to the real "Announce"
+    V2 already in grammar/Metonymy.gf, confirmed by grep.
+    """
+
+    def _run_main_with_hint(
+        self, ud_words: list[dict] | None, fake_run
+    ) -> tuple[str, int]:
+        hint = {"dep_status": "direct-argument", "ud_words": ud_words}
+        sys.argv = [
+            "run_automatic_contextual_pipeline.py",
+            "--engine",
+            "build/metonymy",
+            "--snapshot",
+            "data/wikidata-openalex-snapshot",
+            "--sentence",
+            "Liverpool announces Henry",
+            "--source",
+            "Liverpool",
+            "--ablation",
+            "no-wordnet",
+            "--dependency-hint",
+            json.dumps(hint),
+        ]
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("subprocess.run", side_effect=fake_run):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    run_automatic_contextual_pipeline.main()
+        return stdout.getvalue() + stderr.getvalue(), raised.exception.code
+
+    def test_a_validated_stanza_built_tree_skips_engine_parse_entirely(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(command, **kwargs):
+            calls.append(list(command))
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout="Liverpool announces Henry\n",
+                    stderr="",
+                )
+            if command[1] == "parse":
+                raise AssertionError(
+                    "engine parse must never run once the Stanza-built "
+                    "tree already validated"
+                )
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_hint(
+            liverpool_announces_henry_ud_words(), fake_run
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+        engine_calls = [call for call in calls if call[0] != "python3"]
+        self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
+        self.assertFalse(any(call[1] == "parse" for call in engine_calls))
+
+    def test_falls_back_to_engine_parse_when_build_gf_tree_declines(self) -> None:
+        # A passive clause (nsubj:pass/aux:pass) is outside Phase 1's
+        # scope -- build_gf_tree returns None, so this must fall back to
+        # asking GF's own parser to read raw text, unchanged.
+        passive_ud_words = [
+            {
+                "id": 1, "head": 3, "deprel": "nsubj:pass", "upos": "PROPN",
+                "lemma": "Henry", "text": "Henry", "start_char": 0, "end_char": 5,
+            },
+            {
+                "id": 2, "head": 3, "deprel": "aux:pass", "upos": "AUX",
+                "lemma": "be", "text": "was", "start_char": 6, "end_char": 9,
+            },
+            {
+                "id": 3, "head": 0, "deprel": "root", "upos": "VERB",
+                "lemma": "announce", "text": "announced",
+                "start_char": 10, "end_char": 19,
+            },
+        ]
+
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                raise AssertionError(
+                    "linearize must never run when build_gf_tree returned None"
+                )
+            if command[1] == "parse":
+                return gf_parse_result()
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_hint(passive_ud_words, fake_run)
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+
+    def test_falls_back_to_engine_parse_when_linearize_validation_fails(self) -> None:
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=1,
+                    stdout="",
+                    stderr="malformed or incomplete GF tree",
+                )
+            if command[1] == "parse":
+                return gf_parse_result()
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_hint(
+            liverpool_announces_henry_ud_words(), fake_run
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+
+    def test_falls_back_to_engine_parse_when_there_are_no_ud_words_at_all(self) -> None:
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                raise AssertionError("linearize must never run with no ud_words hint")
+            if command[1] == "parse":
+                return gf_parse_result()
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_hint(None, fake_run)
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+
+
 if __name__ == "__main__":
     unittest.main()

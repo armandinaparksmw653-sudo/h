@@ -11,6 +11,8 @@ from annotate_dependency_hints import (  # noqa: E402
     annotate,
     classify_word,
     find_governing_structure,
+    find_sentence_ud_words,
+    serialize_sentence_words,
     validate_row,
 )
 
@@ -206,6 +208,63 @@ class FindGoverningStructureTests(unittest.TestCase):
         )
 
 
+class SerializeSentenceWordsTests(unittest.TestCase):
+    def test_flattens_every_word_in_sentence_order(self) -> None:
+        document = moscow_signed_document()
+        self.assertEqual(
+            serialize_sentence_words(document.sentences[0]),
+            [
+                {
+                    "id": 1, "head": 2, "deprel": "nsubj", "upos": "PROPN",
+                    "lemma": "Moscow", "text": "Moscow",
+                    "start_char": 0, "end_char": 6,
+                },
+                {
+                    "id": 2, "head": 0, "deprel": "root", "upos": "VERB",
+                    "lemma": "sign", "text": "signed",
+                    "start_char": 7, "end_char": 13,
+                },
+                {
+                    "id": 3, "head": 4, "deprel": "det", "upos": "DET",
+                    "lemma": "the", "text": "the",
+                    "start_char": 14, "end_char": 17,
+                },
+                {
+                    "id": 4, "head": 2, "deprel": "obj", "upos": "NOUN",
+                    "lemma": "agreement", "text": "agreement",
+                    "start_char": 18, "end_char": 27,
+                },
+            ],
+        )
+
+
+class FindSentenceUdWordsTests(unittest.TestCase):
+    def test_returns_every_word_of_the_sentence_containing_the_span(self) -> None:
+        document = moscow_signed_document()
+        words = find_sentence_ud_words(document, 0, 6)
+        self.assertEqual(len(words), 4)
+        self.assertEqual(words[1]["deprel"], "root")
+        self.assertEqual(words[1]["lemma"], "sign")
+
+    def test_returns_none_when_no_sentence_covers_the_span(self) -> None:
+        document = moscow_signed_document()
+        self.assertIsNone(find_sentence_ud_words(document, 100, 110))
+
+    def test_agrees_with_find_governing_structure_on_which_sentence(self) -> None:
+        # Both are built on the same shared sentence lookup -- confirms
+        # they never disagree about which sentence "the" target's
+        # sentence is.
+        words = [
+            FakeWord(1, "Anna", "Anna", "PROPN", "nsubj", 2, 0, 4),
+            FakeWord(2, "visited", "visit", "VERB", "root", 0, 5, 12),
+            FakeWord(3, "New", "New", "PROPN", "compound", 4, 13, 16),
+            FakeWord(4, "York", "York", "PROPN", "obj", 2, 17, 21),
+        ]
+        document = FakeDocument([FakeSentence(words)])
+        ud_words = find_sentence_ud_words(document, 13, 21)
+        self.assertEqual([word["text"] for word in ud_words], ["Anna", "visited", "New", "York"])
+
+
 class ValidateRowTests(unittest.TestCase):
     def test_valid_row_returns_text_and_span(self) -> None:
         row = {
@@ -305,6 +364,7 @@ class AnnotateTests(unittest.TestCase):
                     "governing_end": None,
                     "voice": "active",
                     "nested_modifier_deprel": "",
+                    "ud_words": None,
                 }
             ],
         )
@@ -333,6 +393,28 @@ class AnnotateTests(unittest.TestCase):
                     "governing_end": 13,
                     "voice": "active",
                     "nested_modifier_deprel": "",
+                    "ud_words": [
+                        {
+                            "id": 1, "head": 2, "deprel": "nsubj", "upos": "PROPN",
+                            "lemma": "Moscow", "text": "Moscow",
+                            "start_char": 0, "end_char": 6,
+                        },
+                        {
+                            "id": 2, "head": 0, "deprel": "root", "upos": "VERB",
+                            "lemma": "sign", "text": "signed",
+                            "start_char": 7, "end_char": 13,
+                        },
+                        {
+                            "id": 3, "head": 4, "deprel": "det", "upos": "DET",
+                            "lemma": "the", "text": "the",
+                            "start_char": 14, "end_char": 17,
+                        },
+                        {
+                            "id": 4, "head": 2, "deprel": "obj", "upos": "NOUN",
+                            "lemma": "agreement", "text": "agreement",
+                            "start_char": 18, "end_char": 27,
+                        },
+                    ],
                 }
             ],
         )
@@ -372,6 +454,33 @@ class AnnotateTests(unittest.TestCase):
                     "governing_end": None,
                     "voice": "active",
                     "nested_modifier_deprel": "nmod:poss",
+                    "ud_words": [
+                        {
+                            "id": 1, "head": 2, "deprel": "nsubj", "upos": "PROPN",
+                            "lemma": "Anna", "text": "Anna",
+                            "start_char": 0, "end_char": 4,
+                        },
+                        {
+                            "id": 2, "head": 0, "deprel": "root", "upos": "VERB",
+                            "lemma": "read", "text": "reads",
+                            "start_char": 5, "end_char": 10,
+                        },
+                        {
+                            "id": 3, "head": 5, "deprel": "nmod:poss", "upos": "PROPN",
+                            "lemma": "Tolstoy", "text": "Tolstoy",
+                            "start_char": 11, "end_char": 18,
+                        },
+                        {
+                            "id": 4, "head": 3, "deprel": "case", "upos": "PART",
+                            "lemma": "'s", "text": "'s",
+                            "start_char": 18, "end_char": 20,
+                        },
+                        {
+                            "id": 5, "head": 2, "deprel": "obj", "upos": "NOUN",
+                            "lemma": "book", "text": "books",
+                            "start_char": 21, "end_char": 26,
+                        },
+                    ],
                 }
             ],
         )

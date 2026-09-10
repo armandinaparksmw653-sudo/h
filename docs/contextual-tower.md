@@ -1191,3 +1191,111 @@ any single one dominates -- the concrete, evidenced basis for deciding
 whether that specific GF construction is worth adding next, and whether
 the `nmod`-dominant nested-modifier gap deserves the deferred
 `PositiveGFTree`/`Elaborator.hs` work.
+
+## Phase 1: building the GF tree from a UD parse instead of asking GF to parse raw text
+
+Hand-growing `grammar/Metonymy.gf` one construction at a time (every
+section above) runs into the same wall computational-semantics research
+already hit and moved past decades ago: natural language's combinatorial
+diversity against a closed, hand-curated grammar. The established
+alternative -- broad-coverage dependency/CCG parse -> typed semantic
+construction -> formal checker (the C&C/Boxer line of work, and modern
+AMR-based pipelines) -- is a better fit, and this project already has
+the first half of it: Stanza, so far only used for one narrow purpose
+(`resolve_action`'s `dependency_hint`, classifying a single target
+word). This phase generalizes that: build the *whole* GF tree from
+Stanza's UD parse, and only ask GF's own parser to read raw text when
+that isn't possible.
+
+**Why this is safe to attempt at all**: confirmed by reading the code,
+not assumed -- in the contextual tower path, a GF tree
+(`run_automatic_contextual_pipeline.py`'s `trees[0]`) is consumed
+*entirely in Python*. `compile_gf_constraints`
+(`scripts/contextual_rule_compiler.py`) parses it with its own,
+GF-independent `parse_gf_tree`/`ARITIES` walker, and only the
+*constraints derived from it* (never the tree text itself) get
+TSV-encoded and handed to the compiled Haskell engine
+(`run_engine`'s row: `scenario/source_qid/action/role/max_depth/
+bridge_relations/encoded_constraints`). So changing *how* the tree is
+produced -- GF's own chart parser, or Python code assembling the same
+tree syntax from a UD graph -- requires zero Haskell/Agda changes,
+exactly the same guarantee that already let `dependency_hint` ship
+without touching a single Agda theorem. The one thing that mechanism
+gave up-front (a parser can't emit an ill-typed tree by construction) has
+to be re-added explicitly: a hand-built tree is validated by running it
+through `metonymy linearize` (the same diagnostic command added earlier
+this session for the comma-tokenizer investigation) before it's trusted.
+
+**What's implemented (Phase 1's own deliberately narrow first slice --
+see this session's plan file for the full phase breakdown; every UD
+shape past this one is explicitly deferred, added incrementally, one
+real measurement at a time)**:
+
+- `scripts/build_gf_tree_from_dependencies.py`'s `build_gf_tree(words,
+  lemma, gf_function_by_lemma)` covers only the simplest possible
+  transitive clause: one root VERB/AUX with exactly one `nsubj` and one
+  `obj`/`iobj`, each either a proper noun (1-3 token `compound` chain,
+  via the already-existing `OpenPN`/`OpenPN2`/`OpenPN3`) or a personal
+  pronoun (`he`/`she`/`it`/`they` -> `HePN`/`ShePN`/`ItPN`/`TheyPN`).
+  Every UD word in the sentence must have one of a small allowed-deprel
+  set (`root`/`nsubj`/`obj`/`iobj`/`compound`/`punct`) or the whole
+  sentence is declined (returns `None`) -- a passive, a PP modifier, a
+  determiner, coordination, a relative clause, anything this narrow
+  slice doesn't model bails out rather than risk silently dropping or
+  misrepresenting content. The verb's own GF function name comes from
+  `data/contextual-gf-actions.json` (`load_gf_function_by_lemma`, the
+  same source `compile_gf_constraints` already reads as `gf_actions`,
+  just inverted) -- the tree-builder never has to "discover" which V2
+  matches the way GF's own parser would; `resolve_action` already
+  resolved that.
+- `scripts/annotate_dependency_hints.py`'s hint schema gained a new
+  `"ud_words"` field (`serialize_sentence_words`/`find_sentence_ud_words`)
+  -- a flat, JSON-safe dump of *every* word in the target's sentence
+  (id/head/deprel/upos/lemma/text/character-span), not just the one
+  target word `find_governing_structure`'s existing fields classify.
+  Threading it through required no new plumbing in
+  `scripts/evaluation/run_contextual_corpus.py`: the whole hint dict,
+  whatever keys it carries, was already forwarded verbatim as one
+  `--dependency-hint` JSON blob.
+- `run_automatic_contextual_pipeline.py`: before asking `engine parse`
+  to read `proposal["gf_sentence"]`, tries `build_gf_tree` on
+  `--dependency-hint`'s `ud_words`; if it returns a tree, validates it
+  via `engine linearize`; only on both successes does it skip `engine
+  parse` entirely and use the built tree directly. Any decline at any
+  step (no `ud_words`, `build_gf_tree` returns `None`, or `linearize`
+  fails) falls through to the exact `engine parse`-on-raw-text path that
+  already existed -- so this can only ever be an *additional* source of
+  success, never a new source of failure. Verified directly (not just by
+  code inspection): five hand-built trees round-tripped through the
+  local `gf.exe`/pinned `gf-rgl` toolchain's own `l -lang=MetonymyEng`
+  linearizer and produced exactly the expected English.
+
+Tests: `tests/evaluation/test_build_gf_tree_from_dependencies.py` (17,
+covering every accept/decline case above), new cases in
+`tests/evaluation/test_annotate_dependency_hints.py` (the `ud_words`
+field, `serialize_sentence_words`, `find_sentence_ud_words` -- 29 tests
+total now), and `tests/evaluation/test_run_automatic_contextual_pipeline.py`'s
+new `StanzaTreeFirstTests` (4 tests, using the real on-disk
+`data/contextual-gf-actions.json` -- only `subprocess.run` is mocked --
+confirming the skip-`engine-parse`-entirely path, and three distinct
+ways of falling back to the legacy path unchanged). Full local suite:
+329 tests, same pre-existing baseline, no regressions.
+
+**Deliberately deferred** (see the plan file's own phase table): `obl`+
+`case` (the 13 closed prepositions), coordination, passive, copula,
+`nmod:poss`, `amod` (needs the common-noun `data/contextual-gf-nouns.json`
+lexicon, the first place this narrow "only proper nouns/pronouns" scope
+gets lifted), `acl:relcl`, fronted subordinate clauses, fronted PP-
+adverbials -- each its own commit, its own tests, its own real
+`contextual-tower-evaluation.yml` measurement, same discipline as every
+other phase in this document. Comma-appositives of unbounded length and
+parenthetical acronyms stay hybrid (punctuation-based, not pure UD deprel)
+even after this transition completes.
+
+**Next step**: commit, push, `ci.yml`, then a real
+`contextual-tower-evaluation.yml` run. Phase 1 alone is not expected to
+move recall much (it covers only the simplest clause shape), but should
+show some `exit7` `run-1`/`run-2`/`run-3` rows (simple proper-noun-only
+clauses previously failing GF's own parser) now succeeding via the
+Stanza-built path instead -- confirming the mechanism end-to-end before
+investing in the wider UD-shape coverage above.

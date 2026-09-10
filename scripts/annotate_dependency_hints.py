@@ -19,7 +19,19 @@ Output schema, one object per input row keyed by ``id``:
      "governing_lemma": "<verb lemma>" | "<verb lemma> <preposition>" | "",
      "governing_start": <int or null>, "governing_end": <int or null>,
      "voice": "active" | "passive",
-     "nested_modifier_deprel": "<UD deprel>" | ""}
+     "nested_modifier_deprel": "<UD deprel>" | "",
+     "ud_words": [{"id": int, "head": int, "deprel": str, "upos": str,
+                   "lemma": str, "text": str, "start_char": int,
+                   "end_char": int}, ...] | null}
+
+``ud_words`` is every UD word in the sentence containing the target span
+(see ``serialize_sentence_words``), not just the one target word the
+other fields classify -- feeds
+scripts/build_gf_tree_from_dependencies.py's build_gf_tree, which
+constructs a *whole* GF tree directly from the dependency graph instead
+of asking GF's own parser to read raw text (see that module's own
+docstring and docs/contextual-tower.md). ``null`` when the row's text
+didn't parse at all (mirrors ``dep_status == "parse-error"``).
 
 ``hole_role``, ``governing_lemma``, ``governing_start`` and
 ``governing_end`` are non-empty/non-null only when
@@ -241,16 +253,17 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
     return ("no-governing-verb", "", "", None, None, "active", "")
 
 
-def find_governing_structure(
+def _sentence_containing_span(
     document: Any, start: int, end: int
-) -> ClassifyResult:
-    """Locate the target span in a parsed document and classify it.
+) -> tuple[Any, list[Any]] | None:
+    """The (sentence, words_in_span) pair for the first sentence overlapping
+    [start, end), or None if none does.
 
     Character offsets on Stanza ``Word``/``Token`` objects are absolute
     over the whole input text, so sentences can be scanned in order
-    without renumbering; ``.head`` indices, by contrast, are only valid
-    within their own sentence, which is why classification happens once
-    the owning sentence is found.
+    without renumbering. Shared by find_governing_structure (below) and
+    find_sentence_ud_words, so both agree on exactly which sentence "the"
+    target's sentence is.
     """
     for sentence in document.sentences:
         words_in_span = [
@@ -261,17 +274,72 @@ def find_governing_structure(
             and word.parent.start_char < end
             and word.parent.end_char > start
         ]
-        if not words_in_span:
-            continue
-        span_ids = {word.id for word in words_in_span}
-        roots = [
-            word
-            for word in words_in_span
-            if word.head == 0 or word.head not in span_ids
-        ]
-        target_word = roots[-1] if roots else words_in_span[-1]
-        return classify_word(sentence, target_word)
-    return ("parse-error", "", "", None, None, "active", "")
+        if words_in_span:
+            return sentence, words_in_span
+    return None
+
+
+def find_governing_structure(
+    document: Any, start: int, end: int
+) -> ClassifyResult:
+    """Locate the target span in a parsed document and classify it.
+
+    ``.head`` indices are only valid within their own sentence, which is
+    why classification happens once the owning sentence is found.
+    """
+    found = _sentence_containing_span(document, start, end)
+    if found is None:
+        return ("parse-error", "", "", None, None, "active", "")
+    sentence, words_in_span = found
+    span_ids = {word.id for word in words_in_span}
+    roots = [
+        word
+        for word in words_in_span
+        if word.head == 0 or word.head not in span_ids
+    ]
+    target_word = roots[-1] if roots else words_in_span[-1]
+    return classify_word(sentence, target_word)
+
+
+def serialize_sentence_words(sentence: Any) -> list[dict]:
+    """Flat, JSON-safe serialization of every word in one UD sentence.
+
+    Feeds scripts/build_gf_tree_from_dependencies.py's build_gf_tree,
+    which needs the *whole* sentence's dependency graph (not just the
+    one target word find_governing_structure classifies) to construct a
+    complete GF tree. Every field here is either a small closed-
+    vocabulary tag (deprel, upos) or already present, unredacted, in the
+    corpus's own input text (lemma, text, character offsets) -- the same
+    risk class already accepted for governing_lemma/nested_modifier_deprel
+    above, just for every word instead of one.
+    """
+    return [
+        {
+            "id": word.id,
+            "head": word.head,
+            "deprel": word.deprel,
+            "upos": word.upos,
+            "lemma": word.lemma,
+            "text": word.text,
+            "start_char": word.parent.start_char,
+            "end_char": word.parent.end_char,
+        }
+        for word in sentence.words
+    ]
+
+
+def find_sentence_ud_words(
+    document: Any, start: int, end: int
+) -> list[dict] | None:
+    """serialize_sentence_words for the sentence containing [start, end),
+    or None if no sentence does (mirrors find_governing_structure's own
+    "parse-error" case, just returning None instead of a status string).
+    """
+    found = _sentence_containing_span(document, start, end)
+    if found is None:
+        return None
+    sentence, _words_in_span = found
+    return serialize_sentence_words(sentence)
 
 
 def validate_row(
@@ -364,6 +432,7 @@ def annotate(
                 "governing_end": None,
                 "voice": "active",
                 "nested_modifier_deprel": "",
+                "ud_words": None,
             }
             continue
         text, start, end = result
@@ -372,6 +441,7 @@ def annotate(
             status, hole_role, lemma, g_start, g_end, voice, nested_deprel = (
                 "parse-error", "", "", None, None, "active", "",
             )
+            ud_words = None
         else:
             try:
                 status, hole_role, lemma, g_start, g_end, voice, nested_deprel = (
@@ -381,6 +451,10 @@ def annotate(
                 status, hole_role, lemma, g_start, g_end, voice, nested_deprel = (
                     "parse-error", "", "", None, None, "active", "",
                 )
+            try:
+                ud_words = find_sentence_ud_words(document, start, end)
+            except Exception:  # noqa: BLE001 - malformed parse -> no tree-builder input
+                ud_words = None
         yield {
             "id": row["id"],
             "dep_status": status,
@@ -390,6 +464,7 @@ def annotate(
             "governing_end": g_end,
             "voice": voice,
             "nested_modifier_deprel": nested_deprel,
+            "ud_words": ud_words,
         }
 
 

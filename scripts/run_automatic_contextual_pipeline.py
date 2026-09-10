@@ -30,6 +30,17 @@ This candidate loop only applies to the "expand" direction
 operation (a contraction can be *correctly* rejected by the formal
 checker, which is not a failure to disambiguate) and keeps requiring
 exactly one resolved source QID, unchanged.
+
+Before asking GF's own parser to read proposal["gf_sentence"], this also
+tries scripts/build_gf_tree_from_dependencies.py's build_gf_tree, which
+constructs a GF tree directly from --dependency-hint's "ud_words" (the
+whole sentence's UD dependency graph, precomputed offline by
+annotate_dependency_hints.py) -- see that module's own docstring for why.
+Falls back to `engine parse` on raw text, unchanged, whenever there's no
+ud_words hint, build_gf_tree declines (any UD shape outside its
+deliberately narrow first slice), or `engine linearize` fails to validate
+the tree it built -- so this can only ever be an *additional* source of
+success, never a new source of failure.
 """
 
 from __future__ import annotations
@@ -42,6 +53,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from build_gf_tree_from_dependencies import build_gf_tree, load_gf_function_by_lemma
 from contextual_rule_compiler import compile_gf_constraints
 
 HEADER = "scenario\tsource_qid\taction\trole\tmax_depth\tbridge_relations\tconstraints\n"
@@ -242,25 +254,71 @@ def main() -> None:
             )
         )
         raise SystemExit(2)
-    parsed = subprocess.run(
-        [str(args.engine), "parse", proposal["gf_sentence"]],
-        text=True,
-        capture_output=True,
+    # Phase 1 of the "Stanza instead of GF-as-parser" transition (see
+    # scripts/build_gf_tree_from_dependencies.py and
+    # docs/contextual-tower.md): action_map is loaded here, once, rather
+    # than only later where gf_actions (its function->lemma direction,
+    # for compile_gf_constraints) used to be built -- load_gf_function_by_lemma
+    # needs the same JSON in the opposite (lemma->function) direction,
+    # and build_gf_tree needs an answer *before* deciding whether to call
+    # `engine parse` on raw text at all.
+    action_map = json.loads(Path(args.gf_actions).read_text(encoding="utf-8"))
+    dependency_hint_data = (
+        json.loads(args.dependency_hint) if args.dependency_hint else None
     )
-    if parsed.returncode != 0:
-        print(
-            json.dumps(
-                {
-                    "status": "gf-parse-failed",
-                    "gf_sentence": proposal["gf_sentence"],
-                    "detail": parsed.stderr.strip(),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+    stanza_built_tree = None
+    if dependency_hint_data and dependency_hint_data.get("ud_words"):
+        built_tree = build_gf_tree(
+            dependency_hint_data["ud_words"],
+            proposal["action"],
+            load_gf_function_by_lemma(action_map),
         )
-        raise SystemExit(3)
-    trees = [line for line in parsed.stdout.splitlines() if line.strip()]
+        if built_tree is not None:
+            # Still validate through GF's own type system before trusting
+            # a hand-built tree -- build_gf_tree only ever bails out to
+            # None on a UD shape it doesn't model, but a bug in it could
+            # still produce syntactically-wrong-but-plausible-looking
+            # text; `engine linearize` (the same diagnostic command added
+            # for the comma-tokenizer investigation) exits non-zero on
+            # anything that isn't a well-typed term of grammar/Metonymy.gf's
+            # own abstract syntax, at zero cost to what reaches Haskell/Agda
+            # either way (see this module's docstring: only the *derived*
+            # constraints ever reach the formal core, never this tree text).
+            validated = subprocess.run(
+                [str(args.engine), "linearize", built_tree],
+                text=True,
+                capture_output=True,
+            )
+            if validated.returncode == 0:
+                stanza_built_tree = built_tree
+
+    if stanza_built_tree is not None:
+        trees = [stanza_built_tree]
+    else:
+        # Falls back here whenever build_gf_tree declined (an unhandled
+        # UD shape, no ud_words hint at all, or the linearize validation
+        # above failed) -- identical to this module's behaviour before
+        # Phase 1 existed, so this can never be a new source of failure,
+        # only an alternate source of success.
+        parsed = subprocess.run(
+            [str(args.engine), "parse", proposal["gf_sentence"]],
+            text=True,
+            capture_output=True,
+        )
+        if parsed.returncode != 0:
+            print(
+                json.dumps(
+                    {
+                        "status": "gf-parse-failed",
+                        "gf_sentence": proposal["gf_sentence"],
+                        "detail": parsed.stderr.strip(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            raise SystemExit(3)
+        trees = [line for line in parsed.stdout.splitlines() if line.strip()]
     if not trees or trees[0].startswith("The parser failed"):
         # A bare `raise SystemExit("some string")` prints that string to
         # stderr and exits 1 -- the same exit code as every ValueError
@@ -296,9 +354,6 @@ def main() -> None:
         for line in source:
             row = json.loads(line)
             aliases.setdefault(row["alias"].casefold(), []).append(row["id"])
-    action_map = json.loads(
-        Path(args.gf_actions).read_text(encoding="utf-8")
-    )
     gf_actions = {
         action["gf_function"]: action["lemma"]
         for action in action_map["actions"]
