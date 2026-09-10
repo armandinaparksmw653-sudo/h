@@ -987,3 +987,96 @@ until `runtimeCheck` succeeds"); no formal theorem changed. `--contract-target`
 keeps the older, stricter single-candidate requirement, since a
 contraction can be *correctly* rejected by the formal checker and that
 must not be confused with a disambiguation failure.
+
+### Sub-bucketing the three new dominant abstain reasons
+
+After the batch-2 grammar additions (fronted/trailing subordinate clauses,
+short comma appositives, `OfPP`, fronted dates, `ParenNP`, pronouns) and
+the two real `resolve_action` bug fixes above, a real corpus evaluation
+run showed `exit7` (`gf-parse-empty`, the GF-parsing bottleneck this
+session spent most of its time on) had moved only slightly, and three
+*different* failure categories now dominate instead:
+`unsupported-action-role` (missing VerbNet-action vocabulary for the
+sentence's governing verb), `nested-modifier-unsupported` (the metonymy
+target sits inside a nested NP modifier -- a possessive, a relative
+clause, an adjective -- that `resolve_action` deliberately refuses to
+guess a role for), and `exit4` `semantic-composition-failed` (a handful
+of distinct, already-enumerated failure modes inside
+`compile_gf_constraints`'s own tree walk).
+
+One correction found while planning this instrumentation: unlike `ci.yml`
+(confirmed by reading its own workflow file -- it never installs Stanza,
+so every local reproduction on this session's dev machine, which lacks a
+working Stanza install for unrelated Windows/PyTorch DLL reasons, went
+through `resolve_action`'s no-hint positional fallback), the real
+`contextual-tower-evaluation.yml` workflow *does* install Stanza via
+`scripts/bootstrap_dependency_frontend.sh`. That means most real
+evaluation rows actually go through `resolve_action`'s
+`dependency_hint`-driven `direct-argument`/`nested-modifier` path, not
+the no-hint fallback -- so diagnosing these three categories needed safe,
+text-free instrumentation added to the real pipeline and measured by a
+real CI run, the same discipline already used for `exit1`/`exit2`/`exit7`
+earlier in this document, rather than another local no-Stanza
+reproduction.
+
+**What was added, all content-free by construction (see each function's
+own docstring for exactly what makes it safe):**
+
+- `scripts/annotate_dependency_hints.py`'s `ClassifyResult` gained a
+  seventh field, `nested_modifier_deprel` -- the specific UD relation
+  (one of the eight in `NESTED_MODIFIER_DEPRELS`) that made a target
+  count as a nested modifier in the first place, previously computed and
+  then discarded before reaching `resolve_action`.
+- `contextual_rule_compiler.resolve_action` now raises
+  `f"nested-modifier-unsupported:{deprel}"` when a hint carries that
+  field, and `f"unsupported-action-role:{governing_lemma}"` on the
+  `direct-argument` path when the hint's own `governing_lemma` is known
+  (the no-hint positional fallback still raises the bare string -- there
+  is no single "the lemma that should have matched" when the search ran
+  over every window in the sentence at once). Both suffixes reuse a risk
+  class this project already treats as safe to aggregate: a closed-
+  vocabulary UD relation label, or one common English verb lemma (or a
+  `"<verb> <preposition>"` phrasal reconstruction) -- never sentence text.
+- `scripts/evaluation/score_contextual_detection.py`'s `literal_reason`
+  now recovers that suffix (`exit1_suffixed_token`) so
+  `literal_prediction_reasons` reports e.g.
+  `failed:exit1:nested-modifier-unsupported:nmod:poss` or
+  `failed:exit1:unsupported-action-role:announce` as a natural histogram,
+  instead of one undifferentiated count per category.
+- A new `exit4_reason_bucket` sub-buckets exit 4 the same way
+  `exit2_candidate_bucket`/`exit7_gf_sentence_bucket` already sub-bucket
+  their own exit codes: `run_automatic_contextual_pipeline.py`'s exit-4
+  branch JSON-wraps the failure as `{"status":
+  "semantic-composition-failed", "gf_tree": ..., "detail": str(error)}`;
+  `exit4_reason_bucket` reads only `"detail"` (never `"gf_tree"`, which
+  does echo real sentence content -- the GF tree's own string leaves) and
+  matches it against `EXIT4_KNOWN_FAILURE_TOKENS`, the complete, already-
+  enumerated set of fixed messages `compile_gf_constraints`/`_origin`/
+  `_cumulative_origin` can raise (`"malformed GF tree near "`, `"GF
+  lexical token is absent from source: "`, `"ambiguous noun sort for GF
+  composition: "`, `" has no role rule for "`, and five others), the same
+  finite-message-set approach `KNOWN_FAILURE_TOKENS` already uses for
+  exit 1. Falls back to `"unrecognized"` on anything unparseable or
+  unmatched, same degrade-gracefully policy as its siblings.
+
+Covered by `tests/evaluation/test_annotate_dependency_hints.py` (25
+tests, including one confirming the deprel survives all the way through
+`annotate()`'s own output dict),
+`tests/evaluation/test_resolve_action_diagnostic_suffixes.py` (6 tests
+on both new suffixes, including the backward-compatible bare-string
+fallback), and new cases in
+`tests/evaluation/test_score_contextual_detection.py` (the suffix
+recovery, every `EXIT4_KNOWN_FAILURE_TOKENS` entry, and an explicit
+never-leaks-the-gf-tree-or-interpolated-content check).
+
+**Next step**: re-run `contextual-tower-evaluation.yml` and read the
+`literal_prediction_reasons` histogram in the Job Summary for the exact
+breakdown -- which UD relations actually dominate
+`nested-modifier-unsupported`, which verb lemmas dominate
+`unsupported-action-role`, and which of the nine known messages dominates
+`exit4`. Concrete fixes (a `PositiveGFTree`/`Elaborator.hs` widening for
+some nested-modifier shape, VerbNet vocabulary/selectional-restriction
+additions for specific lemmas, or an `exit4`-specific composition-matrix
+fix) depend entirely on that breakdown and are deliberately not guessed
+in advance -- the same "measure before fixing" discipline that already
+paid off three times earlier in this document.

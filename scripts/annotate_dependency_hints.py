@@ -18,7 +18,8 @@ Output schema, one object per input row keyed by ``id``:
      "hole_role": "Subject" | "Object" | "",
      "governing_lemma": "<verb lemma>" | "<verb lemma> <preposition>" | "",
      "governing_start": <int or null>, "governing_end": <int or null>,
-     "voice": "active" | "passive"}
+     "voice": "active" | "passive",
+     "nested_modifier_deprel": "<UD deprel>" | ""}
 
 ``hole_role``, ``governing_lemma``, ``governing_start`` and
 ``governing_end`` are non-empty/non-null only when
@@ -30,6 +31,15 @@ consumers that substitute a canonical verb form back into the sentence
 (e.g. scripts/contextual_rule_compiler.py's ``resolve_action``, which
 builds a GF-parseable sentence this way); the open-domain frontend
 consuming ``hole_role``/``governing_lemma`` alone does not need them.
+
+``nested_modifier_deprel`` is non-empty only when
+``dep_status == "nested-modifier"`` -- the specific closed-vocabulary UD
+relation (one of ``NESTED_MODIFIER_DEPRELS`` below, e.g. ``"nmod:poss"``
+for "Tolstoy's books") that made the target unresolvable, safe to
+aggregate (a fixed relation label, never sentence text) so
+scripts/evaluation/score_contextual_detection.py can report which
+specific nested-modifier shape actually dominates instead of one
+undifferentiated count.
 
 ``voice`` is ``"passive"`` only for a passive subject (UD ``nsubj:pass``,
 correctly reported as ``hole_role="Object"`` -- it is semantically the
@@ -110,7 +120,7 @@ Hint = dict[str, "str | int | None"]
 ValidatedRow = tuple[str, int, int]
 
 
-ClassifyResult = tuple[str, str, str, "int | None", "int | None", str]
+ClassifyResult = tuple[str, str, str, "int | None", "int | None", str, str]
 
 
 def _passive_verb_span(sentence: Any, head: Any) -> tuple[int, int]:
@@ -150,13 +160,17 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
     instead of real Stanza objects.
 
     Returns ``(dep_status, hole_role, governing_lemma, governing_start,
-    governing_end, voice)``. ``governing_start``/``governing_end`` are the
-    governing word's own absolute character span -- covering the
-    case-marking preposition too for a reconstructed phrasal verb, or the
-    passive auxiliary too for a passive clause -- or ``None`` when there is
-    no governing verb to report. ``voice`` is ``"passive"`` only for a
-    passive subject or its "by"-agent phrase; ``"active"`` otherwise
-    (including every non-``direct-argument`` status, where it is unused).
+    governing_end, voice, nested_modifier_deprel)``. ``governing_start``/
+    ``governing_end`` are the governing word's own absolute character
+    span -- covering the case-marking preposition too for a
+    reconstructed phrasal verb, or the passive auxiliary too for a
+    passive clause -- or ``None`` when there is no governing verb to
+    report. ``voice`` is ``"passive"`` only for a passive subject or its
+    "by"-agent phrase; ``"active"`` otherwise (including every
+    non-``direct-argument`` status, where it is unused).
+    ``nested_modifier_deprel`` is the specific closed-vocabulary UD
+    relation from ``NESTED_MODIFIER_DEPRELS`` that matched, non-empty
+    only when ``dep_status == "nested-modifier"``.
     """
     by_id = {candidate.id: candidate for candidate in sentence.words}
     head = by_id.get(word.head) if word.head else None
@@ -170,14 +184,17 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                 head.parent.start_char,
                 head.parent.end_char,
                 "active",
+                "",
             )
-        return ("no-governing-verb", "", "", None, None, "active")
+        return ("no-governing-verb", "", "", None, None, "active", "")
 
     if word.deprel in PASSIVE_SUBJECT_DEPRELS:
         if head is not None and head.upos in GOVERNING_UPOS:
             start, end = _passive_verb_span(sentence, head)
-            return ("direct-argument", "Object", head.lemma, start, end, "passive")
-        return ("no-governing-verb", "", "", None, None, "active")
+            return (
+                "direct-argument", "Object", head.lemma, start, end, "passive", ""
+            )
+        return ("no-governing-verb", "", "", None, None, "active", "")
 
     if word.deprel in OBJECT_DEPRELS:
         if head is not None and head.upos in GOVERNING_UPOS:
@@ -188,8 +205,9 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                 head.parent.start_char,
                 head.parent.end_char,
                 "active",
+                "",
             )
-        return ("no-governing-verb", "", "", None, None, "active")
+        return ("no-governing-verb", "", "", None, None, "active", "")
 
     if word.deprel in OBLIQUE_DEPRELS:
         if head is not None and head.upos in GOVERNING_UPOS:
@@ -209,17 +227,18 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                         start,
                         end,
                         "passive",
+                        "",
                     )
                 lemma = f"{head.lemma} {case_word.text.lower()}"
                 start = min(head.parent.start_char, case_word.parent.start_char)
                 end = max(head.parent.end_char, case_word.parent.end_char)
-                return ("direct-argument", "Object", lemma, start, end, "active")
-        return ("no-governing-verb", "", "", None, None, "active")
+                return ("direct-argument", "Object", lemma, start, end, "active", "")
+        return ("no-governing-verb", "", "", None, None, "active", "")
 
     if word.deprel in NESTED_MODIFIER_DEPRELS:
-        return ("nested-modifier", "", "", None, None, "active")
+        return ("nested-modifier", "", "", None, None, "active", word.deprel)
 
-    return ("no-governing-verb", "", "", None, None, "active")
+    return ("no-governing-verb", "", "", None, None, "active", "")
 
 
 def find_governing_structure(
@@ -252,7 +271,7 @@ def find_governing_structure(
         ]
         target_word = roots[-1] if roots else words_in_span[-1]
         return classify_word(sentence, target_word)
-    return ("parse-error", "", "", None, None, "active")
+    return ("parse-error", "", "", None, None, "active", "")
 
 
 def validate_row(
@@ -344,22 +363,23 @@ def annotate(
                 "governing_start": None,
                 "governing_end": None,
                 "voice": "active",
+                "nested_modifier_deprel": "",
             }
             continue
         text, start, end = result
         document = documents.get(text)
         if document is None:
-            status, hole_role, lemma, g_start, g_end, voice = (
-                "parse-error", "", "", None, None, "active",
+            status, hole_role, lemma, g_start, g_end, voice, nested_deprel = (
+                "parse-error", "", "", None, None, "active", "",
             )
         else:
             try:
-                status, hole_role, lemma, g_start, g_end, voice = (
+                status, hole_role, lemma, g_start, g_end, voice, nested_deprel = (
                     find_governing_structure(document, start, end)
                 )
             except Exception:  # noqa: BLE001 - malformed parse -> parse-error
-                status, hole_role, lemma, g_start, g_end, voice = (
-                    "parse-error", "", "", None, None, "active",
+                status, hole_role, lemma, g_start, g_end, voice, nested_deprel = (
+                    "parse-error", "", "", None, None, "active", "",
                 )
         yield {
             "id": row["id"],
@@ -369,6 +389,7 @@ def annotate(
             "governing_start": g_start,
             "governing_end": g_end,
             "voice": voice,
+            "nested_modifier_deprel": nested_deprel,
         }
 
 

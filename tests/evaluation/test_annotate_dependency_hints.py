@@ -71,7 +71,7 @@ class ClassifyWordTests(unittest.TestCase):
         target_word = sentence.words[0]
         self.assertEqual(
             classify_word(sentence, target_word),
-            ("direct-argument", "Subject", "sign", 7, 13, "active"),
+            ("direct-argument", "Subject", "sign", 7, 13, "active", ""),
         )
 
     def test_object_of_a_verb_is_a_direct_argument(self) -> None:
@@ -80,7 +80,7 @@ class ClassifyWordTests(unittest.TestCase):
         target_word = sentence.words[3]
         self.assertEqual(
             classify_word(sentence, target_word),
-            ("direct-argument", "Object", "sign", 7, 13, "active"),
+            ("direct-argument", "Object", "sign", 7, 13, "active", ""),
         )
 
     def test_oblique_with_case_child_reconstructs_a_phrasal_verb_lemma(self) -> None:
@@ -96,7 +96,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[4]),
-            ("direct-argument", "Object", "listen to", 13, 24, "active"),
+            ("direct-argument", "Object", "listen to", 13, 24, "active", ""),
         )
 
     def test_nested_possessive_modifier_is_not_a_direct_argument(self) -> None:
@@ -111,7 +111,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[2]),
-            ("nested-modifier", "", "", None, None, "active"),
+            ("nested-modifier", "", "", None, None, "active", "nmod:poss"),
         )
 
     def test_no_governing_verb_for_an_unhandled_relation(self) -> None:
@@ -122,7 +122,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[0]),
-            ("no-governing-verb", "", "", None, None, "active"),
+            ("no-governing-verb", "", "", None, None, "active", ""),
         )
 
     def test_passive_subject_is_the_object_hole_not_the_subject_hole(self) -> None:
@@ -138,7 +138,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[0]),
-            ("direct-argument", "Object", "capture", 9, 21, "passive"),
+            ("direct-argument", "Object", "capture", 9, 21, "passive", ""),
         )
 
     def test_passive_by_agent_is_the_subject_hole(self) -> None:
@@ -152,7 +152,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[4]),
-            ("direct-argument", "Subject", "capture", 9, 21, "passive"),
+            ("direct-argument", "Subject", "capture", 9, 21, "passive", ""),
         )
 
     def test_oblique_by_phrase_without_aux_pass_is_not_treated_as_passive(
@@ -171,7 +171,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[4]),
-            ("direct-argument", "Object", "listen by", 13, 24, "active"),
+            ("direct-argument", "Object", "listen by", 13, 24, "active", ""),
         )
 
 
@@ -180,7 +180,7 @@ class FindGoverningStructureTests(unittest.TestCase):
         document = moscow_signed_document()
         self.assertEqual(
             find_governing_structure(document, 0, 6),
-            ("direct-argument", "Subject", "sign", 7, 13, "active"),
+            ("direct-argument", "Subject", "sign", 7, 13, "active", ""),
         )
 
     def test_multi_token_span_resolves_to_the_phrase_internal_root(self) -> None:
@@ -195,14 +195,14 @@ class FindGoverningStructureTests(unittest.TestCase):
         document = FakeDocument([FakeSentence(words)])
         self.assertEqual(
             find_governing_structure(document, 13, 21),
-            ("direct-argument", "Object", "visit", 5, 12, "active"),
+            ("direct-argument", "Object", "visit", 5, 12, "active", ""),
         )
 
     def test_span_with_no_covering_token_is_a_parse_error(self) -> None:
         document = moscow_signed_document()
         self.assertEqual(
             find_governing_structure(document, 100, 110),
-            ("parse-error", "", "", None, None, "active"),
+            ("parse-error", "", "", None, None, "active", ""),
         )
 
 
@@ -304,6 +304,7 @@ class AnnotateTests(unittest.TestCase):
                     "governing_start": None,
                     "governing_end": None,
                     "voice": "active",
+                    "nested_modifier_deprel": "",
                 }
             ],
         )
@@ -331,6 +332,46 @@ class AnnotateTests(unittest.TestCase):
                     "governing_start": 7,
                     "governing_end": 13,
                     "voice": "active",
+                    "nested_modifier_deprel": "",
+                }
+            ],
+        )
+
+    def test_nested_modifier_deprel_reaches_the_full_annotate_output(self) -> None:
+        # "Anna reads Tolstoy's books" -- the target ("Tolstoy") is an
+        # nmod:poss modifier, not a clause argument. Confirms the
+        # specific closed-vocabulary deprel makes it all the way through
+        # annotate()'s own output dict, not just classify_word's direct
+        # return value.
+        def pipeline_batch(texts: list[str]) -> list[FakeDocument]:
+            words = [
+                FakeWord(1, "Anna", "Anna", "PROPN", "nsubj", 2, 0, 4),
+                FakeWord(2, "reads", "read", "VERB", "root", 0, 5, 10),
+                FakeWord(3, "Tolstoy", "Tolstoy", "PROPN", "nmod:poss", 5, 11, 18),
+                FakeWord(4, "'s", "'s", "PART", "case", 3, 18, 20),
+                FakeWord(5, "books", "book", "NOUN", "obj", 2, 21, 26),
+            ]
+            return [FakeDocument([FakeSentence(words)]) for _ in texts]
+
+        row = {
+            "id": "wimcor:test:3",
+            "text": "Anna reads Tolstoy's books",
+            "target": "Tolstoy",
+            "target_span": [11, 18],
+        }
+        hints = list(annotate(pipeline_batch, [row]))
+        self.assertEqual(
+            hints,
+            [
+                {
+                    "id": "wimcor:test:3",
+                    "dep_status": "nested-modifier",
+                    "hole_role": "",
+                    "governing_lemma": "",
+                    "governing_start": None,
+                    "governing_end": None,
+                    "voice": "active",
+                    "nested_modifier_deprel": "nmod:poss",
                 }
             ],
         )

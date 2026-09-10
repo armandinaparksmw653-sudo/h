@@ -10,6 +10,8 @@ sys.path.insert(0, str(ROOT / "scripts" / "evaluation"))
 import json  # noqa: E402
 
 from score_contextual_detection import (  # noqa: E402
+    exit1_suffixed_token,
+    exit4_reason_bucket,
     exit7_gf_sentence_bucket,
     exit7_gf_sentence_signals,
     exit7_max_capitalized_run,
@@ -265,6 +267,212 @@ class LiteralReasonTests(unittest.TestCase):
         self.assertNotIn("Q1234", reason)
         self.assertNotIn("Q5678", reason)
 
+    def test_exit1_nested_modifier_unsupported_includes_the_deprel_suffix(
+        self,
+    ) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": (
+                "Traceback (most recent call last):\n"
+                "ValueError: nested-modifier-unsupported:nmod:poss"
+            ),
+        }
+        self.assertEqual(
+            literal_reason(row), "failed:exit1:nested-modifier-unsupported:nmod:poss"
+        )
+
+    def test_exit1_unsupported_action_role_includes_the_lemma_suffix(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": "ValueError: unsupported-action-role:floreate",
+        }
+        self.assertEqual(
+            literal_reason(row), "failed:exit1:unsupported-action-role:floreate"
+        )
+
+    def test_exit1_suffixed_token_falls_back_to_bare_token_with_no_colon(
+        self,
+    ) -> None:
+        # The backward-compatible bare raise (no deprel/lemma known) --
+        # resolve_action's own fallback when hint_governing_lemma/deprel
+        # is empty.
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": "ValueError: unsupported-action-role",
+        }
+        self.assertEqual(literal_reason(row), "failed:exit1:unsupported-action-role")
+
+    def test_exit1_suffix_never_leaks_the_surrounding_traceback_text(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": (
+                'gf_sentence="Waterloo confabulates a treaty"\n'
+                "ValueError: unsupported-action-role:confabulate\n"
+                "some other traceback line"
+            ),
+        }
+        reason = literal_reason(row)
+        self.assertEqual(reason, "failed:exit1:unsupported-action-role:confabulate")
+        self.assertNotIn("Waterloo", reason)
+        self.assertNotIn("treaty", reason)
+        self.assertNotIn("some other traceback line", reason)
+
+    def test_exit4_recognizes_each_known_composition_failure(self) -> None:
+        cases = {
+            "malformed GF tree near Because": "malformed GF tree near ",
+            "malformed or incomplete GF tree": "malformed or incomplete GF tree",
+            "GF lexical token is absent from source: announce": (
+                "GF lexical token is absent from source: "
+            ),
+            "malformed adjective-noun GF node": "malformed adjective-noun GF node",
+            "unsupported GF adjective-noun semantics: large county": (
+                "unsupported GF adjective-noun semantics: "
+            ),
+            "ambiguous noun sort for GF composition: county": (
+                "ambiguous noun sort for GF composition: "
+            ),
+            "no semantic composition for Place×Human": "no semantic composition for ",
+            "action announce has no role rule for Place": " has no role rule for ",
+            "context modifier QID is not unique: Hertfordshire": (
+                "context modifier QID is not unique: "
+            ),
+        }
+        for detail, expected_token in cases.items():
+            with self.subTest(detail=detail):
+                row = {
+                    "id": "a",
+                    "status": "failed",
+                    "exit_code": 4,
+                    "failure": json.dumps(
+                        {
+                            "status": "semantic-composition-failed",
+                            "gf_tree": "PredCopNP (OpenPN \"Waterloo\") x",
+                            "detail": detail,
+                        }
+                    ),
+                }
+                self.assertEqual(
+                    literal_reason(row), f"failed:exit4:{expected_token.strip()}"
+                )
+
+    def test_exit4_with_unparseable_failure_text_is_unrecognized_not_a_crash(
+        self,
+    ) -> None:
+        row = {"id": "a", "status": "failed", "exit_code": 4, "failure": "not json"}
+        self.assertEqual(literal_reason(row), "failed:exit4:unrecognized")
+
+    def test_exit4_with_unrecognized_detail_falls_back_gracefully(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "a completely new, unanticipated failure",
+                }
+            ),
+        }
+        self.assertEqual(literal_reason(row), "failed:exit4:unrecognized")
+
+    def test_exit4_never_leaks_the_gf_tree_or_interpolated_detail_content(
+        self,
+    ) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": (
+                        'PredCopNP (OpenPN "Waterloo") '
+                        '(OpenIndefCN countyCN (InPP (OpenPN "Hertfordshire")))'
+                    ),
+                    "detail": (
+                        "ambiguous noun sort for GF composition: Hertfordshire"
+                    ),
+                }
+            ),
+        }
+        reason = literal_reason(row)
+        self.assertEqual(reason, "failed:exit4:ambiguous noun sort for GF composition:")
+        self.assertNotIn("Waterloo", reason)
+        self.assertNotIn("Hertfordshire", reason)
+
+
+class Exit1SuffixedTokenTests(unittest.TestCase):
+    def test_recovers_a_ud_deprel_suffix(self) -> None:
+        self.assertEqual(
+            exit1_suffixed_token(
+                "nested-modifier-unsupported",
+                "ValueError: nested-modifier-unsupported:acl:relcl",
+            ),
+            "nested-modifier-unsupported:acl:relcl",
+        )
+
+    def test_recovers_a_phrasal_verb_lemma_suffix_containing_a_space(self) -> None:
+        self.assertEqual(
+            exit1_suffixed_token(
+                "unsupported-action-role",
+                "ValueError: unsupported-action-role:listen to",
+            ),
+            "unsupported-action-role:listen to",
+        )
+
+    def test_falls_back_to_the_bare_token_when_there_is_no_colon(self) -> None:
+        self.assertEqual(
+            exit1_suffixed_token(
+                "unsupported-action-role", "ValueError: unsupported-action-role"
+            ),
+            "unsupported-action-role",
+        )
+
+    def test_stops_at_the_end_of_the_traceback_line(self) -> None:
+        self.assertEqual(
+            exit1_suffixed_token(
+                "unsupported-action-role",
+                "ValueError: unsupported-action-role:announce\nmore traceback below",
+            ),
+            "unsupported-action-role:announce",
+        )
+
+
+class Exit4ReasonBucketTests(unittest.TestCase):
+    def test_unparseable_failure_text_is_unrecognized_not_a_crash(self) -> None:
+        self.assertEqual(exit4_reason_bucket("not valid json"), "unrecognized")
+
+    def test_missing_detail_key_is_unrecognized_not_a_crash(self) -> None:
+        self.assertEqual(
+            exit4_reason_bucket(
+                json.dumps({"status": "semantic-composition-failed", "gf_tree": "x"})
+            ),
+            "unrecognized",
+        )
+
+    def test_matches_a_middle_interpolated_message(self) -> None:
+        # "action <lemma> has no role rule for <sort>" interpolates a
+        # value in the middle, not just at the end -- confirms substring
+        # matching (not prefix matching) is what makes this one matchable
+        # at all.
+        failure = json.dumps(
+            {
+                "status": "semantic-composition-failed",
+                "gf_tree": "x",
+                "detail": "action confabulate has no role rule for Place",
+            }
+        )
+        self.assertEqual(exit4_reason_bucket(failure), "has no role rule for")
+
 
 class FingerprintFailureTextTests(unittest.TestCase):
     def test_same_text_gives_same_fingerprint(self) -> None:
@@ -468,7 +676,11 @@ class ScoreTests(unittest.TestCase):
         report = score(inference, gold)
         self.assertEqual(
             report["literal_prediction_reasons"],
-            {"failed:exit3": 2, "failed:exit4": 1, "ok:empty-fiber": 1},
+            # exit_code=4 now goes through exit4_reason_bucket -- a
+            # failed_row with no "failure" field at all falls back to
+            # "unrecognized", the same degrade-gracefully policy as
+            # exit2/exit7's own bucket functions.
+            {"failed:exit3": 2, "failed:exit4:unrecognized": 1, "ok:empty-fiber": 1},
         )
 
     def test_unrecognized_rows_get_no_fingerprint_bucket_when_none_are_unrecognized(

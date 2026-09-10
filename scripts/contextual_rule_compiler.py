@@ -262,10 +262,21 @@ def resolve_action(
 
     dep_status = dependency_hint.get("dep_status") if dependency_hint else None
     if dep_status == "nested-modifier":
-        raise ValueError("nested-modifier-unsupported")
+        # nested_modifier_deprel (annotate_dependency_hints.py) is a
+        # closed-vocabulary UD relation label (one of
+        # NESTED_MODIFIER_DEPRELS there), never sentence text -- safe to
+        # include so score_contextual_detection.py can report which
+        # specific nested-modifier shape actually dominates instead of
+        # one undifferentiated count.
+        deprel = dependency_hint.get("nested_modifier_deprel") or ""
+        raise ValueError(
+            f"nested-modifier-unsupported:{deprel}" if deprel
+            else "nested-modifier-unsupported"
+        )
 
     governing_start = dependency_hint.get("governing_start") if dependency_hint else None
     governing_end = dependency_hint.get("governing_end") if dependency_hint else None
+    hint_governing_lemma = None
     if (
         dep_status == "direct-argument"
         and governing_start is not None
@@ -276,6 +287,7 @@ def resolve_action(
         # ActionRole.hole_role uses "SubjectHole"/"ObjectHole".
         hint_hole_role = dependency_hint["hole_role"] + "Hole"
         governing_lemma = (dependency_hint.get("governing_lemma") or "").casefold()
+        hint_governing_lemma = governing_lemma
         candidates = [
             (0, governing_start, governing_end, sentence[governing_start:governing_end].casefold(), role)
             for role in by_form.get(governing_lemma, [])
@@ -305,7 +317,19 @@ def resolve_action(
                 if role.hole_role == expected_role:
                     candidates.append((abs(start - target_span[0]), start, end, surface, role))
     if not candidates:
-        raise ValueError("unsupported-action-role")
+        # hint_governing_lemma is a single common English verb lemma (or
+        # "<verb> <preposition>" for a reconstructed phrasal verb), never
+        # sentence text -- safe to include, same risk class as the
+        # has_comma/has_digit counts score_contextual_detection.py
+        # already reports. Only set on the dependency-hint path: the
+        # no-hint fallback searches every window in the sentence at
+        # once, so there is no single "the lemma that should have
+        # matched" to report there.
+        raise ValueError(
+            f"unsupported-action-role:{hint_governing_lemma}"
+            if hint_governing_lemma
+            else "unsupported-action-role"
+        )
 
     candidates.sort(
         key=lambda item: (

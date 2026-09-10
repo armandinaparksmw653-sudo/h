@@ -285,9 +285,15 @@ class DependencyHintIntegrationTests(unittest.TestCase):
             _FakeWord(5, "generously", "generously", "ADV", "advmod", 4, 29, 39),
         ]
         sentence = _FakeSentence(words)
-        dep_status, hole_role, governing_lemma, g_start, g_end, voice = classify_word(
-            sentence, words[0]
-        )
+        (
+            dep_status,
+            hole_role,
+            governing_lemma,
+            g_start,
+            g_end,
+            voice,
+            nested_modifier_deprel,
+        ) = classify_word(sentence, words[0])
         self.assertEqual(hole_role, "Object")  # sanity check on the fixture itself
         hint = {
             "dep_status": dep_status,
@@ -296,6 +302,7 @@ class DependencyHintIntegrationTests(unittest.TestCase):
             "governing_start": g_start,
             "governing_end": g_end,
             "voice": voice,
+            "nested_modifier_deprel": nested_modifier_deprel,
         }
         result = resolve_action(SENTENCE, ["Tolstoy"], ROLES, {}, dependency_hint=hint)
         self.assertEqual(result["role"], "ObjectHole")

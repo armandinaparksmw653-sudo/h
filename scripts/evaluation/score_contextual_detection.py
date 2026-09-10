@@ -142,6 +142,89 @@ GENERIC_RUNTIME_CRASH_TOKENS = (
     "divide by zero",
 )
 
+# Two of KNOWN_FAILURE_TOKENS above now carry an optional ":<suffix>" --
+# resolve_action (contextual_rule_compiler.py) appends a closed-vocabulary
+# UD deprel to "nested-modifier-unsupported" and a single governing verb
+# lemma to "unsupported-action-role" (see each raise site's own comment
+# for why that's safe to surface: a UD relation label from a fixed
+# 8-entry vocabulary, or one common English lemma / "<verb> <preposition>"
+# phrasal reconstruction -- never sentence text). Listed here so
+# literal_reason knows which two of the many KNOWN_FAILURE_TOKENS entries
+# to look for a suffix on, rather than trying (and failing) to parse one
+# off every token indiscriminately.
+SUFFIXED_FAILURE_TOKENS = ("nested-modifier-unsupported", "unsupported-action-role")
+
+# Every fixed message compile_gf_constraints/_origin/_cumulative_origin
+# (scripts/contextual_rule_compiler.py) can raise as a ValueError, reaching
+# run_automatic_contextual_pipeline.py's exit-4 branch, which JSON-wraps it
+# as {"status": "semantic-composition-failed", "gf_tree": ..., "detail":
+# str(error)}. "gf_tree" echoes real sentence content (the GF tree's own
+# String leaves are the sentence's proper nouns/lemmas) and must never be
+# read here; "detail" is a fixed English sentence with, in most cases, one
+# interpolated word or sort name spliced in (e.g. "ambiguous noun sort for
+# GF composition: county") -- the same risk class already accepted for
+# unsupported-action-role's governing_lemma above, but exit4_reason_bucket
+# deliberately reports only the fixed substring match below, never the
+# full "detail" text, so the interpolated word never leaves this function.
+# A substring match (not a prefix match) is used because two of these
+# messages interpolate a value in the *middle*, not at the end (e.g.
+# f"action {proposal['action']} has no role rule for {sort}") -- the same
+# style KNOWN_FAILURE_TOKENS already uses for the same reason.
+EXIT4_KNOWN_FAILURE_TOKENS = (
+    "malformed GF tree near ",
+    "malformed or incomplete GF tree",
+    "GF lexical token is absent from source: ",
+    "malformed adjective-noun GF node",
+    "unsupported GF adjective-noun semantics: ",
+    "ambiguous noun sort for GF composition: ",
+    "no semantic composition for ",
+    " has no role rule for ",
+    "context modifier QID is not unique: ",
+)
+
+
+def exit4_reason_bucket(failure_text: str) -> str:
+    """Bucket an exit-4 (semantic-composition-failed) row by which of
+    compile_gf_constraints's own fixed ValueError messages it raised.
+
+    Mirrors exit2_candidate_bucket/exit7_gf_sentence_bucket: parse the
+    JSON run_automatic_contextual_pipeline.py already prints on this path
+    and derive a content-free bucket from its safe "detail" field only --
+    never its "gf_tree" field, which does carry real sentence content (see
+    EXIT4_KNOWN_FAILURE_TOKENS's own comment). Falls back to
+    "unrecognized" both when the field isn't parseable JSON with a
+    "detail" key and when "detail" doesn't contain any of the known fixed
+    messages, the same degrade-gracefully policy as its siblings.
+    """
+    try:
+        detail = json.loads(failure_text)["detail"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return "unrecognized"
+    for token in EXIT4_KNOWN_FAILURE_TOKENS:
+        if token in detail:
+            return token.strip()
+    return "unrecognized"
+
+
+def exit1_suffixed_token(token: str, failure_text: str) -> str:
+    """Recover a SUFFIXED_FAILURE_TOKENS entry's ":<suffix>", if present.
+
+    failure_text is a subprocess's full captured stdout+stderr (a Python
+    traceback in this case, not JSON like exit2/exit4/exit7's payloads),
+    so "token:suffix" appears embedded in a line like "ValueError:
+    nested-modifier-unsupported:nmod:poss" -- str(error) is exactly what
+    follows "ValueError: " and, per Python's own traceback formatting,
+    never wraps to a second line. Capturing everything up to the next
+    newline (never a fixed-width token) is therefore safe and complete;
+    falls back to the bare token when there's no ":" at all (the
+    backward-compatible, no-deprel/no-lemma raise still supported at each
+    site -- see resolve_action's own comments).
+    """
+    match = re.search(rf"{re.escape(token)}:([^\r\n]*)", failure_text)
+    if match and match.group(1):
+        return f"{token}:{match.group(1)}"
+    return token
+
 
 def exit2_candidate_bucket(failure_text: str) -> str:
     """Split exit 2 (source-qid-unresolved) into zero vs ambiguous candidates.
@@ -289,11 +372,17 @@ def literal_reason(inference_row: dict) -> str:
     none of those precise, this-codebase tokens match -- one of
     GENERIC_RUNTIME_CRASH_TOKENS (see its own comment for why a separate,
     broader pass exists), and reports only the matched token name, or
-    "failed:exit1:unrecognized" if neither matches. Exit 2 similarly gets
-    a sub-tag from exit2_candidate_bucket, and exit 7 one from
-    exit7_gf_sentence_bucket -- see each one's own docstring. Carries no
-    sentence text either way, so this is safe to upload as a CI artifact
-    even though the inference row it's drawn from is not.
+    "failed:exit1:unrecognized" if neither matches. Two KNOWN_FAILURE_TOKENS
+    entries (SUFFIXED_FAILURE_TOKENS: nested-modifier-unsupported,
+    unsupported-action-role) get a ":<suffix>" appended via
+    exit1_suffixed_token when resolve_action's own raise included one --
+    see that function's and each raise site's own comments for why a UD
+    deprel or a single governing verb lemma is safe to surface this way.
+    Exit 2 similarly gets a sub-tag from exit2_candidate_bucket, exit 4
+    from exit4_reason_bucket, and exit 7 from exit7_gf_sentence_bucket --
+    see each one's own docstring. Carries no sentence text either way, so
+    this is safe to upload as a CI artifact even though the inference row
+    it's drawn from is not.
     """
     if inference_row.get("status") == "ok":
         return "ok:empty-fiber"
@@ -302,6 +391,8 @@ def literal_reason(inference_row: dict) -> str:
         failure_text = inference_row.get("failure", "")
         for token in KNOWN_FAILURE_TOKENS:
             if token in failure_text:
+                if token in SUFFIXED_FAILURE_TOKENS:
+                    return f"failed:exit1:{exit1_suffixed_token(token, failure_text)}"
                 return f"failed:exit1:{token}"
         for token in GENERIC_RUNTIME_CRASH_TOKENS:
             if token in failure_text:
@@ -309,6 +400,8 @@ def literal_reason(inference_row: dict) -> str:
         return "failed:exit1:unrecognized"
     if exit_code == 2:
         return f"failed:exit2:{exit2_candidate_bucket(inference_row.get('failure', ''))}"
+    if exit_code == 4:
+        return f"failed:exit4:{exit4_reason_bucket(inference_row.get('failure', ''))}"
     if exit_code == 7:
         return f"failed:exit7:{exit7_gf_sentence_bucket(inference_row.get('failure', ''))}"
     return f"failed:exit{exit_code}"
