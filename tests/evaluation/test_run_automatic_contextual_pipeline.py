@@ -599,5 +599,145 @@ class StanzaTreeFirstTests(unittest.TestCase):
         self.assertIn("survivors=[Q145]", printed)
 
 
+class Exit4TreeSourceTaggingTests(unittest.TestCase):
+    """A live corpus evaluation run surfaced a real mystery in exit4's
+    breakdown: bare, unquoted capitalized words (e.g. "Albright", "The")
+    showing up as "unrecognized constructor(s)" -- neither this
+    module's own tree-builder (which always quotes its own string
+    arguments and is validated through `engine linearize` before it is
+    ever trusted) nor any known gf_actions entry can explain that. These
+    tests confirm the exit-4 JSON payload's new "tree_source" field
+    correctly distinguishes which of the two tree sources actually
+    produced trees[0] for that row, so a future real corpus run can
+    isolate which one the mystery is actually coming from.
+    """
+
+    def test_tags_stanza_when_the_stanza_built_tree_was_used(self) -> None:
+        # "Waterloo announces a florbnorbish quzzleblat" -- a nonsense
+        # adjective+noun pair, guaranteed absent from the real on-disk
+        # data/wordnet-context-rules.json (unmocked here, read for real,
+        # since this test deliberately does not use --ablation
+        # no-wordnet), so compile_gf_constraints's own
+        # "unsupported GF adjective-noun semantics" ValueError fires --
+        # a real exit-4 trigger reachable through a well-formed,
+        # linearize-validated Stanza-built tree.
+        words = [
+            {"id": 1, "head": 2, "deprel": "nsubj", "upos": "PROPN", "lemma": "Waterloo", "text": "Waterloo", "start_char": 0, "end_char": 8},
+            {"id": 2, "head": 0, "deprel": "root", "upos": "VERB", "lemma": "announce", "text": "announces", "start_char": 9, "end_char": 18},
+            {"id": 3, "head": 5, "deprel": "det", "upos": "DET", "lemma": "a", "text": "a", "start_char": 19, "end_char": 20},
+            {"id": 4, "head": 5, "deprel": "amod", "upos": "ADJ", "lemma": "florbnorbish", "text": "florbnorbish", "start_char": 21, "end_char": 33},
+            {"id": 5, "head": 2, "deprel": "obj", "upos": "NOUN", "lemma": "quzzleblat", "text": "quzzleblat", "start_char": 34, "end_char": 44},
+        ]
+        hint = {"dep_status": "direct-argument", "ud_words": words}
+        sys.argv = [
+            "run_automatic_contextual_pipeline.py",
+            "--engine",
+            "build/metonymy",
+            "--snapshot",
+            "data/wikidata-openalex-snapshot",
+            "--sentence",
+            "Waterloo announces a florbnorbish quzzleblat",
+            "--source",
+            "Waterloo",
+            "--dependency-hint",
+            json.dumps(hint),
+        ]
+
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                # Not propose_proposal (its fixed "constraints": [] would
+                # make compile_gf_constraints's own
+                # proposal["constraints"][0] lookup crash before ever
+                # reaching the wordnet-based check this test needs --
+                # every other test in this file uses --ablation
+                # no-wordnet, which returns before that lookup; this one
+                # deliberately doesn't).
+                payload = {
+                    "status": "ready",
+                    "gf_sentence": "Waterloo announces a florbnorbish quzzleblat",
+                    "action": "announce",
+                    "role": "SubjectHole",
+                    "max_depth": 1,
+                    "bridge_relations": ["InstitutionOf"],
+                    "constraints": [
+                        {
+                            "origin": {
+                                "constructor": "Verb",
+                                "lemma": "announce",
+                                "surface": "announces",
+                                "start": 9,
+                                "end": 18,
+                            },
+                            "payload": {"requires": "HasSort Entity"},
+                            "provenance": "test",
+                        }
+                    ],
+                    "source_qid_candidates": ["Q24826"],
+                    "source_surface": "Waterloo",
+                }
+                return subprocess.CompletedProcess(
+                    args=["python3", "scripts/propose_contextual_scenario.py"],
+                    returncode=0,
+                    stdout=json.dumps(payload),
+                    stderr="",
+                )
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout="Waterloo announces a florbnorbish quzzleblat\n",
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected command: {command}")
+
+        stdout = io.StringIO()
+        with patch("subprocess.run", side_effect=fake_run):
+            with redirect_stdout(stdout):
+                with self.assertRaises(SystemExit) as raised:
+                    run_automatic_contextual_pipeline.main()
+        self.assertEqual(raised.exception.code, 4)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "semantic-composition-failed")
+        self.assertEqual(payload["tree_source"], "stanza")
+
+    def test_tags_gf_parser_when_the_legacy_path_was_used(self) -> None:
+        sys.argv = [
+            "run_automatic_contextual_pipeline.py",
+            "--engine",
+            "build/metonymy",
+            "--snapshot",
+            "data/wikidata-openalex-snapshot",
+            "--sentence",
+            "Liverpool announced a new programme",
+            "--source",
+            "Liverpool",
+            "--ablation",
+            "no-wordnet",
+        ]
+
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "parse":
+                # Two top-level tokens left unconsumed -- a genuinely
+                # malformed tree, triggering exit4 even under
+                # --ablation no-wordnet (parse_gf_tree runs before
+                # compile_gf_constraints's own wordnet short-circuit).
+                return subprocess.CompletedProcess(
+                    args=command, returncode=0, stdout="DummyTree DummyTree2\n", stderr="",
+                )
+            raise AssertionError(f"unexpected command: {command}")
+
+        stdout = io.StringIO()
+        with patch("subprocess.run", side_effect=fake_run):
+            with redirect_stdout(stdout):
+                with self.assertRaises(SystemExit) as raised:
+                    run_automatic_contextual_pipeline.main()
+        self.assertEqual(raised.exception.code, 4)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "semantic-composition-failed")
+        self.assertEqual(payload["tree_source"], "gf-parser")
+
+
 if __name__ == "__main__":
     unittest.main()

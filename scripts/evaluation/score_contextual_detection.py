@@ -194,6 +194,30 @@ EXIT4_KNOWN_FAILURE_TOKENS = (
 EXIT4_SUFFIXED_TOKENS = ("malformed or incomplete GF tree",)
 
 
+def exit4_tree_source(failure_text: str) -> str:
+    """Which of the two tree sources produced this exit-4 row's tree --
+    "stanza" (scripts/build_gf_tree_from_dependencies.py) or "gf-parser"
+    (GF's own `engine parse` on raw text) -- or "unrecognized" if the
+    field can't be read at all.
+
+    A live corpus evaluation run of Phase 1's tree-builder surfaced a
+    real mystery: bare, unquoted capitalized words (e.g. "Albright",
+    "The") appearing as exit4_reason_bucket's own "unrecognized
+    constructor(s)" -- something neither the tree-builder (which always
+    quotes its own string arguments, and is validated through `engine
+    linearize` before ever being trusted) nor any known gf_actions entry
+    explains. run_automatic_contextual_pipeline.py tags every exit-4 row
+    with exactly which source actually produced trees[0] for it, purely
+    so a future real corpus run can isolate which source the mystery is
+    actually coming from -- itself telling neither sentence text nor
+    anything content-derived, just which of two known code paths ran.
+    """
+    try:
+        return json.loads(failure_text).get("tree_source", "unrecognized")
+    except (json.JSONDecodeError, TypeError):
+        return "unrecognized"
+
+
 def exit4_reason_bucket(failure_text: str) -> str:
     """Bucket an exit-4 (semantic-composition-failed) row by which of
     compile_gf_constraints's own fixed ValueError messages it raised.
@@ -495,6 +519,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         {"has_comma": 0, "has_digit": 0, "has_apostrophe": 0}
     )
     exit7_rows_seen = 0
+    exit4_tree_source_counts: Counter[str] = Counter()
     for gold in gold_rows:
         inference_row = inference_by_id.get(gold["id"])
         if inference_row is None:
@@ -525,6 +550,10 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
                     for name, present in signals.items():
                         if present:
                             exit7_signal_counts[name] += 1
+            if inference_row.get("exit_code") == 4:
+                exit4_tree_source_counts[
+                    exit4_tree_source(inference_row.get("failure", ""))
+                ] += 1
 
     precision = (
         true_positive / (true_positive + false_positive)
@@ -556,6 +585,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "literal_prediction_reasons": dict(sorted(literal_prediction_reasons.items())),
         "exit7_rows_seen": exit7_rows_seen,
         "exit7_signal_counts": dict(sorted(exit7_signal_counts.items())),
+        "exit4_tree_source_counts": dict(sorted(exit4_tree_source_counts.items())),
         "unrecognized_fingerprints": [
             {"sha256_prefix": prefix, "length": length, "count": count}
             for (prefix, length), count in sorted(

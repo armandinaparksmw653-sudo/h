@@ -1419,3 +1419,88 @@ no regressions.
 commit, push, `ci.yml`, then a real `contextual-tower-evaluation.yml`
 run to see how much of `exit7` these six additions actually reach in
 real WiMCor/ConMeC text.
+
+## Phase 1, round 3: first real recall, the obl bare-verb fix confirmed, and a genuine new mystery
+
+The first real `contextual-tower-evaluation.yml` run after round 2 gave
+this session's first-ever non-zero recall: **WiMCor recall 0.0256,
+precision 0.5, f1 0.049** (1 true positive, 1 false positive). Small in
+absolute terms, but the first time any real sentence has made it all
+the way through every layer of the tower this whole project.
+
+**The `obl` bare-verb fallback (Phase 2 round 1, above) worked close to
+as hypothesized**: WiMCor's `unsupported-action-role` histogram
+collapsed from 41 distinct phrasal entries down to 6 (`donate to`,
+`graduate from`, `headquarter in`, `locate in`, `locate near`,
+`twin with`) -- these six are now genuine vocabulary gaps (the bare verb
+itself has no `ActionRole` coverage either), not the lookup-format bug
+that dominated before. ConMeC's own non-phrasal
+`unsupported-action-role` list (`advocate`/`breed`/`condem`/`consume`/
+`do`/`drank`/`overpower`/`print`/`process`/`publish`) is unchanged, as
+expected -- that fix only ever targeted the phrasal-key mismatch, not
+genuine vocabulary/lemmatization gaps.
+
+**`exit7`/`exit4` row counts *rose*, not fell, in this same run -- the
+expected shape of progress, not a regression.** Since `resolve_action`
+now succeeds on far more rows, far more rows now reach the *later*
+pipeline stages (GF parsing, semantic composition) that previously never
+ran for them at all -- exactly the "blockers compound" pattern this
+document has described since the very first grammar-coverage rounds.
+Recall moving from 0 to a small positive number, while every later-stage
+failure count grows, is what real forward progress against a multi-stage
+AND-gated pipeline looks like; a flat or shrinking `exit7`/`exit4` with
+recall still 0 would have been the concerning result.
+
+**A genuine new mystery, found only because `exit4_reason_bucket`'s
+suffix now exists at all**: several `"malformed or incomplete GF
+tree"` rows this run named bare, *unquoted* capitalized words as
+"unrecognized constructor(s)" -- `"A"`, `"The"`, `"I"`, `"It"`,
+`"Albright"`, `"Giant"`, and comma-joined pairs like `"Do,Leno"`,
+`"Let,Alabandus"`, `"Palace,Vaudeville"` (12 rows alone tagged
+`"A,String"` in ConMeC). None of these match any real
+`data/contextual-gf-actions.json`/`data/contextual-gf-nouns.json`
+entry (checked directly, not assumed) -- and they don't look like this
+project's own function-naming conventions (`CTX_<hash>`, `WN_<hash>`,
+or the handful of readable demo names `Announce`/`Read`/`Drink`/`Sign`/
+`Eat`/`Review`/`Study`/`Translate`/`Watch`/`Wear`/`ListenTo`/`VN_*`).
+They read like fragments of real proper-noun surface text that ended up
+*unquoted* in a tree somewhere -- which `build_gf_tree_from_dependencies.py`
+should be structurally incapable of (it always quotes its own string
+arguments via `_quote`, and any tree it builds is validated through
+`engine linearize`'s own real type-checker before ever being trusted;
+see that module's own docstring). That leaves the *pre-existing* legacy
+`engine parse`-on-raw-text path as the more likely source, but this
+was reasoned, not confirmed -- so rather than guess further, a third
+option was added: **safely confirm which of the two tree sources
+actually produced the row**, the same "measure, don't guess" discipline
+already used for exit1/exit2/exit7.
+
+`run_automatic_contextual_pipeline.py`'s exit-4 JSON payload now
+carries a `"tree_source": "stanza" | "gf-parser"` field (set once,
+before the `compile_gf_constraints` call, from whether
+`stanza_built_tree` was non-`None`) -- content-free, just which of two
+known code paths ran.
+`scripts/evaluation/score_contextual_detection.py`'s new
+`exit4_tree_source` reads it (falling back to `"unrecognized"` the same
+way every sibling bucket function does), aggregated across all exit-4
+rows into the score report's new `exit4_tree_source_counts` field
+(mirroring `exit7_signal_counts`'s own aggregate-not-per-row pattern).
+Tested directly: a Stanza-built tree that passes `engine linearize`'s
+own validation but *still* later fails `compile_gf_constraints` on
+unrelated semantic grounds (a nonsense adjective+noun pair absent from
+the real, unmocked `data/wordnet-context-rules.json` -- a genuine,
+reachable exit-4 trigger even through a well-formed tree) is correctly
+tagged `"stanza"`; a malformed tree from the legacy `engine parse` path
+is correctly tagged `"gf-parser"` (`tests/evaluation/
+test_run_automatic_contextual_pipeline.py`'s new
+`Exit4TreeSourceTaggingTests`, 2 tests, plus 4 new
+`Exit4TreeSourceTests`/`ScoreTests` cases in
+`test_score_contextual_detection.py`). Full local suite: 354 tests,
+same pre-existing baseline, no regressions.
+
+**Next step**: re-run `contextual-tower-evaluation.yml` once more. The
+`exit4_tree_source_counts` field will say, for the first time, whether
+this mystery is coming from the brand-new Stanza path (a real bug in
+this session's own new code, needing a fix there) or the long-existing
+`engine parse` path (a previously-invisible bug in code that predates
+this session entirely) -- decisive either way, not another guess.

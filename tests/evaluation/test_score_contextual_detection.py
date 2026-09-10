@@ -13,6 +13,7 @@ from score_contextual_detection import (  # noqa: E402
     exit1_suffixed_token,
     exit4_reason_bucket,
     exit4_suffixed_token,
+    exit4_tree_source,
     exit7_gf_sentence_bucket,
     exit7_gf_sentence_signals,
     exit7_max_capitalized_run,
@@ -603,6 +604,39 @@ class Exit4SuffixedTokenTests(unittest.TestCase):
         )
 
 
+class Exit4TreeSourceTests(unittest.TestCase):
+    def test_reads_stanza(self) -> None:
+        failure = json.dumps(
+            {
+                "status": "semantic-composition-failed",
+                "gf_tree": "x",
+                "detail": "y",
+                "tree_source": "stanza",
+            }
+        )
+        self.assertEqual(exit4_tree_source(failure), "stanza")
+
+    def test_reads_gf_parser(self) -> None:
+        failure = json.dumps(
+            {
+                "status": "semantic-composition-failed",
+                "gf_tree": "x",
+                "detail": "y",
+                "tree_source": "gf-parser",
+            }
+        )
+        self.assertEqual(exit4_tree_source(failure), "gf-parser")
+
+    def test_missing_field_is_unrecognized_not_a_crash(self) -> None:
+        failure = json.dumps(
+            {"status": "semantic-composition-failed", "gf_tree": "x", "detail": "y"}
+        )
+        self.assertEqual(exit4_tree_source(failure), "unrecognized")
+
+    def test_unparseable_failure_text_is_unrecognized_not_a_crash(self) -> None:
+        self.assertEqual(exit4_tree_source("not json"), "unrecognized")
+
+
 class FingerprintFailureTextTests(unittest.TestCase):
     def test_same_text_gives_same_fingerprint(self) -> None:
         a = fingerprint_failure_text("metonymy: Prelude.head: empty list")
@@ -882,6 +916,39 @@ class ScoreTests(unittest.TestCase):
         )
         self.assertNotIn("Waterloo", json.dumps(report))
         self.assertNotIn("Ontario", json.dumps(report))
+
+    def test_exit4_tree_source_counts_aggregate_across_rows(self) -> None:
+        def exit4_row(id_: str, tree_source: str) -> dict:
+            return {
+                "id": id_,
+                "status": "failed",
+                "exit_code": 4,
+                "failure": json.dumps(
+                    {
+                        "status": "semantic-composition-failed",
+                        "gf_tree": "x",
+                        "detail": "malformed or incomplete GF tree",
+                        "tree_source": tree_source,
+                    }
+                ),
+                "fiber": [],
+                "stages": [],
+            }
+
+        inference = [
+            exit4_row("a", "stanza"),
+            exit4_row("b", "gf-parser"),
+            exit4_row("c", "gf-parser"),
+        ]
+        gold = [
+            {"id": "a", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "b", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "c", "gold_label": "literal", "gold_bridge_family": None},
+        ]
+        report = score(inference, gold)
+        self.assertEqual(
+            report["exit4_tree_source_counts"], {"gf-parser": 2, "stanza": 1}
+        )
 
     def test_repeated_unrecognized_failure_text_groups_into_one_fingerprint(
         self,

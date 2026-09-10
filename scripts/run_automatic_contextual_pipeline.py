@@ -385,6 +385,19 @@ def main() -> None:
                     "status": "semantic-composition-failed",
                     "gf_tree": trees[0],
                     "detail": str(error),
+                    # "stanza" or "gf-parser" -- which of the two tree
+                    # sources produced trees[0] this row actually used.
+                    # Added to isolate a real, previously-hidden mystery
+                    # a live corpus evaluation surfaced: bare, unquoted
+                    # capitalized words (e.g. "Albright", "The") showing
+                    # up as "unrecognized constructor(s)" in
+                    # exit4_reason_bucket's own breakdown, on both Phase
+                    # 1 rounds' first real runs. A Stanza-built tree
+                    # already passed `engine linearize`'s own type check
+                    # before ever reaching here (see above), which should
+                    # make that source structurally incapable of this --
+                    # confirming that with real data beats assuming it.
+                    "tree_source": "stanza" if stanza_built_tree is not None else "gf-parser",
                 },
                 ensure_ascii=False,
                 indent=2,
