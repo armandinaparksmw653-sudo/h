@@ -711,6 +711,119 @@ one space before a bare comma, is a no-op when one is already there or
 there's no comma at all, handles multiple commas in one sentence, and
 handles a comma as the very first character safely.
 
+### Batch 2: a real resolve_action bug, plus a second grammar batch found by reading actual failures
+
+The real `contextual-tower-evaluation.yml` run after the tokenizer fix
+above showed recall still at 0.0, WiMCor's `literal_prediction_reasons`
+byte-identical to the pre-fix baseline, and ConMeC one row *worse*
+(`ok:empty-fiber` 3 to 2). Confirmed this wasn't a stale build (the run's
+`head_sha` matched the fix commit exactly). So the fix was real and
+correct -- the constructs it targeted (`BecauseS`-family fronted/trailing
+clauses, `ApposCommaPN1`/`ApposCommaPN2`) just aren't the shape most real
+WiMCor/ConMeC comma sentences actually take.
+
+**Local reproduction, this time reading the actual sentences.** Using
+this session's already-established local-reproduction recipe (download
+real WiMCor v1.1 + ConMeC, `prepare_wimcor.py`/`prepare_conmec.py`,
+`adapt_metonymy_corpus_for_tower.py --sample-size 150 --seed 0`, matching
+`contextual-tower-evaluation.yml` exactly) combined with the local GF
+toolchain from the section above, every `gf_sentence` in the 150+150
+sample was reconstructed (`resolve_action` + `sentence_span_containing`
+are pure Python, no Wikidata snapshot needed for this) and parsed against
+a locally compiled `GeneratedMetonymy.pgf` with the engine's
+`spaceBeforeCommas` preprocessing applied -- the actual failures could be
+read directly instead of inferred from aggregate signals.
+
+**Finding 1: two real bugs in `resolve_action`'s no-hint fallback path.**
+`run_contextual_corpus.py`'s own dependency-hint precompute fails in this
+project's actual CI too (confirmed from a real CI log:
+`ModuleNotFoundError: No module named 'stanza'`), so the no-hint fallback
+in `scripts/contextual_rule_compiler.py`'s `resolve_action` is not a rare
+corner case -- it's what every real evaluation row goes through. Reading
+real failures surfaced two distinct bugs there, both producing outright
+nonsense text, not just missing grammar:
+- A word *inside* the target's own mention span could itself match an
+  unrelated VerbNet lemma's inflected form -- the source "High Point"
+  contains "Point", also a verb -- and since it sits at distance ~0 from
+  the target's own start, it could outrank the real governing verb
+  elsewhere in the sentence purely on proximity: `"Barrino was raised in
+  High Point"` became `"...raised in High points"`, the source's own
+  second word verb-conjugated in place. Fixed by excluding any candidate
+  phrase that overlaps the target's own span from consideration.
+- Without a dependency hint, voice was always assumed active, silently
+  replacing an already-correct passive surface ("is based") with a
+  freshly reconjugated active one ("is bases"). Fixed with a cheap, local
+  heuristic: if the matched surface text is exactly the participle form
+  used for passive (not the bare lemma) and is immediately preceded by a
+  form of "be" already in the unedited text, the sentence was already
+  passive -- no dependency parse needed to see that. (The first version
+  of this fix prepended a fresh "is " unconditionally, producing "is is
+  based" double auxiliaries -- caught locally before it ever reached CI,
+  by testing against the same real sample.)
+
+**Finding 2: the remaining grammar gaps are a long tail, not one
+dominant cause.** Categorizing real (non-garbled) failures by shape found
+nested PP chains ("in the Benslow area of Hitchin in Hertfordshire"),
+parenthetical acronyms ("(CEO)", "(HOLA)"), fronted date/time adverbials
+("On 18 May 2010, ...", "In 1805, ..."), pronoun subjects/objects ("he",
+"his" -- previously *zero* pronoun support existed at all), long
+appositive lists (3+ items), and general embedded/relative clauses --
+no single fix closes more than a handful of sentences. Added what was
+verifiable as safe and testable locally in one pass:
+- **`OfPP : NP -> PP`** -- the missing thirteenth preposition. "of" is
+  one of the most common in English NP-modification ("President of X",
+  "part of Y", "University of Z") and was simply absent from the
+  original twelve.
+- **PP chaining** ("a general in Hitchin of Hertfordshire") needed *no*
+  new code at all -- `ModifyNP : NP -> PP -> NP` already recurses on its
+  own output type, confirmed to parse correctly once tested directly.
+- **`OnFrontedS`/`InFrontedS`/`FromFrontedS : NP -> S -> S`** -- fronted
+  date/time adverbials, the same hand-rolled capitalized-literal idiom
+  `BecauseS`/`IfS`/`WhenS`/`AlthoughS` already use, for the identical
+  reason: `OnPP`/`InPP`/`FromPP`'s own preposition words are hardcoded
+  lowercase, with no capitalized variant, and this is the first time any
+  of them needs to be sentence-initial.
+- **`ParenNP : NP -> String -> NP`** -- a parenthetical acronym/gloss
+  right after an NP. Needed the *exact* same fix `ApposCommaPN1`/
+  `ApposCommaPN2` needed: without spacing, `"(HOLA)"` is one indivisible
+  token that an unrelated existing rule (`OpenPN3`) silently absorbed
+  instead of `ParenNP` ever matching -- confirmed directly, not assumed,
+  by testing both spaced and unspaced input locally. Fixed the same way:
+  a new `spaceAroundParens` in `engine/src/Metonymy/GF.hs`, composed with
+  `spaceBeforeCommas` in `parseEnglish`, inserting a space on whichever
+  side of `(`/`)` would otherwise glue to an adjacent non-space
+  character.
+- **`HePN`/`ShePN`/`ItPN`/`TheyPN : NP`** -- plain pronoun subjects and
+  objects, via RGL's own closed `Pron` vocabulary (`Structural.gf`,
+  already reachable through the open `Syntax` interface) and `mkNP`'s own
+  `Pron -> NP` overload. No new `open`, no open-ended `String` parameter.
+  Previously entirely unsupported: every NP-building rule before this
+  needed a proper noun, a common noun, or a coordination of those --
+  "he"/"his" were among the single most frequent tokens real failures
+  still stopped on.
+
+**Deliberately still deferred**, the same class of higher-risk or
+higher-effort items as before: appositive/coordination lists of 3+ items,
+general embedded/relative clauses beyond `ModifyRelVP`'s existing single-
+VP coverage, and arbitrary nested subordinate structure. Each would need
+either the still-deferred comma-bracketed "list of words" category (real
+ambiguity risk, not attempted) or substantially more grammar machinery
+than a single batch can safely verify.
+
+**Verification methodology**: every construct in this batch was compiled
+and parsed against a real local `gf.exe` build *before* being written
+into a test file, the same discipline the tokenizer-bug investigation
+established -- not another round of CI-guessing. Re-running the full
+150+150 local reproduction before and after this batch (both fixes and
+all five new constructs) moved successful local parses from 11/150 to
+14/150 (WiMCor) and 28/150 to 30/150 (ConMeC) -- modest, but real and
+individually attributable, not a guess. `tests/evaluation/test_resolve_action_positional_fixes.py`
+covers both `resolve_action` fixes directly; `tests/evaluation/test_compile_gf_constraints_batch2.py`
+covers the tree-walker contract for all five new grammar constructs;
+`tests/evaluation/test_gf_parse_diagnostic_matrix.py` gained eight new
+real-sentence regression cases, one per construct, each independently
+verified against the real compiled grammar first.
+
 ### Cumulative constituent layers
 
 Supported positive constituents are elaborated in their semantic composition

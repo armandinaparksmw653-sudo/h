@@ -26,6 +26,7 @@ abstract Metonymy = {
     UnderPP : NP -> PP ;
     DuringPP : NP -> PP ;
     NearPP : NP -> PP ;
+    OfPP : NP -> PP ;
     AndS : S -> S -> S ;
     OrS : S -> S -> S ;
     AndNP : NP -> NP -> NP ;
@@ -88,6 +89,38 @@ abstract Metonymy = {
     -- deliberately deferred.
     ApposCommaPN1 : String -> String -> NP ;
     ApposCommaPN2 : String -> String -> String -> NP ;
+
+    -- Fronted PP adverbial ("On 18 May 2010, Waterloo announces...", "In
+    -- 1805, ..."), the same fronted-comma shape as BecauseS/IfS/etc.
+    -- Hand-rolled capitalized literals for the same confirmed reason
+    -- BecauseS/IfS/WhenS/AlthoughS needed them: InPP/OnPP/FromPP's own
+    -- preposition words are hardcoded lowercase (`in_Prep`/`mkPrep
+    -- "on"`/`mkPrep "from"`), with no capitalized variant, and this is
+    -- the first time any of them needs to appear at a sentence's
+    -- absolute start. Covers date/time-fronted sentences, a distinct
+    -- and common WiMCor/ConMeC shape.
+    OnFrontedS : NP -> S -> S ;
+    InFrontedS : NP -> S -> S ;
+    FromFrontedS : NP -> S -> S ;
+
+    -- Parenthetical acronym/gloss immediately after an NP ("the Chief
+    -- Executive Officer (CEO)", "the Foundation (HOLA)") -- same
+    -- hand-rolled String-splicing idiom as ApposCommaPN1/2, parentheses
+    -- instead of commas.
+    ParenNP : NP -> String -> NP ;
+
+    -- Plain pronoun subjects/objects ("he taught...", "her family...") --
+    -- previously entirely unsupported (every NP-building rule before
+    -- this needed either a proper noun, a common noun, or a coordination
+    -- of those), yet "he"/"his"/etc. are among the single most frequent
+    -- tokens a real corpus sentence still fails on. RGL's own closed
+    -- Pron vocabulary (Structural.gf, already reachable via the open
+    -- Syntax interface) plus mkNP's own `Pron -> NP` overload -- no new
+    -- open, no open-ended String parameter.
+    HePN : NP ;
+    ShePN : NP ;
+    ItPN : NP ;
+    TheyPN : NP ;
 
     Anna : NP ;
     Alice : NP ;

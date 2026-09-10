@@ -249,6 +249,48 @@ class GfParseDiagnosticMatrix(unittest.TestCase):
     def test_short_two_word_appositive_subject_parses(self) -> None:
         self.assert_parses("Waterloo, a village, announces a programme")
 
+    # -- Batch 2: found by literally reading real WiMCor/ConMeC sample
+    # sentences (locally reproduced, seed=0, the exact same sample this
+    # project's real CI uses) and testing the resulting gf_sentence
+    # values against a locally compiled grammar instead of guessing from
+    # aggregate signals -- see docs/contextual-tower.md's "batch 2"
+    # section. Each construct here was verified working against a real
+    # gf.exe build before being added, so this is regression coverage,
+    # not exploratory. --
+
+    def test_of_preposition_modifier_parses(self) -> None:
+        # "of" was missing from the twelve existing prepositions despite
+        # being one of the most common in English NP-modification
+        # ("President of X", "part of Y", "University of Z").
+        self.assert_parses("Waterloo announces the president of Alabama")
+
+    def test_chained_pp_modifiers_parse_with_no_new_grammar(self) -> None:
+        # ModifyNP recursing on its own output ("a general in Hitchin of
+        # Hertfordshire") was already valid with zero new code -- this
+        # just locks in that it actually parses in the real grammar, not
+        # only in the abstract syntax's own type signature.
+        self.assert_parses(
+            "Waterloo announces a general in Hitchin of Hertfordshire"
+        )
+
+    def test_fronted_on_date_clause_parses(self) -> None:
+        self.assert_parses("On 18 May 2010, Waterloo announces a programme")
+
+    def test_fronted_in_date_clause_parses(self) -> None:
+        self.assert_parses("In 1805, Waterloo announces a programme")
+
+    def test_fronted_from_date_clause_parses(self) -> None:
+        self.assert_parses("From 1947, Waterloo announces a programme")
+
+    def test_parenthetical_acronym_after_subject_parses(self) -> None:
+        self.assert_parses("Waterloo announces the Foundation (HOLA)")
+
+    def test_he_pronoun_subject_parses(self) -> None:
+        self.assert_parses("He announces a programme")
+
+    def test_she_pronoun_object_parses(self) -> None:
+        self.assert_parses("Waterloo announces her")
+
 
 if __name__ == "__main__":
     unittest.main()

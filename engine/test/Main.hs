@@ -76,6 +76,24 @@ main = do
     "spaceBeforeCommas handles a comma as the very first character"
     (spaceBeforeCommas ",Waterloo" == ",Waterloo")
 
+  -- spaceAroundParens (Metonymy/GF.hs): same tokenizer limitation as
+  -- spaceBeforeCommas, confirmed the same way (a real local gf.exe
+  -- build) -- "(HOLA)" with no spacing is one indivisible token that an
+  -- unrelated existing rule (OpenPN3) silently absorbed instead of
+  -- grammar/Metonymy.gf's own ParenNP ever matching it.
+  assert
+    "spaceAroundParens inserts a space before an unspaced opening paren"
+    (spaceAroundParens "Foundation(HOLA)" == "Foundation (HOLA)")
+  assert
+    "spaceAroundParens inserts a space after an unspaced closing paren"
+    (spaceAroundParens "(HOLA)based" == "(HOLA) based")
+  assert
+    "spaceAroundParens is a no-op when both sides are already spaced"
+    (spaceAroundParens "Foundation ( HOLA ) based" == "Foundation ( HOLA ) based")
+  assert
+    "spaceAroundParens is a no-op on a sentence with no parens at all"
+    (spaceAroundParens "Waterloo announces a programme" == "Waterloo announces a programme")
+
   readScenario <- require "read-tolstoy"
   glassScenario <- require "drink-glass"
   moscowScenario <- require "moscow-signs"

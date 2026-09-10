@@ -2,6 +2,7 @@ module Metonymy.GF
   ( linearize
   , parseEnglish
   , spaceBeforeCommas
+  , spaceAroundParens
   ) where
 
 import Data.Char (isSpace)
@@ -26,7 +27,10 @@ parseEnglish pgfPath sentence = do
     readProcessWithExitCode
       "gf"
       ["--run", pgfPath]
-      ("p -lang=GeneratedMetonymyEng \"" <> spaceBeforeCommas sentence <> "\"\n")
+      ( "p -lang=GeneratedMetonymyEng \""
+          <> spaceAroundParens (spaceBeforeCommas sentence)
+          <> "\"\n"
+      )
   pure $
     case exitCode of
       ExitSuccess -> Right (filter (not . null) (map trim (lines stdoutText)))
@@ -50,6 +54,23 @@ spaceBeforeCommas (a : b : rest)
   | b == ',' && a /= ' ' = a : ' ' : b : spaceBeforeCommas rest
   | otherwise = a : spaceBeforeCommas (b : rest)
 spaceBeforeCommas other = other
+
+-- Same tokenizer limitation, same fix, for parentheses: "Foundation
+-- (HOLA)" needs "(" and ")" as their own tokens for grammar/Metonymy.gf's
+-- ParenNP to ever be reachable -- confirmed directly (not guessed) by
+-- testing against a locally compiled grammar: with no spacing,
+-- "(HOLA)" is one indivisible token that an unrelated existing
+-- multi-word-proper-noun rule (OpenPN3) silently absorbed instead,
+-- producing a real but semantically wrong tree, the exact same failure
+-- shape ApposCommaPN1/ApposCommaPN2 had before spaceBeforeCommas. Only
+-- touches "(" and ")" specifically, inserting a space on the side that
+-- would otherwise glue to an adjacent non-space character.
+spaceAroundParens :: String -> String
+spaceAroundParens (a : b : rest)
+  | a /= ' ' && b == '(' = a : ' ' : spaceAroundParens (b : rest)
+  | a == ')' && b /= ' ' = a : ' ' : spaceAroundParens (b : rest)
+  | otherwise = a : spaceAroundParens (b : rest)
+spaceAroundParens other = other
 
 trim :: String -> String
 trim = dropWhileEnd isSpace . dropWhile isSpace

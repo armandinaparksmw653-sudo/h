@@ -44,6 +44,7 @@ ARITIES = {
     "UnderPP": 1,
     "DuringPP": 1,
     "NearPP": 1,
+    "OfPP": 1,
     "AndS": 2,
     "OrS": 2,
     "AndNP": 2,
@@ -77,6 +78,10 @@ ARITIES = {
     "SAlthoughS": 2,
     "ApposCommaPN1": 2,
     "ApposCommaPN2": 3,
+    "OnFrontedS": 2,
+    "InFrontedS": 2,
+    "FromFrontedS": 2,
+    "ParenNP": 2,
 }
 
 
@@ -202,6 +207,22 @@ def _mention_span(sentence: str, surfaces: list[str]) -> tuple[int, int] | None:
     return None
 
 
+_BE_FORMS = {"is", "was", "are", "were", "be", "been", "being"}
+
+
+def _preceded_by_be_verb(sentence: str, position: int) -> bool:
+    """Is the word immediately before ``position`` some form of "be"?
+
+    A cheap, local stand-in for the voice detection a real dependency
+    parse would give (Stanza is unavailable in this project's own CI,
+    so ``dependency_hint`` never carries "voice" in practice) -- looking
+    at the single word already in the text right before the match is
+    enough to tell active from passive without one.
+    """
+    preceding = re.search(r"[A-Za-z]+\s*$", sentence[:position])
+    return bool(preceding) and preceding.group().strip().casefold() in _BE_FORMS
+
+
 def _split_top_level(value: str) -> list[str]:
     fields, start, depth = [], 0, 0
     for index, character in enumerate(value):
@@ -267,6 +288,18 @@ def resolve_action(
 
         candidates = []
         for surface, start, end in _surface_phrases(sentence):
+            # A word inside the target's own mention span can itself
+            # happen to match some unrelated VerbNet lemma's inflected
+            # form (e.g. the source "High Point" contains "Point", which
+            # is also a verb) -- and since it sits at distance ~0 from
+            # target_span[0], it would otherwise almost always outrank
+            # the real governing verb elsewhere in the sentence, purely
+            # on proximity. Confirmed directly against real WiMCor/ConMeC
+            # sample sentences (locally reproduced, not guessed): this
+            # produced literal nonsense like "raised in High points" --
+            # the source's own second word verb-conjugated in place.
+            if start < target_span[1] and end > target_span[0]:
+                continue
             for role in by_form.get(surface, []):
                 expected_role = "SubjectHole" if target_span[0] < start else "ObjectHole"
                 if role.hole_role == expected_role:
@@ -316,8 +349,36 @@ def resolve_action(
     strength = "hard" if hard else "selectional-preference"
     override = morphology_overrides.get(selected.lemma, {})
     voice = dependency_hint.get("voice") if dependency_hint else None
+    passive_form = override.get("passive_gf_form", regular_participle(selected.lemma))
+    already_passive_in_text = (
+        voice is None
+        and surface == passive_form.casefold()
+        and _preceded_by_be_verb(sentence, start)
+    )
+    if already_passive_in_text:
+        # No dependency hint means voice is never detected from real
+        # syntax -- confirmed directly against real WiMCor/ConMeC sample
+        # sentences (locally reproduced): this silently defaulted every
+        # such sentence to active, replacing an already-correct passive
+        # surface form ("is based") with a freshly reconjugated active
+        # one ("is bases"), producing nonsense. The matched surface text
+        # itself already carries the answer here: if what actually
+        # matched in the sentence is the participle form used for
+        # passive (not the bare lemma or the "-ing" form) and it is
+        # immediately preceded by a form of "be", the sentence was
+        # already passive -- no dependency parse needed to see that.
+        voice = "passive"
     gf_form = (
-        "is " + override.get("passive_gf_form", regular_participle(selected.lemma))
+        # already_passive_in_text means the "is"/"was" this needs is
+        # already sitting untouched right before `start` in the original
+        # text (that's the whole signal `_preceded_by_be_verb` checked)
+        # -- prepending another one here would double it ("is is based").
+        # The dependency_hint-driven passive path below it still needs
+        # its own, since there the auxiliary isn't already in the kept
+        # prefix.
+        passive_form
+        if already_passive_in_text
+        else "is " + passive_form
         if voice == "passive"
         else override.get("gf_form", third_person(selected.lemma))
     )
@@ -753,6 +814,7 @@ def compile_gf_constraints(
                 "UnderPP": ("ModifyNP+UnderPP", "under"),
                 "DuringPP": ("ModifyNP+DuringPP", "during"),
                 "NearPP": ("ModifyNP+NearPP", "near"),
+                "OfPP": ("ModifyNP+OfPP", "of"),
             }
             if (
                 isinstance(modifier, GFNode)

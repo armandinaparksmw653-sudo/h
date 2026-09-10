@@ -32,6 +32,7 @@ concrete MetonymyEng of Metonymy =
     UnderPP np = SyntaxEng.mkAdv (mkPrep "under") np ;
     DuringPP np = SyntaxEng.mkAdv (mkPrep "during") np ;
     NearPP np = SyntaxEng.mkAdv (mkPrep "near") np ;
+    OfPP np = SyntaxEng.mkAdv (mkPrep "of") np ;
     AndS s1 s2 = mkS and_Conj s1 s2 ;
     OrS s1 s2 = mkS or_Conj s1 s2 ;
     AndNP np1 np2 = mkNP and_Conj np1 np2 ;
@@ -208,6 +209,21 @@ concrete MetonymyEng of Metonymy =
       lin NP {s = \\_ => name.s ++ "," ++ appos.s ++ ","; a = R.agrP3 R.Sg} ;
     ApposCommaPN2 name appos1 appos2 =
       lin NP {s = \\_ => name.s ++ "," ++ appos1.s ++ appos2.s ++ ","; a = R.agrP3 R.Sg} ;
+
+    OnFrontedS date main =
+      lin S {s = "On" ++ date.s ! R.npNom ++ "," ++ main.s} ;
+    InFrontedS date main =
+      lin S {s = "In" ++ date.s ! R.npNom ++ "," ++ main.s} ;
+    FromFrontedS date main =
+      lin S {s = "From" ++ date.s ! R.npNom ++ "," ++ main.s} ;
+
+    ParenNP np content =
+      lin NP {s = \\_ => np.s ! R.npNom ++ "(" ++ content.s ++ ")"; a = np.a} ;
+
+    HePN = mkNP he_Pron ;
+    ShePN = mkNP she_Pron ;
+    ItPN = mkNP it_Pron ;
+    TheyPN = mkNP they_Pron ;
 
     Anna = mkNP (mkPN "Anna") ;
     Alice = mkNP (mkPN "Alice") ;
