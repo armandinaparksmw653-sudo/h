@@ -35,6 +35,14 @@ on:
         description: "parallel run_contextual_corpus.py workers"
         required: false
         default: "4"
+      llm_proposer_model:
+        description: >-
+          third tree-source tier: local Ollama model name (e.g.
+          llama3.2:3b-instruct), tried when the Stanza-UD tree-builder
+          declines. Empty (default) disables this tier and installs no
+          Ollama -- identical behaviour to before this tier existed.
+        required: false
+        default: "llama3.2:3b-instruct"
 
 permissions:
   contents: read
@@ -136,6 +144,14 @@ jobs:
             --rules data/wikidata-runtime-rules.json \
             --output build/wikidata-tower-snapshot
 
+      - name: Install and start Ollama (LLM clause-structure proposer)
+        if: github.event.inputs.llm_proposer_model != ''
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull "${{ github.event.inputs.llm_proposer_model }}"
+
       - name: Run the contextual tower on the sampled corpora
         run: |
           for ds in wimcor-test conmec; do
@@ -144,6 +160,7 @@ jobs:
               --engine build/metonymy \
               --snapshot build/wikidata-tower-snapshot \
               --workers "${{ github.event.inputs.workers }}" \
+              --llm-proposer-model "${{ github.event.inputs.llm_proposer_model }}" \
               --allow-failures \
               --output build/evaluation/$ds.tower-inference.jsonl
           done

@@ -119,6 +119,94 @@ class RunOneTreeSourceTests(unittest.TestCase):
             )
         self.assertEqual(result["decline_reason"], "")
 
+    def test_records_llm_decline_reason(self) -> None:
+        stdout = (
+            "gf-tree=DummyTree\n"
+            "tree-source=gf-parser\n"
+            "decline-reason=no-ud-words\n"
+            "llm-decline-reason=no-response\n"
+            "stage=0 constraint=graph-related\n"
+            "  survivors=[Q1]\n"
+        )
+        with patch("subprocess.run", return_value=completed(stdout)):
+            result = run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+            )
+        self.assertEqual(result["llm_decline_reason"], "no-response")
+
+    def test_no_llm_decline_reason_line_means_no_field_at_all(self) -> None:
+        stdout = (
+            "gf-tree=DummyTree\n"
+            "tree-source=stanza\n"
+            "decline-reason=\n"
+            "stage=0 constraint=graph-related\n"
+            "  survivors=[Q1]\n"
+        )
+        with patch("subprocess.run", return_value=completed(stdout)):
+            result = run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+            )
+        self.assertNotIn("llm_decline_reason", result)
+
+
+class RunOneLlmProposerFlagTests(unittest.TestCase):
+    def test_llm_proposer_model_is_passed_through_to_the_subprocess_command(self) -> None:
+        with patch("subprocess.run", return_value=completed("")) as mock_run:
+            run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+                "llama3.2:3b-instruct",
+                None,
+            )
+        command = mock_run.call_args[0][0]
+        self.assertIn("--llm-proposer-model", command)
+        self.assertEqual(
+            command[command.index("--llm-proposer-model") + 1], "llama3.2:3b-instruct"
+        )
+        self.assertNotIn("--llm-proposer-endpoint", command)
+
+    def test_llm_proposer_endpoint_is_passed_through_only_alongside_the_model(self) -> None:
+        with patch("subprocess.run", return_value=completed("")) as mock_run:
+            run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+                "llama3.2:3b-instruct",
+                "http://localhost:11434/api/generate",
+            )
+        command = mock_run.call_args[0][0]
+        self.assertIn("--llm-proposer-endpoint", command)
+        self.assertEqual(
+            command[command.index("--llm-proposer-endpoint") + 1],
+            "http://localhost:11434/api/generate",
+        )
+
+    def test_no_llm_proposer_model_means_neither_flag_is_passed(self) -> None:
+        with patch("subprocess.run", return_value=completed("")) as mock_run:
+            run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+            )
+        command = mock_run.call_args[0][0]
+        self.assertNotIn("--llm-proposer-model", command)
+        self.assertNotIn("--llm-proposer-endpoint", command)
+
 
 if __name__ == "__main__":
     unittest.main()

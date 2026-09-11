@@ -1637,3 +1637,146 @@ around whichever word `dependency_hint`'s own `governing_start` names,
 not necessarily the sentence's UD root) or whether something else
 entirely dominates (in which case the hypothesis was wrong, and the fix
 needs to be something else) -- either way, decisive, not another guess.
+
+## Phase 1.5: LLM as a third tree-source tier
+
+Round 5's `tree_source_counts` came back before its own root-cause fix
+could be measured: the user asked to add a *third*, wider-coverage
+proposer instead of waiting on that one fix -- not to replace the
+Stanza-UD tier or the legacy GF-parser fallback, but to extend the
+existing fallback chain (Stanza &rarr; **LLM** &rarr; legacy GF-parser)
+so real recall could move now, independent of when the UD-path root
+cause gets fixed.
+
+Two external, already-solved-seeming alternatives were checked and
+rejected first. **PredPatt** (github.com/hltcoe/PredPatt), initially
+recommended from general knowledge as a mature UD-to-predicate-argument
+extractor, turned out on actual verification (not on paper) to be
+unmaintained since 2021-02-24, not on PyPI, and built predominantly
+around UD v1 deprel labels (`dobj`, `nsubjpass`, `aclrelcl`) that don't
+match this project's UD v2 Stanza (`en_ewt`) output -- the recommendation
+was walked back once checked. **Semgrex** (Stanza's own dependency-graph
+query language) is actively maintained and guaranteed UD v2-compatible,
+but only supplies a query language, not ready-made extraction rules --
+useful for a future refactor of the pattern-matching internals, not a
+drop-in replacement for this round.
+
+**Epistemic framing, reused directly from the LLM promotion-evidence
+pilot** (an already-existing plan section, not fully wired into CI):
+Agda's checker verifies the *form* of what a proposer submits, never the
+truth of a natural-language understanding claim it embodies. This LLM
+tier is architecturally identical in status to the other two tree
+sources -- an untrusted proposer, validated the same way, by `engine
+linearize` and then by every downstream Agda-checked stage -- so this
+addition needs zero new Agda theorems, exactly like the Stanza-UD tier
+before it. The precision of whatever this tier contributes depends
+entirely on the LLM's own judgment quality, not on anything the checker
+proves; that is a property of this component, not a weakening of the
+formal core.
+
+**No API key, no network dependency beyond the CI runner itself**: this
+tier talks to a local Ollama server via `scripts/propose_promotion_evidence.py`'s
+existing `query_ollama` (stdlib `urllib.request`, `format: "json"`,
+`DEFAULT_MODEL = "llama3.2:3b-instruct"`, `DEFAULT_ENDPOINT =
+"http://localhost:11434/api/generate"`) -- a working precedent already
+in the repo for the (separate, not-yet-CI-wired) promotion-evidence
+pilot, reused directly rather than duplicated.
+
+**This tier's structural advantage over the Stanza-UD one**: it never
+needs to find "the governing verb" independently. The caller already
+knows which verb (by lemma) `resolve_action` resolved, so the prompt
+just asks the model for that verb's own subject/object directly. This
+sidesteps round 5's exact structural gap (a target's governing verb need
+not be the sentence's own UD root) rather than fixing it.
+
+**Rendering** (`scripts/build_gf_tree_from_dependencies.py`): two new
+functions, `build_gf_tree_from_llm_structure`/
+`build_gf_tree_from_llm_structure_decline_reason`, mirroring
+`build_gf_tree`/`build_gf_tree_decline_reason`'s own `_Bail`-with-reason
+idiom exactly, and reusing all of that module's existing low-level
+primitives (`_apply`/`_quote`/`_PROPER_NOUN_CONSTRUCTORS`/
+`_PRONOUN_CONSTRUCTORS`/`_strip_outer_parens`) -- the LLM path just feeds
+them a differently-shaped structure. First-round schema (same
+"narrow slice first, measure, widen" discipline as Phase 1 itself):
+active/passive voice, three NP forms (proper noun of 1-3 tokens /
+pronoun / common noun with determiner and an optional single adjective).
+No relative clauses, subordinate clauses, or PP modifiers yet. Every
+tree shape (active proper-noun, 3-token proper noun, pronoun + adjective
+common noun, definite/indefinite common noun, all four pronouns, passive
++ agent) was verified against the real local `gf.exe`/pinned `gf-rgl`
+before being written into a test, the same discipline used throughout
+this document.
+
+**Proposer** (new `scripts/llm_propose_clause_structure.py`): a single
+`PROMPT_TEMPLATE` asking for exactly one verb lemma's own
+subject/object(/agent, if passive) as literal noun phrases copied from
+the sentence -- never paraphrased, never invented -- in a fixed JSON
+schema, with an explicit instruction to answer `{"voice": null, ...}`
+(never guess) if any part doesn't fit. `propose_clause_structure(sentence,
+lemma, query)` degrades to `None` on any failure at all: a query
+exception, a non-dict response, a missing `"voice"` key, or the model's
+own null-voice abstention -- uniformly, the same "unable is not an
+error" policy already used throughout the pipeline's fallback chain.
+
+**Wiring** (`scripts/run_automatic_contextual_pipeline.py`): two new CLI
+flags, `--llm-proposer-model` (unset by default -- this tier is fully
+inert unless a caller opts in) and `--llm-proposer-endpoint`. When the
+Stanza-UD tier declines and `--llm-proposer-model` is set, this tier
+tries next, before the legacy `engine parse` fallback: `query_ollama` is
+asked for a clause structure, `build_gf_tree_from_llm_structure` renders
+it, and the result is validated through the same `engine linearize` gate
+every other tier already uses. `tree_source` becomes `"stanza"`,
+`"llm"`, or `"gf-parser"` (previously only the latter two existed); a
+new `llm_decline_reason` field (`"not-attempted"` when this tier never
+ran at all -- Stanza already succeeded, or no model was configured;
+`"no-response"` for the proposer's own abstention; a
+`build_gf_tree_from_llm_structure_decline_reason` code otherwise; `""`
+when an LLM-built tree was trusted) is tagged on every outcome the same
+way `tree_source`/`decline_reason` already are.
+
+**Plumbing through the rest of the chain**: `scripts/evaluation/run_contextual_corpus.py`
+gained matching `--llm-proposer-model`/`--llm-proposer-endpoint` flags
+(threaded into each `run_one` subprocess call only when set) and a new
+`"llm-decline-reason="` line-scan branch.
+`scripts/evaluation/score_contextual_detection.py` gained
+`row_llm_decline_reason` (mirroring `row_decline_reason` exactly) and a
+new `llm_decline_reason_counts` report field, aggregated across every
+outcome the same way `tree_source_counts`/`decline_reason_counts`
+already are. `.github/workflows/contextual-tower-evaluation.yml` gained
+a `workflow_dispatch` input `llm_proposer_model` (default
+`llama3.2:3b-instruct`; empty disables the tier and skips installing
+Ollama entirely -- identical behaviour to before this tier existed), a
+conditional "Install and start Ollama" step, and passes
+`--llm-proposer-model` through to `run_contextual_corpus.py`.
+
+**Verification, same policy as Stanza throughout this whole document**:
+there is no Ollama on the local development machine, and none will be
+installed there without explicit permission -- everything above is
+verified locally with pure Python and an injected fake `query` callable
+(the same pattern `test_propose_promotion_evidence.py` already
+established: business logic is tested this way, `query_ollama`'s own
+HTTP layer is verified only by a real CI run). New tests: a
+`BuildGfTreeFromLlmStructureTests` class (7 cases: each NP form, both
+voices) plus a `BuildGfTreeFromLlmStructureDeclineReasonTests` class (14
+cases, one per reason code) in `test_build_gf_tree_from_dependencies.py`
+(75 tests total now); a new `test_llm_propose_clause_structure.py` (6
+tests: prompt contents, well-formed passthrough, null-voice abstention,
+query exception, non-dict response, missing-voice-key); a new
+`LlmProposerTierTests` class (4 tests, mocking only `query_ollama`) in
+`test_run_automatic_contextual_pipeline.py`; new tests for the
+`"llm-decline-reason="` line-scan and CLI-flag threading in
+`test_run_contextual_corpus.py`; a new `RowLlmDeclineReasonTests` class
+plus one new `ScoreTests` case in `test_score_contextual_detection.py`.
+
+Deliberately deferred to a later round: relative clauses, subordinate
+clauses, and PP modifiers in the LLM schema -- cheaper to add here than
+on the UD path (a new optional JSON field, not fifty lines of deprel
+pattern-matching), but still its own round with its own measurement, the
+same discipline as everywhere else in this document.
+
+**Next step**: run the full local suite, commit, push, wait for `ci.yml`,
+then re-run `contextual-tower-evaluation.yml` with `llm_proposer_model`
+set -- `tree_source_counts` and `llm_decline_reason_counts` will give the
+first real measurement of what this tier actually contributes on
+WiMCor/ConMeC, independent of whether round 5's Stanza-UD root cause has
+been fixed yet.

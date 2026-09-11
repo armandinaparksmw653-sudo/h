@@ -41,6 +41,20 @@ ud_words hint, build_gf_tree declines (any UD shape outside its
 deliberately narrow first slice), or `engine linearize` fails to validate
 the tree it built -- so this can only ever be an *additional* source of
 success, never a new source of failure.
+
+When the Stanza-UD tier above declines and --llm-proposer-model is set,
+a third tier tries next, before that same `engine parse` fallback: a
+local Ollama server (scripts/llm_propose_clause_structure.py's
+propose_clause_structure) is asked for this sentence's clause structure
+around the already-resolved verb lemma, rendered into a tree by
+build_gf_tree_from_llm_structure, and validated through the same
+`engine linearize` gate as the Stanza-UD tier. Architecturally this LLM
+tier is just another untrusted proposer, no different in kind from GF's
+own parser or the UD-based tree-builder -- see docs/architecture.md's
+"Hard search results are untrusted until `runtimeCheck` succeeds": the
+tree text this tier produces never reaches Haskell/Agda directly, only
+the constraints compile_gf_constraints later derives from it do, so this
+tier adds zero new Agda theorems, same as the tier before it.
 """
 
 from __future__ import annotations
@@ -56,9 +70,16 @@ from pathlib import Path
 from build_gf_tree_from_dependencies import (
     build_gf_tree,
     build_gf_tree_decline_reason,
+    build_gf_tree_from_llm_structure,
+    build_gf_tree_from_llm_structure_decline_reason,
     load_gf_function_by_lemma,
 )
 from contextual_rule_compiler import compile_gf_constraints
+from llm_propose_clause_structure import (
+    DEFAULT_ENDPOINT as LLM_DEFAULT_ENDPOINT,
+    propose_clause_structure,
+    query_ollama,
+)
 
 HEADER = "scenario\tsource_qid\taction\trole\tmax_depth\tbridge_relations\tconstraints\n"
 FINAL_SURVIVORS = re.compile(r"survivors=(\[[^\]]*\])")
@@ -175,6 +196,17 @@ def main() -> None:
     )
     parser.add_argument("--framenet-snapshot", type=Path)
     parser.add_argument(
+        "--llm-proposer-model",
+        help=(
+            "third tree-source tier, tried when the Stanza-UD build_gf_tree "
+            "declines: model name for a local Ollama server (e.g. "
+            "llama3.2:3b-instruct) via llm_propose_clause_structure.py. "
+            "Unset (default) disables this tier entirely -- identical "
+            "behaviour to before this tier existed."
+        ),
+    )
+    parser.add_argument("--llm-proposer-endpoint", default=LLM_DEFAULT_ENDPOINT)
+    parser.add_argument(
         "--ablation",
         choices=[
             "full",
@@ -284,8 +316,8 @@ def main() -> None:
     # (tree_source_counts: 100% "gf-parser") without any way to tell
     # why; this answers that with real data instead of another guess.
     decline_reason = "no-ud-words"
+    gf_function_by_lemma = load_gf_function_by_lemma(action_map)
     if dependency_hint_data and dependency_hint_data.get("ud_words"):
-        gf_function_by_lemma = load_gf_function_by_lemma(action_map)
         built_tree = build_gf_tree(
             dependency_hint_data["ud_words"], proposal["action"], gf_function_by_lemma
         )
@@ -315,17 +347,64 @@ def main() -> None:
                 dependency_hint_data["ud_words"], proposal["action"], gf_function_by_lemma
             )
 
-    # Recorded once here and reused everywhere below (the exit-3/4/7
-    # JSON payloads and the unconditional "tree-source="/"decline-reason="
-    # stdout lines on success) -- see docs/contextual-tower.md's "Phase
-    # 1, round 3" for why this exists: isolating a real mystery (bare,
-    # unquoted capitalized words in some exit-4 rows' trees) needed to
-    # know which of the two tree sources actually produced a given row's
-    # tree, across every outcome, not just failures.
-    tree_source = "stanza" if stanza_built_tree is not None else "gf-parser"
+    # Third tier, tried only when Stanza-UD declined and an LLM proposer
+    # model was actually configured (--llm-proposer-model unset = this
+    # whole block never runs, byte-identical to before this tier
+    # existed). See llm_propose_clause_structure.py's own module
+    # docstring and docs/contextual-tower.md's "Phase 1.5" section for
+    # the full epistemic framing -- another untrusted proposer, same
+    # `engine linearize` validation gate as the Stanza tier above, never
+    # reaching the formal core directly either way.
+    llm_built_tree = None
+    llm_decline_reason = "not-attempted"
+    if stanza_built_tree is None and args.llm_proposer_model:
+        def query(prompt: str) -> dict:
+            return query_ollama(
+                prompt, model=args.llm_proposer_model, endpoint=args.llm_proposer_endpoint
+            )
 
-    if stanza_built_tree is not None:
-        trees = [stanza_built_tree]
+        structure = propose_clause_structure(
+            proposal["gf_sentence"], proposal["action"], query
+        )
+        if structure is None:
+            llm_decline_reason = "no-response"
+        else:
+            llm_tree = build_gf_tree_from_llm_structure(
+                structure, proposal["action"], gf_function_by_lemma
+            )
+            if llm_tree is None:
+                llm_decline_reason = build_gf_tree_from_llm_structure_decline_reason(
+                    structure, proposal["action"], gf_function_by_lemma
+                )
+            else:
+                validated = subprocess.run(
+                    [str(args.engine), "linearize", llm_tree],
+                    text=True,
+                    capture_output=True,
+                )
+                if validated.returncode == 0:
+                    llm_built_tree = llm_tree
+                    llm_decline_reason = ""
+                else:
+                    llm_decline_reason = "linearize-validation-failed"
+
+    # Recorded once here and reused everywhere below (the exit-3/4/7
+    # JSON payloads and the unconditional "tree-source="/"decline-reason="/
+    # "llm-decline-reason=" stdout lines on success) -- see
+    # docs/contextual-tower.md's "Phase 1, round 3"/"Phase 1.5" for why
+    # this exists: isolating a real mystery (bare, unquoted capitalized
+    # words in some exit-4 rows' trees) and later measuring the LLM
+    # tier's own real contribution both needed to know which of the
+    # three tree sources actually produced a given row's tree, across
+    # every outcome, not just failures.
+    tree_source = (
+        "stanza"
+        if stanza_built_tree is not None
+        else "llm" if llm_built_tree is not None else "gf-parser"
+    )
+
+    if stanza_built_tree is not None or llm_built_tree is not None:
+        trees = [stanza_built_tree or llm_built_tree]
     else:
         # Falls back here whenever build_gf_tree declined (an unhandled
         # UD shape, no ud_words hint at all, or the linearize validation
@@ -346,6 +425,7 @@ def main() -> None:
                         "detail": parsed.stderr.strip(),
                         "tree_source": tree_source,
                         "decline_reason": decline_reason,
+                        "llm_decline_reason": llm_decline_reason,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -374,6 +454,7 @@ def main() -> None:
                     "gf_sentence": proposal["gf_sentence"],
                     "tree_source": tree_source,
                     "decline_reason": decline_reason,
+                    "llm_decline_reason": llm_decline_reason,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -440,6 +521,11 @@ def main() -> None:
                     # tree-building) -- otherwise which of
                     # build_gf_tree_decline_reason's reasons applies.
                     "decline_reason": decline_reason,
+                    # Same idea, for the LLM tier -- "" when tree_source
+                    # is "llm", "not-attempted" when the LLM tier never
+                    # ran at all (Stanza already succeeded, or
+                    # --llm-proposer-model wasn't given).
+                    "llm_decline_reason": llm_decline_reason,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -452,10 +538,12 @@ def main() -> None:
     # this up into the result row directly, the same way it already
     # does for "gf-tree="/"graph_sha256="/etc. Exit 1/2 never reach this
     # line at all (tree-building isn't attempted before them); exit
-    # 3/4/7 carry their own "tree_source"/"decline_reason" in their JSON
-    # payload instead, since they never reach these lines either.
+    # 3/4/7 carry their own "tree_source"/"decline_reason"/
+    # "llm_decline_reason" in their JSON payload instead, since they
+    # never reach these lines either.
     print("tree-source=" + tree_source, flush=True)
     print("decline-reason=" + decline_reason, flush=True)
+    print("llm-decline-reason=" + llm_decline_reason, flush=True)
     encoded_constraints = ";;".join(
         encode_constraint(item) for item in proposal["constraints"]
     )

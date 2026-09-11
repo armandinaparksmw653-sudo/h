@@ -18,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from build_gf_tree_from_dependencies import (  # noqa: E402
     build_gf_tree,
     build_gf_tree_decline_reason,
+    build_gf_tree_from_llm_structure,
+    build_gf_tree_from_llm_structure_decline_reason,
     load_gf_function_by_lemma,
 )
 
@@ -762,6 +764,285 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
             "leftover-words",
+        )
+
+
+class BuildGfTreeFromLlmStructureTests(unittest.TestCase):
+    """The LLM-proposer tier's own renderer -- reuses the same low-level
+    rendering primitives as the UD-tree builder above (_apply/_quote/
+    _PROPER_NOUN_CONSTRUCTORS/_PRONOUN_CONSTRUCTORS), just fed an LLM-
+    described structure instead of a UD graph. Every generated tree
+    shape here was also verified directly against the local GF toolchain
+    before being written into build_gf_tree_from_dependencies.py itself.
+    """
+
+    def test_active_with_proper_noun_subject_and_object(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["Waterloo"]},
+            "object": {"kind": "proper_noun", "tokens": ["Henry", "County"]},
+        }
+        tree = build_gf_tree_from_llm_structure(structure, "announce", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Waterloo") (Compl CTX_announce (OpenPN2 "Henry" "County"))',
+        )
+
+    def test_three_token_proper_noun(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["Waterloo"]},
+            "object": {
+                "kind": "proper_noun",
+                "tokens": ["Royal", "Shipley", "School"],
+            },
+        }
+        tree = build_gf_tree_from_llm_structure(structure, "announce", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Waterloo") '
+            '(Compl CTX_announce (OpenPN3 "Royal" "Shipley" "School"))',
+        )
+
+    def test_pronoun_subject_and_common_noun_object_with_adjective(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {
+                "kind": "common_noun",
+                "determiner": "a",
+                "noun": "programme",
+                "adjective": "large",
+            },
+        }
+        tree = build_gf_tree_from_llm_structure(structure, "announce", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'Pred HePN (Compl CTX_announce '
+            '(OpenAdjIndefCN "large" "programme" "programme"))',
+        )
+
+    def test_common_noun_without_adjective_definite(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["Waterloo"]},
+            "object": {"kind": "common_noun", "determiner": "the", "noun": "county"},
+        }
+        tree = build_gf_tree_from_llm_structure(structure, "announce", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Waterloo") '
+            '(Compl CTX_announce (OpenDefCN "county" "county"))',
+        )
+
+    def test_all_four_pronouns(self) -> None:
+        for pronoun, constructor in (
+            ("he", "HePN"), ("she", "ShePN"), ("it", "ItPN"), ("they", "TheyPN"),
+        ):
+            with self.subTest(pronoun=pronoun):
+                structure = {
+                    "voice": "active",
+                    "subject": {"kind": "pronoun", "pronoun": pronoun},
+                    "object": {"kind": "proper_noun", "tokens": ["Henry"]},
+                }
+                tree = build_gf_tree_from_llm_structure(
+                    structure, "announce", GF_FUNCTIONS
+                )
+                self.assertEqual(
+                    tree, f'Pred {constructor} (Compl CTX_announce (OpenPN "Henry"))'
+                )
+
+    def test_passive_with_agent(self) -> None:
+        structure = {
+            "voice": "passive",
+            "subject": {"kind": "proper_noun", "tokens": ["Waterloo"]},
+            "agent": {"kind": "proper_noun", "tokens": ["Henry"]},
+        }
+        tree = build_gf_tree_from_llm_structure(structure, "announce", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Waterloo") (PassCompl CTX_announce (OpenPN "Henry"))',
+        )
+
+    def test_declines_when_lemma_missing_from_lexicon(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertIsNone(
+            build_gf_tree_from_llm_structure(structure, "floreate", GF_FUNCTIONS)
+        )
+
+
+class BuildGfTreeFromLlmStructureDeclineReasonTests(unittest.TestCase):
+    def test_succeeds_when_the_renderer_would(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "",
+        )
+
+    def test_structure_not_a_dict(self) -> None:
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                None, "announce", GF_FUNCTIONS
+            ),
+            "llm-structure-not-a-dict",
+        )
+
+    def test_verb_not_in_lexicon(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "floreate", GF_FUNCTIONS
+            ),
+            "verb-not-in-lexicon",
+        )
+
+    def test_voice_unrecognized(self) -> None:
+        structure = {"voice": None, "subject": None, "object": None, "agent": None}
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-voice-unrecognized",
+        )
+
+    def test_active_missing_np(self) -> None:
+        structure = {"voice": "active", "subject": {"kind": "pronoun", "pronoun": "he"}}
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-active-missing-np",
+        )
+
+    def test_passive_missing_np(self) -> None:
+        structure = {
+            "voice": "passive",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-passive-missing-np",
+        )
+
+    def test_np_not_a_dict(self) -> None:
+        structure = {"voice": "active", "subject": "Waterloo", "object": {"kind": "pronoun", "pronoun": "it"}}
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-np-not-a-dict",
+        )
+
+    def test_np_unrecognized_kind(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "numeral", "text": "1805"},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-np-unrecognized-kind",
+        )
+
+    def test_proper_noun_tokens_invalid(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": "Waterloo"},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-proper-noun-tokens-invalid",
+        )
+
+    def test_proper_noun_chain_too_long(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["A", "B", "C", "D"]},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-proper-noun-chain-too-long",
+        )
+
+    def test_pronoun_unrecognized(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "who"},
+            "object": {"kind": "pronoun", "pronoun": "it"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-pronoun-unrecognized",
+        )
+
+    def test_common_noun_missing_noun(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {"kind": "common_noun", "determiner": "a", "noun": None},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-common-noun-missing-noun",
+        )
+
+    def test_common_noun_unrecognized_determiner(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {"kind": "common_noun", "determiner": "every", "noun": "county"},
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-common-noun-unrecognized-determiner",
+        )
+
+    def test_common_noun_invalid_adjective(self) -> None:
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "pronoun", "pronoun": "he"},
+            "object": {
+                "kind": "common_noun",
+                "determiner": "a",
+                "noun": "county",
+                "adjective": 5,
+            },
+        }
+        self.assertEqual(
+            build_gf_tree_from_llm_structure_decline_reason(
+                structure, "announce", GF_FUNCTIONS
+            ),
+            "llm-common-noun-invalid-adjective",
         )
 
 

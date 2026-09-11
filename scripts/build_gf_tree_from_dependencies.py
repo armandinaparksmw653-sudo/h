@@ -557,6 +557,141 @@ def build_gf_tree_decline_reason(
         return bail.reason
 
 
+def _np_from_llm_description(np: Any) -> str:
+    """One NP from an LLM-proposed clause structure (see
+    scripts/llm_propose_clause_structure.py's own docstring for the
+    full JSON schema this consumes) -- reuses the exact same rendering
+    primitives (_apply/_quote/_PROPER_NOUN_CONSTRUCTORS/
+    _PRONOUN_CONSTRUCTORS) as the UD-tree-derived _np above, since both
+    ultimately build the same three NP shapes; only how the shape is
+    identified differs (UD upos/deprel vs. the LLM's own classification).
+    Every failure mode raises _Bail with an "llm-"-prefixed reason code,
+    distinct from the UD path's own vocabulary, so
+    decline_reason_counts can tell which tier actually produced a given
+    decline.
+    """
+    if not isinstance(np, dict):
+        raise _Bail("llm-np-not-a-dict")
+    kind = np.get("kind")
+    if kind == "proper_noun":
+        tokens = np.get("tokens")
+        if not isinstance(tokens, list) or not tokens or not all(
+            isinstance(token, str) and token for token in tokens
+        ):
+            raise _Bail("llm-proper-noun-tokens-invalid")
+        constructor = _PROPER_NOUN_CONSTRUCTORS.get(len(tokens))
+        if constructor is None:
+            raise _Bail("llm-proper-noun-chain-too-long")
+        return _apply(constructor, *(_quote(token) for token in tokens))
+    if kind == "pronoun":
+        pronoun = np.get("pronoun")
+        constructor = _PRONOUN_CONSTRUCTORS.get(
+            pronoun.casefold() if isinstance(pronoun, str) else ""
+        )
+        if constructor is None:
+            raise _Bail("llm-pronoun-unrecognized")
+        return _apply(constructor)
+    if kind == "common_noun":
+        noun = np.get("noun")
+        if not isinstance(noun, str) or not noun:
+            raise _Bail("llm-common-noun-missing-noun")
+        determiner = np.get("determiner")
+        if determiner == "the":
+            is_definite = True
+        elif determiner == "a":
+            is_definite = False
+        else:
+            raise _Bail("llm-common-noun-unrecognized-determiner")
+        noun_text = _quote(noun)
+        adjective = np.get("adjective")
+        if adjective is not None:
+            if not isinstance(adjective, str) or not adjective:
+                raise _Bail("llm-common-noun-invalid-adjective")
+            constructor = "OpenAdjDefCN" if is_definite else "OpenAdjIndefCN"
+            adjective_text = _quote(adjective)
+            return _apply(constructor, adjective_text, noun_text, noun_text)
+        constructor = "OpenDefCN" if is_definite else "OpenIndefCN"
+        return _apply(constructor, noun_text, noun_text)
+    raise _Bail("llm-np-unrecognized-kind")
+
+
+def _build_gf_tree_from_llm_structure_inner(
+    structure: Any,
+    lemma: str,
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """The single implementation build_gf_tree_from_llm_structure and
+    build_gf_tree_from_llm_structure_decline_reason both delegate to --
+    mirrors _build_gf_tree_inner's own contract (always raises _Bail,
+    never returns None, on any unhandled/invalid structure).
+    """
+    if not isinstance(structure, dict):
+        raise _Bail("llm-structure-not-a-dict")
+    gf_function = gf_function_by_lemma.get(lemma)
+    if gf_function is None:
+        # Same reason code the UD path's own _clause already uses for
+        # this exact condition -- one shared vocabulary entry for "this
+        # lemma has no compiled GF action", regardless of which tier
+        # found that out.
+        raise _Bail("verb-not-in-lexicon")
+    voice = structure.get("voice")
+    if voice == "passive":
+        subject_description = structure.get("subject")
+        agent_description = structure.get("agent")
+        if subject_description is None or agent_description is None:
+            raise _Bail("llm-passive-missing-np")
+        subject_np = _np_from_llm_description(subject_description)
+        agent_np = _np_from_llm_description(agent_description)
+        return _apply("Pred", subject_np, _apply("PassCompl", gf_function, agent_np))
+    if voice == "active":
+        subject_description = structure.get("subject")
+        object_description = structure.get("object")
+        if subject_description is None or object_description is None:
+            raise _Bail("llm-active-missing-np")
+        subject_np = _np_from_llm_description(subject_description)
+        object_np = _np_from_llm_description(object_description)
+        return _apply("Pred", subject_np, _apply("Compl", gf_function, object_np))
+    raise _Bail("llm-voice-unrecognized")
+
+
+def build_gf_tree_from_llm_structure(
+    structure: Any,
+    lemma: str,
+    gf_function_by_lemma: dict[str, str],
+) -> str | None:
+    """Build GF tree text from an LLM-proposed clause structure (the
+    dict scripts/llm_propose_clause_structure.py's propose_clause_structure
+    returns), or None if the structure is missing, malformed, or
+    describes something this narrow first schema doesn't cover. Mirrors
+    build_gf_tree's own contract exactly, just for a different (LLM-
+    derived rather than UD-derived) structured input -- same lemma/
+    gf_function_by_lemma reuse, same "never guess, only build when
+    confident" discipline.
+    """
+    try:
+        return _strip_outer_parens(
+            _build_gf_tree_from_llm_structure_inner(structure, lemma, gf_function_by_lemma)
+        )
+    except _Bail:
+        return None
+
+
+def build_gf_tree_from_llm_structure_decline_reason(
+    structure: Any,
+    lemma: str,
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """Empty string if build_gf_tree_from_llm_structure would succeed on
+    the same input, else a closed-vocabulary reason code -- mirrors
+    build_gf_tree_decline_reason exactly, for the LLM-structure path.
+    """
+    try:
+        _build_gf_tree_from_llm_structure_inner(structure, lemma, gf_function_by_lemma)
+        return ""
+    except _Bail as bail:
+        return bail.reason
+
+
 def load_gf_function_by_lemma(actions_json: dict[str, Any]) -> dict[str, str]:
     """lemma -> "CTX_<hash>" reverse lookup from a loaded contextual-gf-actions.json.
 

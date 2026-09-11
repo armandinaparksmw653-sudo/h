@@ -67,6 +67,8 @@ def run_one(
     ablation: str,
     row: dict,
     dependency_hint: dict | None,
+    llm_proposer_model: str | None = None,
+    llm_proposer_endpoint: str | None = None,
 ) -> dict:
     command = [
         "python3",
@@ -88,6 +90,10 @@ def run_one(
         command.extend(
             ["--dependency-hint", json.dumps(dependency_hint, sort_keys=True)]
         )
+    if llm_proposer_model:
+        command.extend(["--llm-proposer-model", llm_proposer_model])
+        if llm_proposer_endpoint:
+            command.extend(["--llm-proposer-endpoint", llm_proposer_endpoint])
     completed = subprocess.run(
         command,
         text=True,
@@ -129,6 +135,11 @@ def run_one(
             # build_gf_tree_decline_reason's own docstring) -- printed
             # alongside "tree-source=" for the same reason.
             result["decline_reason"] = line.split("=", 1)[1]
+        elif line.startswith("llm-decline-reason="):
+            # Same idea, for the third (LLM) tier -- "not-attempted"
+            # when it never ran at all (Stanza already succeeded, or no
+            # --llm-proposer-model was configured).
+            result["llm_decline_reason"] = line.split("=", 1)[1]
         elif line.startswith("graph_sha256="):
             result["graph_sha256"] = line.split("=", 1)[1]
         elif line.startswith("contract="):
@@ -188,6 +199,15 @@ def main() -> None:
         ],
         default="full",
     )
+    parser.add_argument(
+        "--llm-proposer-model",
+        help=(
+            "third tree-source tier, passed through to each "
+            "run_automatic_contextual_pipeline.py subprocess's own "
+            "--llm-proposer-model -- unset (default) disables it entirely"
+        ),
+    )
+    parser.add_argument("--llm-proposer-endpoint")
     args = parser.parse_args()
     inputs = [
         json.loads(line)
@@ -204,6 +224,8 @@ def main() -> None:
                     args.ablation,
                     row,
                     dependency_hints.get(row["id"]),
+                    args.llm_proposer_model,
+                    args.llm_proposer_endpoint,
                 ),
                 inputs,
             )

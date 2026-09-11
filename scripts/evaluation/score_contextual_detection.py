@@ -195,10 +195,13 @@ EXIT4_SUFFIXED_TOKENS = ("malformed or incomplete GF tree",)
 
 
 def exit4_tree_source(failure_text: str) -> str:
-    """Which of the two tree sources produced this exit-4 row's tree --
-    "stanza" (scripts/build_gf_tree_from_dependencies.py) or "gf-parser"
-    (GF's own `engine parse` on raw text) -- or "unrecognized" if the
-    field can't be read at all.
+    """Which of the three tree sources produced this exit-4 row's tree
+    -- "stanza" (scripts/build_gf_tree_from_dependencies.py's UD-based
+    build_gf_tree), "llm" (the same module's
+    build_gf_tree_from_llm_structure, fed by
+    scripts/llm_propose_clause_structure.py), or "gf-parser" (GF's own
+    `engine parse` on raw text) -- or "unrecognized" if the field can't
+    be read at all.
 
     A live corpus evaluation run of Phase 1's tree-builder surfaced a
     real mystery: bare, unquoted capitalized words (e.g. "Albright",
@@ -226,8 +229,9 @@ _EXIT_CODES_BEFORE_TREE_BUILDING = {1, 2}
 
 
 def row_tree_source(inference_row: dict) -> str:
-    """Which tree source produced this row's tree, across *every*
-    outcome -- not just exit4 failures.
+    """Which of the three tree sources ("stanza"/"llm"/"gf-parser")
+    produced this row's tree, across *every* outcome -- not just exit4
+    failures.
 
     run_automatic_contextual_pipeline.py records "tree_source" two
     different ways depending on how the row ended: a top-level
@@ -278,6 +282,33 @@ def row_decline_reason(inference_row: dict) -> str:
         try:
             return json.loads(inference_row.get("failure", "")).get(
                 "decline_reason", "unrecognized"
+            )
+        except (json.JSONDecodeError, TypeError):
+            return "unrecognized"
+    return "unrecognized"
+
+
+def row_llm_decline_reason(inference_row: dict) -> str:
+    """Which reason the third (LLM) tier declined for this row, across
+    every outcome -- mirrors row_decline_reason exactly, just for
+    "llm_decline_reason" instead of "decline_reason".
+
+    "not-attempted" means the LLM tier never ran at all (either a
+    Stanza-built tree was already trusted, or no --llm-proposer-model
+    was configured for this run); "" means the LLM tier's own tree was
+    trusted; "not-applicable" for exit 1/2 (tree-building was never
+    attempted); "unrecognized" if a row that should have the field
+    doesn't.
+    """
+    if "llm_decline_reason" in inference_row:
+        return inference_row["llm_decline_reason"]
+    exit_code = inference_row.get("exit_code")
+    if exit_code in _EXIT_CODES_BEFORE_TREE_BUILDING:
+        return "not-applicable"
+    if exit_code in (3, 4, 7):
+        try:
+            return json.loads(inference_row.get("failure", "")).get(
+                "llm_decline_reason", "unrecognized"
             )
         except (json.JSONDecodeError, TypeError):
             return "unrecognized"
@@ -588,6 +619,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     exit4_tree_source_counts: Counter[str] = Counter()
     tree_source_counts: Counter[str] = Counter()
     decline_reason_counts: Counter[str] = Counter()
+    llm_decline_reason_counts: Counter[str] = Counter()
     for gold in gold_rows:
         inference_row = inference_by_id.get(gold["id"])
         if inference_row is None:
@@ -595,6 +627,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
             continue
         tree_source_counts[row_tree_source(inference_row)] += 1
         decline_reason_counts[row_decline_reason(inference_row)] += 1
+        llm_decline_reason_counts[row_llm_decline_reason(inference_row)] += 1
         predicted = predict(inference_row)
         actual = gold["gold_label"]
         if predicted == "metonymic" and actual == "metonymic":
@@ -658,6 +691,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "exit4_tree_source_counts": dict(sorted(exit4_tree_source_counts.items())),
         "tree_source_counts": dict(sorted(tree_source_counts.items())),
         "decline_reason_counts": dict(sorted(decline_reason_counts.items())),
+        "llm_decline_reason_counts": dict(sorted(llm_decline_reason_counts.items())),
         "unrecognized_fingerprints": [
             {"sha256_prefix": prefix, "length": length, "count": count}
             for (prefix, length), count in sorted(

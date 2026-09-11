@@ -607,6 +607,157 @@ class StanzaTreeFirstTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
         self.assertIn("decline-reason=no-ud-words", printed)
+        # No --llm-proposer-model was passed -- the LLM tier must never
+        # even be attempted, let alone call out to query_ollama.
+        self.assertIn("llm-decline-reason=not-attempted", printed)
+
+
+class LlmProposerTierTests(unittest.TestCase):
+    """The third tree-source tier, tried only when Stanza-UD declined
+    and --llm-proposer-model was actually passed. query_ollama is
+    patched at run_automatic_contextual_pipeline's own import binding
+    (never a real network call) -- the business logic
+    (propose_clause_structure/build_gf_tree_from_llm_structure) runs
+    for real, only the HTTP glue is faked, the same division already
+    used by tests/evaluation/test_llm_propose_clause_structure.py.
+    """
+
+    def _run_main_with_llm(
+        self, ud_words: list[dict] | None, ollama_response, fake_run
+    ) -> tuple[str, int]:
+        hint = {"dep_status": "direct-argument", "ud_words": ud_words}
+        sys.argv = [
+            "run_automatic_contextual_pipeline.py",
+            "--engine",
+            "build/metonymy",
+            "--snapshot",
+            "data/wikidata-openalex-snapshot",
+            "--sentence",
+            "Liverpool announces Henry",
+            "--source",
+            "Liverpool",
+            "--ablation",
+            "no-wordnet",
+            "--dependency-hint",
+            json.dumps(hint),
+            "--llm-proposer-model",
+            "llama3.2:3b-instruct",
+        ]
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch(
+            "run_automatic_contextual_pipeline.query_ollama",
+            return_value=ollama_response,
+        ):
+            with patch("subprocess.run", side_effect=fake_run):
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised:
+                        run_automatic_contextual_pipeline.main()
+        return stdout.getvalue() + stderr.getvalue(), raised.exception.code
+
+    def test_llm_tier_succeeds_when_stanza_declined(self) -> None:
+        response = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["Liverpool"]},
+            "object": {"kind": "proper_noun", "tokens": ["Henry"]},
+            "agent": None,
+        }
+        calls: list[list[str]] = []
+
+        def fake_run(command, **kwargs):
+            calls.append(list(command))
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command, returncode=0, stdout="Liverpool announces Henry\n", stderr="",
+                )
+            if command[1] == "parse":
+                raise AssertionError(
+                    "engine parse must never run once the LLM-built tree validated"
+                )
+            return engine_result(0, engine_trace(["Q145"]))
+
+        # No ud_words at all -- Stanza tier is guaranteed to decline
+        # ("no-ud-words"), so this exercises the LLM tier in isolation.
+        printed, code = self._run_main_with_llm(None, response, fake_run)
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=llm", printed)
+        self.assertIn("llm-decline-reason=\n", printed)
+        engine_calls = [call for call in calls if call[0] != "python3"]
+        self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
+        self.assertFalse(any(call[1] == "parse" for call in engine_calls))
+
+    def test_falls_back_to_engine_parse_when_the_llm_also_declines(self) -> None:
+        # "voice": null -- the model's own "not confident" abstention.
+        response = {"voice": None, "subject": None, "object": None, "agent": None}
+
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                raise AssertionError(
+                    "linearize must never run when the LLM tier had no structure"
+                )
+            if command[1] == "parse":
+                return gf_parse_result()
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_llm(None, response, fake_run)
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=gf-parser", printed)
+        self.assertIn("llm-decline-reason=no-response", printed)
+
+    def test_falls_back_to_engine_parse_when_the_llm_tree_fails_validation(self) -> None:
+        response = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["Liverpool"]},
+            "object": {"kind": "proper_noun", "tokens": ["Henry"]},
+            "agent": None,
+        }
+
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=1,
+                    stdout="",
+                    stderr="malformed or incomplete GF tree",
+                )
+            if command[1] == "parse":
+                return gf_parse_result()
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_llm(None, response, fake_run)
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=gf-parser", printed)
+        self.assertIn("llm-decline-reason=linearize-validation-failed", printed)
+
+    def test_stanza_is_preferred_when_it_succeeds_llm_never_called(self) -> None:
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command, returncode=0, stdout="Liverpool announces Henry\n", stderr="",
+                )
+            if command[1] == "parse":
+                raise AssertionError("engine parse must never run")
+            return engine_result(0, engine_trace(["Q145"]))
+
+        with patch("run_automatic_contextual_pipeline.query_ollama") as mock_query:
+            printed, code = self._run_main_with_llm(
+                liverpool_announces_henry_ud_words(), {}, fake_run
+            )
+            mock_query.assert_not_called()
+        self.assertEqual(code, 0)
+        self.assertIn("tree-source=stanza", printed)
+        self.assertIn("llm-decline-reason=not-attempted", printed)
 
 
 class Exit4TreeSourceTaggingTests(unittest.TestCase):
