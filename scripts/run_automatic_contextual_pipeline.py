@@ -77,7 +77,7 @@ from build_gf_tree_from_dependencies import (
 from contextual_rule_compiler import compile_gf_constraints
 from llm_propose_clause_structure import (
     DEFAULT_ENDPOINT as LLM_DEFAULT_ENDPOINT,
-    propose_clause_structure,
+    propose_clause_structure_with_reason,
     query_ollama,
 )
 
@@ -363,11 +363,11 @@ def main() -> None:
                 prompt, model=args.llm_proposer_model, endpoint=args.llm_proposer_endpoint
             )
 
-        structure = propose_clause_structure(
+        structure, propose_decline_reason = propose_clause_structure_with_reason(
             proposal["gf_sentence"], proposal["action"], query
         )
         if structure is None:
-            llm_decline_reason = "no-response"
+            llm_decline_reason = propose_decline_reason
         else:
             llm_tree = build_gf_tree_from_llm_structure(
                 structure, proposal["action"], gf_function_by_lemma

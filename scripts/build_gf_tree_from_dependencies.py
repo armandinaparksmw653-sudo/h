@@ -598,7 +598,7 @@ def _np_from_llm_description(np: Any) -> str:
         determiner = np.get("determiner")
         if determiner == "the":
             is_definite = True
-        elif determiner == "a":
+        elif determiner in _INDEFINITE_DETERMINERS:
             is_definite = False
         else:
             raise _Bail("llm-common-noun-unrecognized-determiner")

@@ -768,11 +768,11 @@ class RowLlmDeclineReasonTests(unittest.TestCase):
                     "detail": "y",
                     "tree_source": "gf-parser",
                     "decline_reason": "no-ud-words",
-                    "llm_decline_reason": "no-response",
+                    "llm_decline_reason": "query-exception",
                 }
             ),
         }
-        self.assertEqual(row_llm_decline_reason(row), "no-response")
+        self.assertEqual(row_llm_decline_reason(row), "query-exception")
 
     def test_falls_back_to_parsing_the_failure_json_for_exit3_and_exit7(self) -> None:
         for exit_code, status in ((3, "gf-parse-failed"), (7, "gf-parse-empty")):
@@ -1203,7 +1203,7 @@ class ScoreTests(unittest.TestCase):
                     "detail": "y",
                     "tree_source": "gf-parser",
                     "decline_reason": "subject-count",
-                    "llm_decline_reason": "no-response",
+                    "llm_decline_reason": "query-exception",
                 }
             ),
             "fiber": [],
@@ -1219,7 +1219,7 @@ class ScoreTests(unittest.TestCase):
         report = score(inference, gold)
         self.assertEqual(
             report["llm_decline_reason_counts"],
-            {"": 1, "no-response": 1, "not-applicable": 1, "not-attempted": 1},
+            {"": 1, "not-applicable": 1, "not-attempted": 1, "query-exception": 1},
         )
 
     def test_repeated_unrecognized_failure_text_groups_into_one_fingerprint(

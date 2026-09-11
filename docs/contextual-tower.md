@@ -1728,10 +1728,13 @@ it, and the result is validated through the same `engine linearize` gate
 every other tier already uses. `tree_source` becomes `"stanza"`,
 `"llm"`, or `"gf-parser"` (previously only the latter two existed); a
 new `llm_decline_reason` field (`"not-attempted"` when this tier never
-ran at all -- Stanza already succeeded, or no model was configured;
-`"no-response"` for the proposer's own abstention; a
-`build_gf_tree_from_llm_structure_decline_reason` code otherwise; `""`
-when an LLM-built tree was trusted) is tagged on every outcome the same
+ran at all -- Stanza already succeeded, or no model was configured; one
+of `propose_clause_structure_with_reason`'s four reason codes --
+`"query-exception"`, `"non-dict-response"`, `"missing-voice-key"`, or
+`"voice-null-abstention"` -- when the proposer itself produced no usable
+structure; a `build_gf_tree_from_llm_structure_decline_reason` code when
+it did but the renderer declined; `""` when an LLM-built tree was
+trusted) is tagged on every outcome the same
 way `tree_source`/`decline_reason` already are.
 
 **Plumbing through the rest of the chain**: `scripts/evaluation/run_contextual_corpus.py`

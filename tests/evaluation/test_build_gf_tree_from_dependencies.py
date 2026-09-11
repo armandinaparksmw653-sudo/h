@@ -835,6 +835,24 @@ class BuildGfTreeFromLlmStructureTests(unittest.TestCase):
             '(Compl CTX_announce (OpenDefCN "county" "county"))',
         )
 
+    def test_an_determiner_is_indefinite_same_as_a(self) -> None:
+        # A real corpus run showed "llm-common-noun-unrecognized-
+        # determiner" firing whenever the model correctly copied "an"
+        # (vowel-initial nouns) from the sentence -- the UD-based tier
+        # already accepts both ("a", "an" in _INDEFINITE_DETERMINERS),
+        # this tier didn't.
+        structure = {
+            "voice": "active",
+            "subject": {"kind": "proper_noun", "tokens": ["Waterloo"]},
+            "object": {"kind": "common_noun", "determiner": "an", "noun": "institution"},
+        }
+        tree = build_gf_tree_from_llm_structure(structure, "announce", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Waterloo") '
+            '(Compl CTX_announce (OpenIndefCN "institution" "institution"))',
+        )
+
     def test_all_four_pronouns(self) -> None:
         for pronoun, constructor in (
             ("he", "HePN"), ("she", "ShePN"), ("it", "ItPN"), ("they", "TheyPN"),

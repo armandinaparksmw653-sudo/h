@@ -623,7 +623,11 @@ class LlmProposerTierTests(unittest.TestCase):
     """
 
     def _run_main_with_llm(
-        self, ud_words: list[dict] | None, ollama_response, fake_run
+        self,
+        ud_words: list[dict] | None,
+        ollama_response,
+        fake_run,
+        query_side_effect=None,
     ) -> tuple[str, int]:
         hint = {"dep_status": "direct-argument", "ud_words": ud_words}
         sys.argv = [
@@ -645,9 +649,14 @@ class LlmProposerTierTests(unittest.TestCase):
         ]
         stdout = io.StringIO()
         stderr = io.StringIO()
+        query_kwargs = (
+            {"side_effect": query_side_effect}
+            if query_side_effect is not None
+            else {"return_value": ollama_response}
+        )
         with patch(
             "run_automatic_contextual_pipeline.query_ollama",
-            return_value=ollama_response,
+            **query_kwargs,
         ):
             with patch("subprocess.run", side_effect=fake_run):
                 with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -708,7 +717,32 @@ class LlmProposerTierTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
         self.assertIn("tree-source=gf-parser", printed)
-        self.assertIn("llm-decline-reason=no-response", printed)
+        self.assertIn("llm-decline-reason=voice-null-abstention", printed)
+
+    def test_falls_back_to_engine_parse_when_the_query_itself_raises(self) -> None:
+        # A network/timeout/HTTP failure inside query_ollama -- distinct
+        # from the model's own "voice": null abstention above; a real
+        # corpus run showed this whole bucket (then flattened into one
+        # generic "no-response") dominating LLM-tier attempts, with no
+        # way to tell which of the two this was.
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                raise AssertionError(
+                    "linearize must never run when the LLM tier had no structure"
+                )
+            if command[1] == "parse":
+                return gf_parse_result()
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_llm(
+            None, None, fake_run, query_side_effect=TimeoutError("boom")
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=gf-parser", printed)
+        self.assertIn("llm-decline-reason=query-exception", printed)
 
     def test_falls_back_to_engine_parse_when_the_llm_tree_fails_validation(self) -> None:
         response = {

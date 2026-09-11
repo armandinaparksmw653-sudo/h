@@ -54,7 +54,7 @@ Respond with strict JSON only, no other text, matching exactly this schema:
 An NP is exactly one of:
 - {{"kind": "proper_noun", "tokens": [...]}} -- 1 to 3 exact tokens copied from the sentence, in order, for a proper name (person/place/organization)
 - {{"kind": "pronoun", "pronoun": "he" or "she" or "it" or "they"}}
-- {{"kind": "common_noun", "determiner": "a" or "the", "noun": "...", "adjective": "..." or null}} -- "noun" is a single singular-form word, "adjective" is a single word or null
+- {{"kind": "common_noun", "determiner": "a", "an", or "the", "noun": "...", "adjective": "..." or null}} -- "noun" is a single singular-form word, "adjective" is a single word or null
 
 If you are not confident about ANY part of this -- the verb's subject/object isn't one of these three simple shapes, there's a modifier or coordination you can't represent this way, the sentence doesn't actually contain this verb as its own main clause -- respond with {{"voice": null, "subject": null, "object": null, "agent": null}} instead. Never guess."""
 
@@ -71,17 +71,57 @@ def propose_clause_structure(
 
     Any failure at all -- network error, non-JSON response, missing
     keys, or the model's own "voice": null abstention -- degrades to
-    None here, uniformly; build_gf_tree_from_llm_structure_decline_reason
-    is what a caller uses to tell those apart afterward (via
-    run_automatic_contextual_pipeline.py's own "no-response" vs. a
-    build_gf_tree_from_llm_structure-derived reason), not this function,
-    which never raises.
+    None here, uniformly. See propose_clause_structure_with_reason for
+    a version that tells these apart, using the same single query()
+    call this function makes.
+    """
+    structure, _reason = propose_clause_structure_with_reason(sentence, lemma, query)
+    return structure
+
+
+def propose_clause_structure_with_reason(
+    sentence: str, lemma: str, query: Callable[[str], dict]
+) -> tuple[dict[str, Any] | None, str]:
+    """(structure, decline_reason) from exactly one query() call --
+    decline_reason is "" whenever structure is not None.
+
+    A real corpus evaluation run showed propose_clause_structure's own
+    None outcome dominating (52/92 Stanza-declined WiMCor rows, 91/108
+    ConMeC ones) with no way to tell whether that was the model
+    correctly and conservatively abstaining (working as intended -- the
+    whole point of its explicit "not confident, don't guess"
+    instruction) or a technical failure worth investigating
+    (network/timeout, or the model not following the JSON schema at
+    all). This distinguishes four reasons, closed-vocabulary and safe
+    (no sentence text, no model output text):
+    - "query-exception": query() itself raised (network error, timeout,
+      HTTP error, or query_ollama's own JSON-decoding of the model's
+      raw text response failing).
+    - "non-dict-response": query() returned, but not a JSON object at
+      all -- the model's raw output didn't even parse as the expected
+      shape.
+    - "missing-voice-key": a JSON object, but without a "voice" key at
+      all -- schema non-compliance, distinct from an explicit null.
+    - "voice-null-abstention": a well-formed response where the model
+      explicitly followed the prompt's "not confident -> voice: null"
+      instruction -- this one specifically is *not* a failure, it is
+      the tier working as designed.
+
+    Deliberately does NOT re-call query() to get this detail (unlike
+    build_gf_tree_decline_reason's safe re-run of the same deterministic
+    Python logic) -- a second call here would hit the model itself
+    again, which is neither free nor guaranteed to reproduce the first
+    call's answer.
     """
     prompt = build_prompt(sentence, lemma)
     try:
         response = query(prompt)
-    except Exception:  # noqa: BLE001 - any failure -> safe None
-        return None
-    if not isinstance(response, dict) or response.get("voice") is None:
-        return None
-    return response
+    except Exception:  # noqa: BLE001 - any failure -> a closed reason code
+        return None, "query-exception"
+    if not isinstance(response, dict):
+        return None, "non-dict-response"
+    if "voice" not in response:
+        return None, "missing-voice-key"
+    if response["voice"] is None:
+        return None, "voice-null-abstention"
+    return response, ""
