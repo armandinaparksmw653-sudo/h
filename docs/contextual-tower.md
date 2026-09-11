@@ -1677,7 +1677,7 @@ formal core.
 **No API key, no network dependency beyond the CI runner itself**: this
 tier talks to a local Ollama server via `scripts/propose_promotion_evidence.py`'s
 existing `query_ollama` (stdlib `urllib.request`, `format: "json"`,
-`DEFAULT_MODEL = "llama3.2:3b-instruct"`, `DEFAULT_ENDPOINT =
+`DEFAULT_MODEL = "llama3.2:3b"`, `DEFAULT_ENDPOINT =
 "http://localhost:11434/api/generate"`) -- a working precedent already
 in the repo for the (separate, not-yet-CI-wired) promotion-evidence
 pilot, reused directly rather than duplicated.
@@ -1743,11 +1743,11 @@ gained matching `--llm-proposer-model`/`--llm-proposer-endpoint` flags
 new `llm_decline_reason_counts` report field, aggregated across every
 outcome the same way `tree_source_counts`/`decline_reason_counts`
 already are. `.github/workflows/contextual-tower-evaluation.yml` gained
-a `workflow_dispatch` input `llm_proposer_model` (default
-`llama3.2:3b-instruct`; empty disables the tier and skips installing
-Ollama entirely -- identical behaviour to before this tier existed), a
-conditional "Install and start Ollama" step, and passes
-`--llm-proposer-model` through to `run_contextual_corpus.py`.
+a `workflow_dispatch` input `llm_proposer_model` (default `llama3.2:3b`;
+empty disables the tier and skips installing Ollama entirely --
+identical behaviour to before this tier existed), a conditional
+"Install and start Ollama" step, and passes `--llm-proposer-model`
+through to `run_contextual_corpus.py`.
 
 **Verification, same policy as Stanza throughout this whole document**:
 there is no Ollama on the local development machine, and none will be
@@ -1780,3 +1780,44 @@ set -- `tree_source_counts` and `llm_decline_reason_counts` will give the
 first real measurement of what this tier actually contributes on
 WiMCor/ConMeC, independent of whether round 5's Stanza-UD root cause has
 been fixed yet.
+
+### First real run: two Ollama-integration bugs, neither in Python
+
+Since none of this tier's Ollama-facing behavior can be checked without
+a real Ollama install (deliberately never done on the local dev machine,
+same policy as Stanza all session), the very first `contextual-tower-evaluation.yml`
+run with `llm_proposer_model` set was also the first real test of the
+"Install and start Ollama" step itself -- and it surfaced two bugs, both
+in workflow/config, not in any Python this document already covers:
+
+1. **`ollama serve &` raced the install script's own systemd service.**
+   `install.sh` on Linux installs a systemd unit and starts it
+   immediately -- confirmed directly from a real run's own log:
+   `"Enabling and starting ollama service... The Ollama API is now
+   available at 127.0.0.1:11434."` The workflow step then tried to start
+   a *second* server on the same port, which always lost:
+   `"Error: listen tcp 127.0.0.1:11434: bind: address already in use"`.
+   Non-fatal on its own (the already-running systemd instance served the
+   pull that followed regardless), but confusing and wasteful. Fixed by
+   dropping the manual `ollama serve &` entirely and polling
+   `http://127.0.0.1:11434/api/tags` until it answers instead of a blind
+   `sleep 5`.
+2. **`llama3.2:3b-instruct` is not a real Ollama tag.** This default
+   (both the workflow's `llm_proposer_model` input and
+   `propose_promotion_evidence.py`'s own `DEFAULT_MODEL`, reused by this
+   tier) predates this round -- inherited from the LLM promotion-evidence
+   pilot, whose own workflow-side integration had never actually run
+   until this. The pull failed fast with `"Error: pull model manifest:
+   file does not exist"` -- the signature of an unresolvable tag, not a
+   network or reachability problem. Checked directly against Ollama's
+   real model library (not assumed) before fixing: llama3.2's plain
+   `3b`/`1b` tags *are* the instruct-tuned default Meta ships (a
+   `-instruct-<quantization>` suffix only exists for specific
+   quantized/precision variants, e.g. `3b-instruct-q4_K_M`, never a bare
+   `3b-instruct`). Fixed by changing the default to `llama3.2:3b` in
+   both places.
+
+Same discipline as the PredPatt reversal earlier in this document:
+verify a claim about an external tool/artifact against its real, current
+source before shipping a fix for it, rather than trusting a
+plausible-looking name that was never actually exercised.

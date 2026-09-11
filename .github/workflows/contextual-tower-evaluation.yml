@@ -38,11 +38,11 @@ on:
       llm_proposer_model:
         description: >-
           third tree-source tier: local Ollama model name (e.g.
-          llama3.2:3b-instruct), tried when the Stanza-UD tree-builder
-          declines. Empty (default) disables this tier and installs no
-          Ollama -- identical behaviour to before this tier existed.
+          llama3.2:3b), tried when the Stanza-UD tree-builder declines.
+          Empty string disables this tier and installs no Ollama --
+          identical behaviour to before this tier existed.
         required: false
-        default: "llama3.2:3b-instruct"
+        default: "llama3.2:3b"
 
 permissions:
   contents: read
@@ -147,9 +147,18 @@ jobs:
       - name: Install and start Ollama (LLM clause-structure proposer)
         if: github.event.inputs.llm_proposer_model != ''
         run: |
+          # install.sh already installs a systemd unit and starts it
+          # (confirmed by a real run's own log: "Enabling and starting
+          # ollama service... The Ollama API is now available at
+          # 127.0.0.1:11434.") -- a second, manual `ollama serve &` here
+          # just raced that instance for the same port and always lost
+          # ("address already in use"), so don't start a second one;
+          # just wait for the systemd-started one to answer.
           curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve &
-          sleep 5
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break
+            sleep 1
+          done
           ollama pull "${{ github.event.inputs.llm_proposer_model }}"
 
       - name: Run the contextual tower on the sampled corpora

@@ -32,7 +32,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-DEFAULT_MODEL = "llama3.2:3b-instruct"
+DEFAULT_MODEL = "llama3.2:3b"
 DEFAULT_ENDPOINT = "http://localhost:11434/api/generate"
 
 PROMPT_TEMPLATE = """You are judging whether a proposed metonymic reading is a plausible, contextually salient interpretation of a specific sentence. Answer conservatively: if genuinely unsure, answer false.

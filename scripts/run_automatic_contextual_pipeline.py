@@ -200,7 +200,7 @@ def main() -> None:
         help=(
             "third tree-source tier, tried when the Stanza-UD build_gf_tree "
             "declines: model name for a local Ollama server (e.g. "
-            "llama3.2:3b-instruct) via llm_propose_clause_structure.py. "
+            "llama3.2:3b) via llm_propose_clause_structure.py. "
             "Unset (default) disables this tier entirely -- identical "
             "behaviour to before this tier existed."
         ),
