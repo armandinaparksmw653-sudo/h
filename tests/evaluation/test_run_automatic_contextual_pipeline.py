@@ -525,6 +525,9 @@ class StanzaTreeFirstTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
         self.assertIn("tree-source=stanza", printed)
+        # Empty decline_reason -- the Stanza-built tree was trusted, so
+        # there's nothing to report a reason for.
+        self.assertIn("decline-reason=\n", printed)
         engine_calls = [call for call in calls if call[0] != "python3"]
         self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
         self.assertFalse(any(call[1] == "parse" for call in engine_calls))
@@ -564,6 +567,9 @@ class StanzaTreeFirstTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
         self.assertIn("tree-source=gf-parser", printed)
+        # No "by"-agent oblique in this fixture -- build_gf_tree's own
+        # passive handling declines specifically because of that.
+        self.assertIn("decline-reason=passive-agent-count", printed)
 
     def test_falls_back_to_engine_parse_when_linearize_validation_fails(self) -> None:
         def fake_run(command, **kwargs):
@@ -585,6 +591,7 @@ class StanzaTreeFirstTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("decline-reason=linearize-validation-failed", printed)
 
     def test_falls_back_to_engine_parse_when_there_are_no_ud_words_at_all(self) -> None:
         def fake_run(command, **kwargs):
@@ -599,6 +606,7 @@ class StanzaTreeFirstTests(unittest.TestCase):
         printed, code = self._run_main_with_hint(None, fake_run)
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("decline-reason=no-ud-words", printed)
 
 
 class Exit4TreeSourceTaggingTests(unittest.TestCase):

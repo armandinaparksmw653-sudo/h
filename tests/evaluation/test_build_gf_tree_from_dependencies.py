@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from build_gf_tree_from_dependencies import (  # noqa: E402
     build_gf_tree,
+    build_gf_tree_decline_reason,
     load_gf_function_by_lemma,
 )
 
@@ -521,6 +522,247 @@ class SubordinateClauseTests(unittest.TestCase):
             word(7, "Mary", "Mary", "PROPN", "obj", 6, 51),
         ]
         self.assertIsNone(build_gf_tree(words, "announce", GF_FUNCTIONS))
+
+
+class BuildGfTreeDeclineReasonTests(unittest.TestCase):
+    """A real corpus evaluation run measured zero successful uses of
+    build_gf_tree across 300 real rows (tree_source_counts: 100%
+    "gf-parser") -- every one of these reproduces one specific decline
+    path from the tests above and confirms the reason code matches,
+    proving the vocabulary this session's next real measurement will
+    actually see.
+    """
+
+    def test_succeeds_when_build_gf_tree_would(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS), "")
+
+    def test_root_count(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+            word(4, "announces", "announce", "VERB", "root", 0, 30),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS), "root-count"
+        )
+
+    def test_root_not_verb(self) -> None:
+        # "county" as the sentence's own root (a copula clause's UD
+        # shape, "Waterloo is a county") -- NOUN, not VERB/AUX.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "county", "county", "NOUN", "root", 0, 9),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "county", GF_FUNCTIONS),
+            "root-not-verb",
+        )
+
+    def test_root_lemma_mismatch(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "sign", GF_FUNCTIONS),
+            "root-lemma-mismatch",
+        )
+
+    def test_verb_not_in_lexicon(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "floreates", "floreate", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "floreate", GF_FUNCTIONS),
+            "verb-not-in-lexicon",
+        )
+
+    def test_subject_count(self) -> None:
+        words = [
+            word(1, "announces", "announce", "VERB", "root", 0, 0),
+            word(2, "Henry", "Henry", "PROPN", "obj", 1, 10),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "subject-count",
+        )
+
+    def test_object_count(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "object-count",
+        )
+
+    def test_np_unsupported_upos(self) -> None:
+        # A numeral subject -- _np only ever dispatches on PROPN/PRON/
+        # NOUN, so NUM (or any other UPOS) hits this generic fallback
+        # rather than one of the more specific per-shape reasons above.
+        words = [
+            word(1, "1805", "1805", "NUM", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 5),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 14),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "np-unsupported-upos",
+        )
+
+    def test_pronoun_unrecognized(self) -> None:
+        words = [
+            word(1, "who", "who", "PRON", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 4),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 14),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "pronoun-unrecognized",
+        )
+
+    def test_proper_noun_chain_too_long(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "A", "A", "PROPN", "compound", 6, 19),
+            word(4, "B", "B", "PROPN", "compound", 6, 21),
+            word(5, "C", "C", "PROPN", "compound", 6, 23),
+            word(6, "D", "D", "PROPN", "obj", 2, 25),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "proper-noun-chain-too-long",
+        )
+
+    def test_common_noun_determiner_or_adjective_count(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "programmes", "programme", "NOUN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "common-noun-determiner-or-adjective-count",
+        )
+
+    def test_common_noun_unrecognized_determiner(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "every", "every", "DET", "det", 4, 19),
+            word(4, "county", "county", "NOUN", "obj", 2, 25),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "common-noun-unrecognized-determiner",
+        )
+
+    def test_passive_aux_count(self) -> None:
+        words = [
+            word(1, "Henry", "Henry", "PROPN", "nsubj:pass", 3, 0),
+            word(2, "was", "be", "AUX", "aux:pass", 3, 6),
+            word(3, "announced", "announce", "VERB", "root", 0, 10),
+            word(4, "by", "by", "ADP", "case", 5, 20),
+            word(5, "Waterloo", "Waterloo", "PROPN", "obl", 3, 23),
+        ]
+        # A second aux:pass child makes the count wrong.
+        words.append(
+            word(6, "being", "be", "AUX", "aux:pass", 3, 32)
+        )
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "passive-aux-count",
+        )
+
+    def test_passive_agent_count(self) -> None:
+        words = [
+            word(1, "Henry", "Henry", "PROPN", "nsubj:pass", 3, 0),
+            word(2, "was", "be", "AUX", "aux:pass", 3, 6),
+            word(3, "announced", "announce", "VERB", "root", 0, 10),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "passive-agent-count",
+        )
+
+    def test_relative_clause_count(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "praises", "praise", "VERB", "root", 0, 9),
+            word(3, "Tolstoy", "Tolstoy", "PROPN", "obj", 2, 17),
+            word(4, "announces", "announce", "VERB", "acl:relcl", 3, 26),
+            word(5, "Henry", "Henry", "PROPN", "obj", 4, 36),
+            word(6, "signs", "sign", "VERB", "acl:relcl", 3, 42),
+            word(7, "Mary", "Mary", "PROPN", "obj", 6, 48),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS),
+            "relative-clause-count",
+        )
+
+    def test_relative_clause_verb_not_verb(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "praises", "praise", "VERB", "root", 0, 9),
+            word(3, "Tolstoy", "Tolstoy", "PROPN", "obj", 2, 17),
+            word(4, "county", "county", "NOUN", "acl:relcl", 3, 26),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS),
+            "relative-clause-verb-not-verb",
+        )
+
+    def test_relative_clause_has_own_subject(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "praises", "praise", "VERB", "root", 0, 9),
+            word(3, "Tolstoy", "Tolstoy", "PROPN", "obj", 2, 17),
+            word(4, "who", "who", "PRON", "nsubj", 5, 26),
+            word(5, "announces", "announce", "VERB", "acl:relcl", 3, 30),
+            word(6, "Henry", "Henry", "PROPN", "obj", 5, 40),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS),
+            "relative-clause-has-own-subject",
+        )
+
+    def test_relative_clause_verb_not_in_lexicon(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "praises", "praise", "VERB", "root", 0, 9),
+            word(3, "Tolstoy", "Tolstoy", "PROPN", "obj", 2, 17),
+            word(4, "floreates", "floreate", "VERB", "acl:relcl", 3, 26),
+            word(5, "Henry", "Henry", "PROPN", "obj", 4, 36),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS),
+            "relative-clause-verb-not-in-lexicon",
+        )
+
+    def test_leftover_words(self) -> None:
+        # A PP modifier neither consumed nor accounted for anywhere.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+            word(4, "in", "in", "ADP", "case", 6, 25),
+            word(5, "Ontario", "Ontario", "PROPN", "obl", 2, 28),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
+            "leftover-words",
+        )
 
 
 class LoadGfFunctionByLemmaTests(unittest.TestCase):

@@ -254,6 +254,36 @@ def row_tree_source(inference_row: dict) -> str:
     return "unrecognized"
 
 
+def row_decline_reason(inference_row: dict) -> str:
+    """Which reason build_gf_tree (or the two extra checks around it --
+    "no-ud-words"/"linearize-validation-failed") declined for this row,
+    across every outcome -- mirrors row_tree_source exactly, just for
+    "decline_reason" instead of "tree_source".
+
+    A real corpus evaluation measured zero successful Stanza-tree uses
+    across 300 real rows with no way to tell why (tree_source_counts:
+    100% "gf-parser") -- this is what answers that, aggregated by
+    score() into a "decline_reason_counts" report field. "" means a
+    Stanza-built tree was actually trusted (nothing to explain, even if
+    the row later failed for an unrelated reason downstream);
+    "not-applicable" for exit 1/2 (tree-building was never attempted);
+    "unrecognized" if a row that should have the field doesn't.
+    """
+    if "decline_reason" in inference_row:
+        return inference_row["decline_reason"]
+    exit_code = inference_row.get("exit_code")
+    if exit_code in _EXIT_CODES_BEFORE_TREE_BUILDING:
+        return "not-applicable"
+    if exit_code in (3, 4, 7):
+        try:
+            return json.loads(inference_row.get("failure", "")).get(
+                "decline_reason", "unrecognized"
+            )
+        except (json.JSONDecodeError, TypeError):
+            return "unrecognized"
+    return "unrecognized"
+
+
 def exit4_reason_bucket(failure_text: str) -> str:
     """Bucket an exit-4 (semantic-composition-failed) row by which of
     compile_gf_constraints's own fixed ValueError messages it raised.
@@ -557,12 +587,14 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     exit7_rows_seen = 0
     exit4_tree_source_counts: Counter[str] = Counter()
     tree_source_counts: Counter[str] = Counter()
+    decline_reason_counts: Counter[str] = Counter()
     for gold in gold_rows:
         inference_row = inference_by_id.get(gold["id"])
         if inference_row is None:
             missing += 1
             continue
         tree_source_counts[row_tree_source(inference_row)] += 1
+        decline_reason_counts[row_decline_reason(inference_row)] += 1
         predicted = predict(inference_row)
         actual = gold["gold_label"]
         if predicted == "metonymic" and actual == "metonymic":
@@ -625,6 +657,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "exit7_signal_counts": dict(sorted(exit7_signal_counts.items())),
         "exit4_tree_source_counts": dict(sorted(exit4_tree_source_counts.items())),
         "tree_source_counts": dict(sorted(tree_source_counts.items())),
+        "decline_reason_counts": dict(sorted(decline_reason_counts.items())),
         "unrecognized_fingerprints": [
             {"sha256_prefix": prefix, "length": length, "count": count}
             for (prefix, length), count in sorted(

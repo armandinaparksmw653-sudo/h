@@ -77,6 +77,17 @@ punctuation, always silently ignored), the whole build declines
 (returns None) rather than silently drop or misrepresent content -- the
 same "only build when confident, otherwise fall back" contract Phase
 1's original narrower version already used.
+
+A real corpus evaluation run of Phase 1 (round 3 of this session's own
+plan) measured *zero* successful uses of this module across 300 real
+WiMCor/ConMeC rows (tree_source_counts: 100% "gf-parser") -- every
+single row that reached tree-building fell all the way through to the
+legacy path. To find out why without guessing, every ``_Bail`` here now
+carries a closed-vocabulary reason code (see each raise site's own
+comment), exposed via ``build_gf_tree_decline_reason`` -- a second,
+diagnostics-only entry point run_automatic_contextual_pipeline.py calls
+whenever ``build_gf_tree`` itself returns ``None``, purely to answer
+that question with real data instead of another hypothesis.
 """
 
 from __future__ import annotations
@@ -107,9 +118,17 @@ _FRONTED_DATE_CONSTRUCTORS = {
 
 class _Bail(Exception):
     """Internal control-flow only: this narrow builder hit a UD shape it
-    doesn't (yet, safely) model. Always caught at build_gf_tree's own
-    top level and turned into a plain ``None`` return -- never leaks.
+    doesn't (yet, safely) model. Always caught at _build_gf_tree_inner's
+    two callers (build_gf_tree/build_gf_tree_decline_reason) -- never
+    leaks. Carries a closed-vocabulary ``reason`` code (see each raise
+    site's own comment for what it means and why it's safe to aggregate
+    -- always one of a small, fixed set of internal check names, never
+    sentence text).
     """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
 
 
 def _quote(text: str) -> str:
@@ -117,7 +136,7 @@ def _quote(text: str) -> str:
         # Defensive only -- Stanza tokenizes a literal quote as its own
         # token, so a real word surface form realistically never
         # contains one.
-        raise _Bail()
+        raise _Bail("unsafe-text")
     return f'"{text}"'
 
 
@@ -163,7 +182,10 @@ def _np_from_proper_noun(
     chain.sort(key=lambda word: word["start_char"])
     constructor = _PROPER_NOUN_CONSTRUCTORS.get(len(chain))
     if constructor is None:
-        raise _Bail()
+        # Either the compound chain is longer than OpenPN3's 3-token
+        # limit, or (impossible in practice, since `head` is always
+        # included) somehow empty.
+        raise _Bail("proper-noun-chain-too-long")
     for word in chain:
         accounted.add(word["id"])
     return _apply(constructor, *(_quote(word["text"]) for word in chain))
@@ -179,7 +201,7 @@ def _np_from_common_noun(
         # confident enough to guess a shape (OpenIndefCN/OpenDefCN/
         # OpenAdjIndefCN/OpenAdjDefCN each take exactly one determiner-
         # implied article and at most one adjective).
-        raise _Bail()
+        raise _Bail("common-noun-determiner-or-adjective-count")
     determiner = determiners[0]
     det_lemma = determiner["lemma"].casefold()
     if det_lemma in _DEFINITE_DETERMINERS:
@@ -187,7 +209,7 @@ def _np_from_common_noun(
     elif det_lemma in _INDEFINITE_DETERMINERS:
         is_definite = False
     else:
-        raise _Bail()
+        raise _Bail("common-noun-unrecognized-determiner")
     accounted.add(determiner["id"])
     accounted.add(noun["id"])
     noun_text = _quote(noun["text"])
@@ -225,18 +247,20 @@ def _np(
     elif head["upos"] == "PRON":
         constructor = _PRONOUN_CONSTRUCTORS.get(head["lemma"].casefold())
         if constructor is None:
-            raise _Bail()
+            raise _Bail("pronoun-unrecognized")
         accounted.add(head["id"])
         base = _apply(constructor)
     elif head["upos"] == "NOUN":
         base = _np_from_common_noun(words, head, accounted)
     else:
-        raise _Bail()
+        # Anything else this module doesn't build an NP from at all --
+        # NUM, ADJ used substantively, a bare DET, etc.
+        raise _Bail("np-unsupported-upos")
     relative_clauses = _children_with_deprel(words, head["id"], "acl:relcl")
     if not relative_clauses:
         return base
     if len(relative_clauses) != 1:
-        raise _Bail()
+        raise _Bail("relative-clause-count")
     embedded_vp = _relative_clause_vp(
         words, relative_clauses[0], accounted, gf_function_by_lemma
     )
@@ -256,7 +280,7 @@ def _object_np(
         # grammar/Metonymy.gf has no intransitive VP (Compl/PassCompl
         # both require an object NP) -- an object-less clause is out of
         # scope for the whole grammar today, not just this module.
-        raise _Bail()
+        raise _Bail("object-count")
     return _np(words, objects[0], accounted, gf_function_by_lemma)
 
 
@@ -280,16 +304,16 @@ def _relative_clause_vp(
     general oblique-PP attachment but not this).
     """
     if verb["upos"] not in {"VERB", "AUX"}:
-        raise _Bail()
+        raise _Bail("relative-clause-verb-not-verb")
     if _children_with_deprel(words, verb["id"], "nsubj") or _children_with_deprel(
         words, verb["id"], "nsubj:pass"
     ):
         # A relative clause with its own separate subject isn't "which
         # VERB OBJECT" (ModifyRelVP's only shape) -- out of scope.
-        raise _Bail()
+        raise _Bail("relative-clause-has-own-subject")
     gf_function = gf_function_by_lemma.get(verb["lemma"].casefold())
     if gf_function is None:
-        raise _Bail()
+        raise _Bail("relative-clause-verb-not-in-lexicon")
     object_np = _object_np(words, verb["id"], accounted, gf_function_by_lemma)
     accounted.add(verb["id"])
     return _apply("Compl", gf_function, object_np)
@@ -348,13 +372,13 @@ def _clause(
     """
     gf_function = gf_function_by_lemma.get(verb["lemma"].casefold())
     if gf_function is None:
-        raise _Bail()
+        raise _Bail("verb-not-in-lexicon")
 
     passive_subjects = _children_with_deprel(words, verb["id"], "nsubj:pass")
     if passive_subjects:
         aux_pass = _children_with_deprel(words, verb["id"], "aux:pass")
         if len(aux_pass) != 1:
-            raise _Bail()
+            raise _Bail("passive-aux-count")
         agents = [
             oblique
             for oblique in _children_with_deprel(words, verb["id"], "obl")
@@ -368,7 +392,7 @@ def _clause(
             # (V2 -> NP -> VP, no bare-passive alternative) -- a passive
             # without a "by"-agent is out of scope for the whole grammar
             # today, not just this module.
-            raise _Bail()
+            raise _Bail("passive-agent-count")
         agent_np = _np(words, agents[0], accounted, gf_function_by_lemma)
         subject_np = _np(words, passive_subjects[0], accounted, gf_function_by_lemma)
         accounted.add(aux_pass[0]["id"])
@@ -379,7 +403,7 @@ def _clause(
 
     subjects = _children_with_deprel(words, verb["id"], "nsubj")
     if len(subjects) != 1:
-        raise _Bail()
+        raise _Bail("subject-count")
     subject_np = _np(words, subjects[0], accounted, gf_function_by_lemma)
     object_np = _object_np(words, verb["id"], accounted, gf_function_by_lemma)
     accounted.add(verb["id"])
@@ -398,12 +422,19 @@ def _main_clause(
     """
     if root["lemma"].casefold() != lemma.casefold():
         # The resolved action's own lemma must be this same root verb's
-        # lemma -- guards against resolve_action's positional fallback
-        # (used whenever dependency_hint's dep_status isn't
-        # "direct-argument") having matched an entirely different word
-        # than UD's own root, which would otherwise silently build a
-        # tree around the wrong clause.
-        raise _Bail()
+        # lemma -- guards against two distinct real causes: (a)
+        # resolve_action's positional fallback (used whenever
+        # dependency_hint's dep_status isn't "direct-argument") having
+        # matched an entirely different word than UD's own root; (b),
+        # confirmed as the more likely dominant real-corpus cause by
+        # re-reading annotate_dependency_hints.py's own classify_word --
+        # even on the "direct-argument" path, the target's *governing*
+        # verb (whatever word it's syntactically attached to) is not
+        # required to be the *sentence's own* root at all, e.g. a target
+        # embedded inside a relative/subordinate clause of a more
+        # complex real sentence. Either way, building a tree around the
+        # wrong clause must never happen silently.
+        raise _Bail("root-lemma-mismatch")
     return _clause(words, root, accounted, gf_function_by_lemma)
 
 
@@ -435,6 +466,54 @@ def _subordinate_clause(
     return embedded_verb, mark, pair[0], pair[1]
 
 
+def _build_gf_tree_inner(
+    words: list[dict[str, Any]],
+    lemma: str,
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """The single implementation build_gf_tree and
+    build_gf_tree_decline_reason both delegate to -- returns tree text
+    (parens-stripped) on success, always raises _Bail (never returns
+    None) on any unhandled UD shape, so a caller can choose whether it
+    wants the resulting tree or the reason for its absence.
+    """
+    roots = [word for word in words if word["deprel"] == "root"]
+    if len(roots) != 1:
+        raise _Bail("root-count")
+    root = roots[0]
+    if root["upos"] not in {"VERB", "AUX"}:
+        raise _Bail("root-not-verb")
+    accounted: set[int] = set()
+    fronted_date = _fronted_date_clause(words, root)
+    subordinate = _subordinate_clause(words, root) if fronted_date is None else None
+    if fronted_date is not None:
+        oblique, case_word, constructor = fronted_date
+        date_np = _np(words, oblique, accounted, gf_function_by_lemma)
+        accounted.add(case_word["id"])
+        main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+        tree = _apply(constructor, date_np, main)
+    elif subordinate is not None:
+        embedded_verb, mark, fronted_name, trailing_name = subordinate
+        main_subjects = _children_with_deprel(words, root["id"], "nsubj")
+        if len(main_subjects) != 1:
+            raise _Bail("subject-count")
+        is_fronted = embedded_verb["start_char"] < main_subjects[0]["start_char"]
+        embedded = _clause(words, embedded_verb, accounted, gf_function_by_lemma)
+        accounted.add(mark["id"])
+        main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+        tree = (
+            _apply(fronted_name, embedded, main)
+            if is_fronted
+            else _apply(trailing_name, main, embedded)
+        )
+    else:
+        tree = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+    leftover = {word["id"] for word in words if word["deprel"] != "punct"} - accounted
+    if leftover:
+        raise _Bail("leftover-words")
+    return _strip_outer_parens(tree)
+
+
 def build_gf_tree(
     words: list[dict[str, Any]],
     lemma: str,
@@ -453,45 +532,29 @@ def build_gf_tree(
     data/contextual-gf-actions.json (see load_gf_function_by_lemma).
     """
     try:
-        roots = [word for word in words if word["deprel"] == "root"]
-        if len(roots) != 1:
-            return None
-        root = roots[0]
-        if root["upos"] not in {"VERB", "AUX"}:
-            return None
-        accounted: set[int] = set()
-        fronted_date = _fronted_date_clause(words, root)
-        subordinate = (
-            _subordinate_clause(words, root) if fronted_date is None else None
-        )
-        if fronted_date is not None:
-            oblique, case_word, constructor = fronted_date
-            date_np = _np(words, oblique, accounted, gf_function_by_lemma)
-            accounted.add(case_word["id"])
-            main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
-            tree = _apply(constructor, date_np, main)
-        elif subordinate is not None:
-            embedded_verb, mark, fronted_name, trailing_name = subordinate
-            main_subjects = _children_with_deprel(words, root["id"], "nsubj")
-            if len(main_subjects) != 1:
-                return None
-            is_fronted = embedded_verb["start_char"] < main_subjects[0]["start_char"]
-            embedded = _clause(words, embedded_verb, accounted, gf_function_by_lemma)
-            accounted.add(mark["id"])
-            main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
-            tree = (
-                _apply(fronted_name, embedded, main)
-                if is_fronted
-                else _apply(trailing_name, main, embedded)
-            )
-        else:
-            tree = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
-        leftover = {word["id"] for word in words if word["deprel"] != "punct"} - accounted
-        if leftover:
-            return None
-        return _strip_outer_parens(tree)
+        return _build_gf_tree_inner(words, lemma, gf_function_by_lemma)
     except _Bail:
         return None
+
+
+def build_gf_tree_decline_reason(
+    words: list[dict[str, Any]],
+    lemma: str,
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """Empty string if build_gf_tree would succeed on the same input,
+    else a closed-vocabulary reason code for why it declines (see each
+    _Bail call site's own comment for the full vocabulary and what each
+    one means) -- diagnostics only, reruns the exact same logic rather
+    than being called from inside build_gf_tree, so the normal success
+    path never pays for it. Every reason code names one of this
+    module's own internal structural checks, never sentence text.
+    """
+    try:
+        _build_gf_tree_inner(words, lemma, gf_function_by_lemma)
+        return ""
+    except _Bail as bail:
+        return bail.reason
 
 
 def load_gf_function_by_lemma(actions_json: dict[str, Any]) -> dict[str, str]:

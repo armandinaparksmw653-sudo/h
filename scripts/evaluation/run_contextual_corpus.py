@@ -123,6 +123,12 @@ def run_one(
             # comment on its "tree-source=" print). Content-free: just
             # names one of two known code paths, never sentence text.
             result["tree_source"] = line.split("=", 1)[1]
+        elif line.startswith("decline-reason="):
+            # "" when a Stanza-built tree was trusted, else a closed-
+            # vocabulary reason code (see
+            # build_gf_tree_decline_reason's own docstring) -- printed
+            # alongside "tree-source=" for the same reason.
+            result["decline_reason"] = line.split("=", 1)[1]
         elif line.startswith("graph_sha256="):
             result["graph_sha256"] = line.split("=", 1)[1]
         elif line.startswith("contract="):

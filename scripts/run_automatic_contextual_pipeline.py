@@ -53,7 +53,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from build_gf_tree_from_dependencies import build_gf_tree, load_gf_function_by_lemma
+from build_gf_tree_from_dependencies import (
+    build_gf_tree,
+    build_gf_tree_decline_reason,
+    load_gf_function_by_lemma,
+)
 from contextual_rule_compiler import compile_gf_constraints
 
 HEADER = "scenario\tsource_qid\taction\trole\tmax_depth\tbridge_relations\tconstraints\n"
@@ -267,11 +271,23 @@ def main() -> None:
         json.loads(args.dependency_hint) if args.dependency_hint else None
     )
     stanza_built_tree = None
+    # "" once a Stanza-built tree is actually trusted (or never even
+    # tried to build one is a different story -- see below); otherwise a
+    # closed-vocabulary reason (see build_gf_tree_decline_reason's own
+    # docstring for the full list) plus two extra reasons specific to
+    # this module: "no-ud-words" (dependency_hint carried no UD parse at
+    # all to build from -- Stanza's own per-sentence parse failed, or no
+    # --dependency-hint was passed) and "linearize-validation-failed"
+    # (build_gf_tree returned a tree, but GF's own type checker rejected
+    # it -- see the comment below on why that check exists at all).
+    # Round 3 of this session's plan measured zero real successes
+    # (tree_source_counts: 100% "gf-parser") without any way to tell
+    # why; this answers that with real data instead of another guess.
+    decline_reason = "no-ud-words"
     if dependency_hint_data and dependency_hint_data.get("ud_words"):
+        gf_function_by_lemma = load_gf_function_by_lemma(action_map)
         built_tree = build_gf_tree(
-            dependency_hint_data["ud_words"],
-            proposal["action"],
-            load_gf_function_by_lemma(action_map),
+            dependency_hint_data["ud_words"], proposal["action"], gf_function_by_lemma
         )
         if built_tree is not None:
             # Still validate through GF's own type system before trusting
@@ -291,14 +307,21 @@ def main() -> None:
             )
             if validated.returncode == 0:
                 stanza_built_tree = built_tree
+                decline_reason = ""
+            else:
+                decline_reason = "linearize-validation-failed"
+        else:
+            decline_reason = build_gf_tree_decline_reason(
+                dependency_hint_data["ud_words"], proposal["action"], gf_function_by_lemma
+            )
 
     # Recorded once here and reused everywhere below (the exit-3/4/7
-    # JSON payloads and the unconditional "tree-source=" stdout line on
-    # success) -- see docs/contextual-tower.md's "Phase 1, round 3" for
-    # why this exists: isolating a real mystery (bare, unquoted
-    # capitalized words in some exit-4 rows' trees) needed to know which
-    # of the two tree sources actually produced a given row's tree,
-    # across every outcome, not just failures.
+    # JSON payloads and the unconditional "tree-source="/"decline-reason="
+    # stdout lines on success) -- see docs/contextual-tower.md's "Phase
+    # 1, round 3" for why this exists: isolating a real mystery (bare,
+    # unquoted capitalized words in some exit-4 rows' trees) needed to
+    # know which of the two tree sources actually produced a given row's
+    # tree, across every outcome, not just failures.
     tree_source = "stanza" if stanza_built_tree is not None else "gf-parser"
 
     if stanza_built_tree is not None:
@@ -322,6 +345,7 @@ def main() -> None:
                         "gf_sentence": proposal["gf_sentence"],
                         "detail": parsed.stderr.strip(),
                         "tree_source": tree_source,
+                        "decline_reason": decline_reason,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -349,6 +373,7 @@ def main() -> None:
                     "status": "gf-parse-empty",
                     "gf_sentence": proposal["gf_sentence"],
                     "tree_source": tree_source,
+                    "decline_reason": decline_reason,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -409,6 +434,12 @@ def main() -> None:
                     # make that source structurally incapable of this --
                     # confirming that with real data beats assuming it.
                     "tree_source": tree_source,
+                    # "" when tree_source is "stanza" (build_gf_tree
+                    # already succeeded here; this row's exit-4 failure
+                    # is compile_gf_constraints's own, unrelated to
+                    # tree-building) -- otherwise which of
+                    # build_gf_tree_decline_reason's reasons applies.
+                    "decline_reason": decline_reason,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -421,9 +452,10 @@ def main() -> None:
     # this up into the result row directly, the same way it already
     # does for "gf-tree="/"graph_sha256="/etc. Exit 1/2 never reach this
     # line at all (tree-building isn't attempted before them); exit
-    # 3/4/7 carry their own "tree_source" in their JSON payload instead,
-    # since they never reach this line either.
+    # 3/4/7 carry their own "tree_source"/"decline_reason" in their JSON
+    # payload instead, since they never reach these lines either.
     print("tree-source=" + tree_source, flush=True)
+    print("decline-reason=" + decline_reason, flush=True)
     encoded_constraints = ";;".join(
         encode_constraint(item) for item in proposal["constraints"]
     )

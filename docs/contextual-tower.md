@@ -1560,3 +1560,80 @@ path actually reaches and resolves, versus falling through to (or never
 even reaching) the legacy `engine parse` path -- alongside whatever
 `exit4_tree_source_counts` says about the "Albright" mystery from round
 3.
+
+## Phase 1, round 5: zero real Stanza successes, and why
+
+Round 4's `tree_source_counts` gave a decisive, surprising answer:
+**`{"gf-parser": 92, "not-applicable": 58}` in WiMCor, `{"gf-parser":
+122, "not-applicable": 28}` in ConMeC -- zero "stanza" anywhere.** Not
+"the coverage is narrow" (expected, and fine) but a hard zero across
+every single real row that reached tree-building at all, on top of
+Phase 1's own six covered UD shapes. That's suspicious enough to be a
+bug, not just narrow coverage -- so, once again, measure before fixing.
+
+**A precise hypothesis, found by re-reading the actual code rather than
+guessing**: `build_gf_tree`'s `_main_clause` requires the sentence's UD
+`root` word's own lemma to equal the resolved action's lemma
+(`root["lemma"].casefold() != lemma.casefold(): raise _Bail(...)`).
+But `annotate_dependency_hints.py`'s `classify_word` -- the source of
+that resolved lemma whenever `dependency_hint`'s `dep_status ==
+"direct-argument"` -- never requires the target's *governing* word
+(whatever it's directly attached to in the UD graph) to be the
+sentence's own overall syntactic root. A target embedded inside a
+relative clause, a reporting/subordinate structure, or any other
+multi-clause real sentence can have a governing verb that isn't the
+root at all -- WiMCor/ConMeC rows are real excerpted sentences, not bare
+"Subject Verb Object" examples, so this is very plausibly common. If
+so, `build_gf_tree` would decline on `"root-lemma-mismatch"` for a large
+share of real rows regardless of how many UD shapes it otherwise covers.
+
+That said, this is one hypothesis among several plausible ones (real
+sentences almost always carrying at least one modifier this narrow
+phase doesn't yet model is at least as plausible a contributor) -- so
+rather than commit to a large redesign on the strength of one reading,
+`_Bail` now carries a closed-vocabulary reason code at every one of its
+raise sites (`root-count`, `root-not-verb`, `root-lemma-mismatch`,
+`verb-not-in-lexicon`, `subject-count`, `object-count`,
+`np-unsupported-upos`, `pronoun-unrecognized`,
+`proper-noun-chain-too-long`, `common-noun-determiner-or-adjective-count`,
+`common-noun-unrecognized-determiner`, `passive-aux-count`,
+`passive-agent-count`, `relative-clause-count`,
+`relative-clause-verb-not-verb`, `relative-clause-has-own-subject`,
+`relative-clause-verb-not-in-lexicon`, `leftover-words`,
+`unsafe-text`), exposed via a new `build_gf_tree_decline_reason`
+diagnostics-only entry point (reruns the same logic build_gf_tree does;
+never called from inside it, so the normal success path pays nothing
+extra). Each name is one of this module's own internal structural
+checks -- never sentence text, the same safety class as every other
+diagnostic in this document.
+
+`run_automatic_contextual_pipeline.py` calls it whenever `build_gf_tree`
+itself returns `None`, plus two of its own extra reasons for the gate
+*around* the module (`"no-ud-words"` -- no UD parse to build from at
+all -- and `"linearize-validation-failed"` -- build_gf_tree returned a
+tree, but GF's own type checker rejected it), tagged on every outcome
+the same way `tree_source` already is (JSON payload for exit 3/4/7, a
+new unconditional `"decline-reason="` stdout line next to
+`"tree-source="` for every other outcome).
+`scripts/evaluation/score_contextual_detection.py`'s new
+`row_decline_reason` unifies both representations, aggregated into a
+new `decline_reason_counts` report field.
+
+Tests: 19 new `BuildGfTreeDeclineReasonTests` cases in
+`test_build_gf_tree_from_dependencies.py` (54 total now) -- one per
+reason code, confirming the exact vocabulary a future real measurement
+will actually report; 3 new assertions in
+`test_run_automatic_contextual_pipeline.py`'s existing Stanza-path
+tests; a new `RowDeclineReasonTests` class (6 tests) plus one new
+`ScoreTests` case in `test_score_contextual_detection.py`; 2 new cases
+in `test_run_contextual_corpus.py`. Full local suite: 392 tests, same
+pre-existing baseline, no regressions.
+
+**Next step**: re-run `contextual-tower-evaluation.yml` once more.
+`decline_reason_counts` will say, with real data, whether
+`root-lemma-mismatch` actually is the dominant cause (confirming the
+hypothesis above and pointing at a real, scoped fix: build the tree
+around whichever word `dependency_hint`'s own `governing_start` names,
+not necessarily the sentence's UD root) or whether something else
+entirely dominates (in which case the hypothesis was wrong, and the fix
+needs to be something else) -- either way, decisive, not another guess.
