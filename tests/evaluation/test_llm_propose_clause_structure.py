@@ -11,6 +11,7 @@ this project.
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -38,9 +39,22 @@ class BuildPromptTests(unittest.TestCase):
         # null}) far more than any other failure mode
         # (llm-active-missing-np/llm-passive-missing-np) -- the prompt
         # now spells out that this specific shape is never acceptable.
+        # Worded concisely -- a follow-up run showed the first, more
+        # verbose wording of this same rule nearly tripled the prompt's
+        # length and, on a CPU-only CI runner, pushed most requests past
+        # query_ollama's own timeout (see propose_clause_structure_with_
+        # reason's docstring: "query-network-or-timeout").
         prompt = build_prompt("Waterloo announces Henry County", "announce")
-        self.assertIn("never a non-null voice paired with a null value", prompt)
-        self.assertIn("abstain completely", prompt)
+        self.assertIn("never a non-null voice with a required NP left null", prompt)
+        self.assertIn("complete abstention", prompt)
+
+    def test_prompt_stays_reasonably_short(self) -> None:
+        # A regression guard for the timeout regression above: the
+        # prompt this module sends on every LLM-tier attempt should
+        # stay in the same ballpark as it was before that regression
+        # (roughly 1500-1600 characters), not silently creep back up.
+        prompt = build_prompt("Waterloo announces Henry County", "announce")
+        self.assertLess(len(prompt), 1900)
 
 
 class ProposeClauseStructureTests(unittest.TestCase):
@@ -126,6 +140,33 @@ class ProposeClauseStructureWithReasonTests(unittest.TestCase):
         )
         self.assertIsNone(structure)
         self.assertEqual(reason, "query-exception")
+
+    def test_a_network_or_timeout_error_is_reported_distinctly(self) -> None:
+        # OSError covers urllib.error.URLError/HTTPError (both OSError
+        # subclasses) and a raw socket timeout alike -- the request
+        # never got a usable response at all, as opposed to getting one
+        # that just wasn't valid JSON (the next test).
+        def timing_out_query(prompt: str) -> dict:
+            raise TimeoutError("timed out")
+
+        structure, reason = propose_clause_structure_with_reason(
+            "Waterloo announces Henry", "announce", timing_out_query
+        )
+        self.assertIsNone(structure)
+        self.assertEqual(reason, "query-network-or-timeout")
+
+    def test_a_malformed_json_response_is_reported_distinctly(self) -> None:
+        # query_ollama's own json.loads (of either the HTTP body or the
+        # model's inner "response" text) raising -- a reply came back,
+        # just not one shaped like JSON.
+        def malformed_json_query(prompt: str) -> dict:
+            raise json.JSONDecodeError("bad json", "doc", 0)
+
+        structure, reason = propose_clause_structure_with_reason(
+            "Waterloo announces Henry", "announce", malformed_json_query
+        )
+        self.assertIsNone(structure)
+        self.assertEqual(reason, "query-malformed-response")
 
     def test_a_non_dict_response_is_reported_distinctly(self) -> None:
         structure, reason = propose_clause_structure_with_reason(

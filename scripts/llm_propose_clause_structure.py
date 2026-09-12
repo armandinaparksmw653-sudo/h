@@ -30,6 +30,7 @@ target's governing verb need not be the sentence's own UD root).
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 from propose_promotion_evidence import (  # noqa: F401 (DEFAULT_* re-exported)
@@ -56,9 +57,9 @@ An NP is exactly one of:
 - {{"kind": "pronoun", "pronoun": "he" or "she" or "it" or "they"}}
 - {{"kind": "common_noun", "determiner": "a", "an", or "the", "noun": "...", "adjective": "..." or null}} -- "noun" is a single singular-form word, "adjective" is a single word or null
 
-Both of a chosen voice's required NPs must actually be filled in with one of the three shapes above -- never a non-null voice paired with a null value in any of its own required fields. If voice is "active", subject AND object are both required. If voice is "passive", subject AND agent (the explicit "by X" phrase) are both required -- if the sentence's passive has no "by X" agent at all, this pipeline cannot represent it yet, so treat that exactly like any other case you cannot represent.
+A chosen voice's required NPs (subject+object if active; subject+agent if passive) must both be one of the shapes above -- never a non-null voice with a required NP left null. Passive with no "by X" phrase can't be represented yet.
 
-If you are not confident about ANY part of this -- one of the NPs required by the voice you'd choose isn't one of these three simple shapes or is missing from the sentence, there's a modifier or coordination you can't represent this way, the sentence doesn't actually contain this verb as its own main clause -- respond with the complete abstention {{"voice": null, "subject": null, "object": null, "agent": null}} instead. Never respond with a non-null voice and a null value in any of its required fields -- either fill in every field that voice requires, or abstain completely. Never guess."""
+If you are not confident about ANY part of this -- a required NP missing or not one of these shapes, an unrepresentable modifier/coordination, or this verb isn't the sentence's own main clause -- respond with the complete abstention {{"voice": null, "subject": null, "object": null, "agent": null}}. Never guess, never partially answer."""
 
 
 def build_prompt(sentence: str, lemma: str) -> str:
@@ -92,13 +93,24 @@ def propose_clause_structure_with_reason(
     ConMeC ones) with no way to tell whether that was the model
     correctly and conservatively abstaining (working as intended -- the
     whole point of its explicit "not confident, don't guess"
-    instruction) or a technical failure worth investigating
-    (network/timeout, or the model not following the JSON schema at
-    all). This distinguishes four reasons, closed-vocabulary and safe
-    (no sentence text, no model output text):
-    - "query-exception": query() itself raised (network error, timeout,
-      HTTP error, or query_ollama's own JSON-decoding of the model's
-      raw text response failing).
+    instruction) or a technical failure worth investigating. A
+    follow-up run (after that ambiguity was narrowed down to "mostly
+    not abstention") showed a second, sharper ambiguity: query()
+    itself can fail for two very different reasons that a bare
+    `except Exception` can't tell apart -- a genuine network/timeout
+    problem (worth raising the timeout or reducing concurrency), or
+    the model's own raw text not actually being valid JSON (worth
+    shortening/clarifying the prompt, a model-capability problem, not
+    an infrastructure one). This distinguishes five reasons,
+    closed-vocabulary and safe (no sentence text, no model output
+    text):
+    - "query-network-or-timeout": query() raised an OSError (covers
+      urllib's URLError/HTTPError and a socket timeout alike) --
+      genuinely never reached a usable response at all.
+    - "query-malformed-response": query() raised while decoding JSON
+      (either query_ollama's outer HTTP body or the model's own inner
+      "response" text) -- it *did* get a reply, just not one shaped
+      like JSON.
     - "non-dict-response": query() returned, but not a JSON object at
       all -- the model's raw output didn't even parse as the expected
       shape.
@@ -118,7 +130,17 @@ def propose_clause_structure_with_reason(
     prompt = build_prompt(sentence, lemma)
     try:
         response = query(prompt)
-    except Exception:  # noqa: BLE001 - any failure -> a closed reason code
+    except OSError:
+        # Covers urllib.error.URLError/HTTPError (both OSError
+        # subclasses) and a raw socket timeout -- the request never
+        # got a usable response at all.
+        return None, "query-network-or-timeout"
+    except (json.JSONDecodeError, KeyError):
+        # query_ollama's own json.loads of either the HTTP body or the
+        # model's inner "response" text failed, or "response" was
+        # missing entirely -- a reply came back, just not valid JSON.
+        return None, "query-malformed-response"
+    except Exception:  # noqa: BLE001 - anything else -> a closed fallback code
         return None, "query-exception"
     if not isinstance(response, dict):
         return None, "non-dict-response"

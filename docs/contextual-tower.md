@@ -1885,3 +1885,57 @@ prompt forbids the hybrid outright, either into more successes (if it
 really was a prompt-clarity issue) or into `"voice-null-abstention"`
 (if the model was already doing its best and the sentence genuinely
 doesn't fit the three-NP-shape schema).
+
+### Third real run: the prompt-tightening fix caused its own regression
+
+The prediction above wasn't what happened. `"query-exception"` --
+previously near zero (1/150 WiMCor, 7/150 ConMeC) -- became the
+overwhelming majority of LLM-tier attempts (76/150, 108/150), and
+`tree_source_counts`' `"llm"` count collapsed back down (WiMCor
+25&rarr;4, ConMeC 39&rarr;6). The missing-np hybrid the prompt change
+targeted *did* shrink sharply where it was even reached (WiMCor
+`llm-active-missing-np` 48&rarr;2), but that's a hollow win when almost
+nothing reaches a usable response at all anymore.
+
+Measured, not guessed, before writing a fix: the previous round's
+prompt addition took `build_prompt`'s output from 1539 to 2271
+characters for the same sentence -- a 48% jump. On a CPU-only GitHub
+Actions runner running `run_contextual_corpus.py --workers 4` (four
+concurrent subprocesses hitting the same single Ollama instance),
+`query_ollama`'s 60-second timeout easily explains a jump this large
+and this sudden, given the previous round's near-zero baseline showed
+60 seconds was clearly enough *before* the prompt grew.
+
+Two changes, kept in one round since they answer two different
+questions:
+
+1. **Trimmed `PROMPT_TEMPLATE` back down** to 1752 characters (a 14%
+   increase over the pre-regression 1539, not 48%) -- same rule (a
+   chosen voice's required NPs must both be filled in, or abstain
+   completely), stated once, concisely, instead of restated three
+   times across two paragraphs.
+2. **Split `"query-exception"` itself**, since it was already known to
+   be the single largest bucket and a bare `except Exception` can't
+   tell a timeout apart from the model's raw output not being valid
+   JSON -- two very differently-fixed problems.
+   `propose_clause_structure_with_reason` now distinguishes
+   `"query-network-or-timeout"` (an `OSError` -- covers
+   `urllib.error.URLError`/`HTTPError`, both `OSError` subclasses, and
+   a raw socket timeout alike: no usable response was ever received)
+   from `"query-malformed-response"` (a `json.JSONDecodeError` or
+   `KeyError` -- a reply came back, just not shaped like JSON), with a
+   generic `"query-exception"` kept only as a fallback for anything
+   else unanticipated. `test_prompt_stays_reasonably_short` is a new
+   regression guard (asserts `len(prompt) < 1900`) so a future prompt
+   edit can't silently repeat this mistake.
+
+**Next step**: run the full local suite, commit, push, wait for
+`ci.yml`, then re-run `contextual-tower-evaluation.yml` once more.
+If the regression really was timeout-driven, `"llm"` tree counts and
+detection numbers should recover toward (or past) the second run's
+levels, and `"query-network-or-timeout"` should drop back near zero.
+If a large `"query-network-or-timeout"` (or a new
+`"query-malformed-response"`) count remains even at the shorter prompt
+length, that's a decisive, different next diagnosis -- worker
+concurrency contention on a single CPU-only Ollama instance, or the
+timeout itself needs raising -- not more prompt trimming.

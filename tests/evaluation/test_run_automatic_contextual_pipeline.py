@@ -719,12 +719,12 @@ class LlmProposerTierTests(unittest.TestCase):
         self.assertIn("tree-source=gf-parser", printed)
         self.assertIn("llm-decline-reason=voice-null-abstention", printed)
 
-    def test_falls_back_to_engine_parse_when_the_query_itself_raises(self) -> None:
-        # A network/timeout/HTTP failure inside query_ollama -- distinct
-        # from the model's own "voice": null abstention above; a real
-        # corpus run showed this whole bucket (then flattened into one
-        # generic "no-response") dominating LLM-tier attempts, with no
-        # way to tell which of the two this was.
+    def test_falls_back_to_engine_parse_when_the_query_itself_times_out(self) -> None:
+        # A network/timeout failure inside query_ollama -- distinct from
+        # the model's own "voice": null abstention above; a real corpus
+        # run showed this whole bucket (then flattened into one generic
+        # "no-response") dominating LLM-tier attempts, with no way to
+        # tell which of the two this was.
         def fake_run(command, **kwargs):
             if command[0] == "python3":
                 return propose_proposal(["Q24826"])
@@ -742,7 +742,7 @@ class LlmProposerTierTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
         self.assertIn("tree-source=gf-parser", printed)
-        self.assertIn("llm-decline-reason=query-exception", printed)
+        self.assertIn("llm-decline-reason=query-network-or-timeout", printed)
 
     def test_falls_back_to_engine_parse_when_the_llm_tree_fails_validation(self) -> None:
         response = {
