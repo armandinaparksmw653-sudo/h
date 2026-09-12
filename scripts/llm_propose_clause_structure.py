@@ -56,7 +56,9 @@ An NP is exactly one of:
 - {{"kind": "pronoun", "pronoun": "he" or "she" or "it" or "they"}}
 - {{"kind": "common_noun", "determiner": "a", "an", or "the", "noun": "...", "adjective": "..." or null}} -- "noun" is a single singular-form word, "adjective" is a single word or null
 
-If you are not confident about ANY part of this -- the verb's subject/object isn't one of these three simple shapes, there's a modifier or coordination you can't represent this way, the sentence doesn't actually contain this verb as its own main clause -- respond with {{"voice": null, "subject": null, "object": null, "agent": null}} instead. Never guess."""
+Both of a chosen voice's required NPs must actually be filled in with one of the three shapes above -- never a non-null voice paired with a null value in any of its own required fields. If voice is "active", subject AND object are both required. If voice is "passive", subject AND agent (the explicit "by X" phrase) are both required -- if the sentence's passive has no "by X" agent at all, this pipeline cannot represent it yet, so treat that exactly like any other case you cannot represent.
+
+If you are not confident about ANY part of this -- one of the NPs required by the voice you'd choose isn't one of these three simple shapes or is missing from the sentence, there's a modifier or coordination you can't represent this way, the sentence doesn't actually contain this verb as its own main clause -- respond with the complete abstention {{"voice": null, "subject": null, "object": null, "agent": null}} instead. Never respond with a non-null voice and a null value in any of its required fields -- either fill in every field that voice requires, or abstain completely. Never guess."""
 
 
 def build_prompt(sentence: str, lemma: str) -> str:

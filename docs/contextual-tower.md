@@ -1824,3 +1824,64 @@ Same discipline as the PredPatt reversal earlier in this document:
 verify a claim about an external tool/artifact against its real, current
 source before shipping a fix for it, rather than trusting a
 plausible-looking name that was never actually exercised.
+
+### Second real run: no-response was mostly noise, missing-np is the real wall
+
+With both Ollama bugs and the "an" determiner fix in place, a second
+real `contextual-tower-evaluation.yml` run gave a much cleaner signal.
+`tree_source_counts`' `"llm"` count roughly tripled (WiMCor 8&rarr;25,
+ConMeC 10&rarr;39), and WiMCor's detection numbers moved for the first
+time all session in a way attributable to this tier specifically
+(recall 0.026&rarr;0.077, F1 0.049&rarr;0.130, true positives 1&rarr;3).
+
+The new `llm_decline_reason_counts` breakdown (from the previous
+round's `propose_clause_structure_with_reason` split) answered the open
+question directly: `"query-exception"` came back at 1 (WiMCor) and 7
+(ConMeC) out of over a hundred attempts each -- the old flat
+`"no-response"` bucket dominating the first run was *not* mostly a
+technical/network problem. Neither did `"voice-null-abstention"` or
+`"missing-voice-key"` show up at any meaningful count. Instead, what
+had been flattened into `"no-response"` redistributed almost entirely
+into two places: more outright successes, and a large jump in
+`"llm-active-missing-np"`/`"llm-passive-missing-np"` -- the model
+naming a voice but leaving one of that voice's required NP slots
+`null`, a schema-noncompliant hybrid the original prompt never
+explicitly forbade. That pair is now the dominant single failure mode
+in both corpora (60/150 WiMCor, 59/150 ConMeC) -- bigger than any other
+LLM-tier bucket combined.
+
+Per the user's own choice of which lever to pull next (of root-
+lemma-mismatch, this prompt, the separate adjective-noun semantics gap
+below, or stopping here), `PROMPT_TEMPLATE` in
+`scripts/llm_propose_clause_structure.py` now says explicitly: a chosen
+voice's required NPs must both be filled in with one of the three
+supported shapes, *or* the model must use the complete `{"voice": null,
+...}` abstention -- never a non-null voice paired with a null value in
+one of its own required fields. This also makes explicit, for the first
+time, that a passive sentence with no stated `"by X"` agent is out of
+this round's scope (the renderer's `PassCompl` requires an agent) --
+previously the model had no way to know that and would reasonably
+extract a real, agent-less passive structure that was always going to
+be rejected as `"llm-passive-missing-np"` downstream regardless of how
+well it followed instructions. This prompt-only change can't invent new
+successes (it doesn't widen what the renderer can build), but it does
+turn wasted, always-failing attempts into honest, cheaper abstentions,
+and gives a real test of whether the missing-np hybrid was a prompt-
+clarity issue at all.
+
+The other real finding from this run is out of the LLM tier's own
+scope entirely: ConMeC's `"unsupported GF adjective-noun semantics"`
+bucket jumped from 6 to 25 -- an already-known, already-bucketed
+`compile_gf_constraints` limitation (not something this round
+introduced), just hit far more often now because the LLM tier builds
+many more adjective-modified common nouns than the legacy GF-parser
+path ever did. Widening that semantic check is a separate task,
+deliberately not pursued this round.
+
+**Next step**: run the full local suite, commit, push, wait for
+`ci.yml`, then re-run `contextual-tower-evaluation.yml` once more --
+`llm_decline_reason_counts`' missing-np counts should drop now that the
+prompt forbids the hybrid outright, either into more successes (if it
+really was a prompt-clarity issue) or into `"voice-null-abstention"`
+(if the model was already doing its best and the sentence genuinely
+doesn't fit the three-NP-shape schema).

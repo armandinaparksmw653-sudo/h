@@ -32,6 +32,16 @@ class BuildPromptTests(unittest.TestCase):
         self.assertIn('"voice"', prompt)
         self.assertIn("proper_noun", prompt)
 
+    def test_prompt_forbids_a_non_null_voice_with_a_null_required_field(self) -> None:
+        # A real corpus run showed the model producing exactly this
+        # hybrid (e.g. {"voice": "active", "subject": ..., "object":
+        # null}) far more than any other failure mode
+        # (llm-active-missing-np/llm-passive-missing-np) -- the prompt
+        # now spells out that this specific shape is never acceptable.
+        prompt = build_prompt("Waterloo announces Henry County", "announce")
+        self.assertIn("never a non-null voice paired with a null value", prompt)
+        self.assertIn("abstain completely", prompt)
+
 
 class ProposeClauseStructureTests(unittest.TestCase):
     def test_a_well_formed_response_is_returned_as_is(self) -> None:
