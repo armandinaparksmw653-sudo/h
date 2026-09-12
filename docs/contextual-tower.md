@@ -2135,3 +2135,100 @@ successes finally appear in `tree_source_counts`, or whether the
 remaining redirected cases (`embedded-leftover-words`,
 `common-noun-determiner-or-adjective-count`, `passive-agent-count`,
 `pronoun-unrecognized`) turn out to need their own follow-up round.
+
+### Second real run: subject-count unmoved, and the LLM tier's own real bottleneck found
+
+The implicit-subject-relative-clause fix above had **zero** measurable
+effect: `decline_reason_counts` came back byte-for-byte identical to the
+previous run in both corpora, `subject-count` still exactly 12/150
+(WiMCor) and 13/150 (ConMeC). The hypothesis (an `acl:relcl` governing
+verb with no own `nsubj`) was reasonable and the fix is presumably
+correct for that shape, but it simply isn't what's actually happening in
+these 25 real rows -- a real reversal, same class as the PredPatt one
+earlier in this document. The far more likely real cause (not yet
+confirmed, not yet fixed): coordination with a shared, elided subject
+(`governing_word["deprel"] == "conj"`, its own `nsubj` living on the
+*first* conjunct verb instead) -- a parallel case to what was just
+built for `acl:relcl`, but unexplored, deliberately not guessed at a
+third time without sub-bucketing `subject-count` by the governing
+word's own deprel first.
+
+The same run's `query-network-or-timeout` collapsed from 76-108 down to
+7-9 in both corpora -- with no code change to the LLM tier at all this
+round, strong evidence the earlier timeout surge really was CI-runner
+variance (a noisy-neighbor/capacity-limited shared GitHub Actions
+runner), not something in this project's own code. With the LLM tier
+finally running near its real capacity, `tree_source_counts`' `"llm"`
+count jumped sharply (WiMCor 7&rarr;27, ConMeC 7&rarr;**63/150** -- 42%
+of the whole corpus). But recall still didn't move: `exit4_tree_source_
+counts` showed the LLM-built trees themselves now dominating exit4
+(ConMeC: `llm`=38 of the corpus's exit4 failures), nearly all of them
+`"unsupported GF adjective-noun semantics"` (6&rarr;25&rarr;**38**/150
+across three consecutive runs, tracking the LLM tier's own rising
+adjective-modified-NP output almost exactly).
+
+Read directly rather than guessed: `data/wordnet-context-rules.json`'s
+`adjective_sorts` has only **4** entries total
+(`political`/`commercial`/`educational`/`scientific`) against
+`lexical_sorts`'s 5148 -- but that's not even the deeper limit.
+`compile_gf_constraints`'s `walk` composes an adjective+noun pair
+through THREE layers: `adjective_sorts` (a word), `composition_matrix`
+(`data/contextual-language-rules.json`, 16 hand-curated `(modifier_sort,
+noun_sort) -> result_sort` rules, e.g. `Political×Agreement ->
+PoliticalAgreement`), and `action_object_requirements` (a per-action
+`Sort -> candidate_requirement` table covering exactly **3 actions**:
+`sign`, `announce`, `read`). This whole subsystem reads as a narrow,
+hand-built demo feature from early in the project (the original
+"Waterloo announces a programme" example) that was never extended
+alongside the later VerbNet-based action-vocabulary import (4499 real
+lemmas) -- meaning even a much richer `adjective_sorts` would still fail
+for almost every real action outside those original 3.
+
+A second, more fundamental finding: `walk` traverses the *entire* tree
+unconditionally, and a single unsupported `OpenAdjDefCN`/`OpenAdjIndefCN`
+composition **anywhere** in it -- not necessarily anything to do with
+the metonymy target itself -- raised and aborted `compile_gf_constraints`
+entirely, discarding every other constraint the tree could otherwise
+have yielded (including the target's own core action/role constraint,
+independently derived by `first_node` with no dependency on this block
+at all).
+
+**Fixed**: the whole `OpenAdjDefCN`/`OpenAdjIndefCN` composition
+attempt in `walk` is now wrapped in `try/except ValueError: pass` --
+any of its five failure points (malformed node, missing
+`adjective_sorts`/`lexical_sorts` coverage, ambiguous noun sort, no
+`composition_matrix` entry, no `action_object_requirements` entry for
+this action) now simply skips deriving that one `FrameComposition`
+constraint and continues walking the rest of the tree, instead of
+discarding everything. This is optional-enrichment logic (an extra,
+narrowing role constraint layered on top of the target's own
+independently-derived core constraint) -- skipping it is safe
+under-generation (fewer narrowing constraints in that one stage, never
+a wrong one), the same principle already applied to the `governing_
+start` tree-builder's own "don't represent the wrapper" choice. No data
+expansion attempted this round (that's a separate, judgment-heavy task
+-- which new adjective/composition/action-role mappings are safe enough
+to curate, mirroring the VerbNet `AUDITED_ROLE_SORTS` precedent) --
+purely a control-flow fix.
+
+Tests: a new `test_unsupported_adjective_noun_composition_is_skipped_
+not_fatal` in `test_qid_fiber.py` confirms directly (no exception, no
+`FrameComposition` constraint, but the tree's other, unrelated
+`FrameArgument` constraint still comes through). `Exit4TreeSourceTagging
+Tests.test_tags_stanza_when_the_stanza_built_tree_was_used` in
+`test_run_automatic_contextual_pipeline.py` needed reworking -- it
+relied on exactly the old hard-abort behavior to reach exit4 at all;
+now uses a *different*, still-hard-failing path unrelated to adjectives
+entirely (`_cumulative_origin`'s own "GF lexical token is absent from
+source", via a plain "Waterloo announces a programme" tree paired with
+a mocked `proposal["sentence"]` that never actually contains the word
+"programme") to keep confirming the same `tree_source=stanza` tagging.
+Full local suite: same pre-existing baseline, no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then re-run
+`contextual-tower-evaluation.yml` -- watch whether `"unsupported GF
+adjective-noun semantics"` disappears from `literal_prediction_reasons`
+entirely (it should -- this exact string can no longer be exit4's
+cause) and whether the LLM tier's now-substantial real tree output
+(63/150 ConMeC) finally converts into real detections, or whether
+recall stays flat because these trees hit some other wall next.

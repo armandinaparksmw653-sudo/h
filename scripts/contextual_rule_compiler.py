@@ -838,66 +838,97 @@ def compile_gf_constraints(
         if not isinstance(node, GFNode):
             return
         if node.constructor in {"OpenAdjDefCN", "OpenAdjIndefCN"}:
-            adjective, noun = node.arguments[:2]
-            if not isinstance(adjective, str) or not isinstance(noun, str):
-                raise ValueError("malformed adjective-noun GF node")
-            noun_rule = wordnet_rules.get("lexical_sorts", {}).get(noun.casefold())
-            adjective_rule = wordnet_rules.get("adjective_sorts", {}).get(
-                adjective.casefold()
-            )
-            if not noun_rule or not adjective_rule:
-                raise ValueError(
-                    f"unsupported GF adjective-noun semantics: {adjective} {noun}"
+            # Real corpus evaluation data (after the LLM tree-source tier
+            # started building far more adjective-modified NPs than the
+            # legacy GF-parser path ever did) showed this whole block
+            # aborting compile_gf_constraints entirely for 38/150 ConMeC
+            # rows (25% of the corpus) and a meaningful share of WiMCor.
+            # Read directly: action_object_requirements below only ever
+            # covered 3 actions (sign/announce/read) -- a narrow demo-
+            # scale scope, never extended alongside the later VerbNet-
+            # based action vocabulary (4499 real lemmas) -- so this was
+            # always going to fail far more often than succeed on real
+            # text, for almost any action outside those three, and
+            # adjective_sorts's own 4-word coverage compounds it further.
+            # FrameComposition is optional enrichment (an extra, narrowing
+            # role constraint layered on top of the target's own core
+            # action/role constraint, which first_node's independent
+            # lookup already derives with no dependency on this block at
+            # all) -- not being able to confidently compose one
+            # adjective+noun pair should never discard every constraint
+            # this tree could otherwise yield. Catching here and moving
+            # on (safe under-generation -- fewer narrowing constraints,
+            # never a wrong one) matches the same principle already
+            # applied to the governing_start tree-builder's own "don't
+            # represent the wrapper" choice
+            # (build_gf_tree_from_dependencies.py).
+            try:
+                adjective, noun = node.arguments[:2]
+                if not isinstance(adjective, str) or not isinstance(noun, str):
+                    raise ValueError("malformed adjective-noun GF node")
+                noun_rule = wordnet_rules.get("lexical_sorts", {}).get(
+                    noun.casefold()
                 )
-            noun_sorts = _sorts(noun_rule["requirement"])
-            if len(noun_sorts) != 1:
-                raise ValueError(f"ambiguous noun sort for GF composition: {noun}")
-            noun_sort = next(iter(noun_sorts))
-            action_rules = language_rules.get("action_object_requirements", {}).get(
-                proposal["action"], {}
-            )
-            composition = next(
-                (
-                    rule
-                    for rule in language_rules.get("composition_matrix", [])
-                    if rule["modifier_sort"] == adjective_rule["sort"]
-                    and rule["noun_sort"] == noun_sort
-                ),
-                None,
-            )
-            if composition is None:
-                raise ValueError(
-                    f"no semantic composition for "
-                    f"{adjective_rule['sort']}×{noun_sort}"
+                adjective_rule = wordnet_rules.get("adjective_sorts", {}).get(
+                    adjective.casefold()
                 )
-            composed_rule = action_rules.get(composition["result_sort"])
-            if composed_rule is None:
-                raise ValueError(
-                    f"action {proposal['action']} has no role rule for "
-                    f"{composition['result_sort']}"
+                if not noun_rule or not adjective_rule:
+                    raise ValueError(
+                        f"unsupported GF adjective-noun semantics: {adjective} {noun}"
+                    )
+                noun_sorts = _sorts(noun_rule["requirement"])
+                if len(noun_sorts) != 1:
+                    raise ValueError(
+                        f"ambiguous noun sort for GF composition: {noun}"
+                    )
+                noun_sort = next(iter(noun_sorts))
+                action_rules = language_rules.get(
+                    "action_object_requirements", {}
+                ).get(proposal["action"], {})
+                composition = next(
+                    (
+                        rule
+                        for rule in language_rules.get("composition_matrix", [])
+                        if rule["modifier_sort"] == adjective_rule["sort"]
+                        and rule["noun_sort"] == noun_sort
+                    ),
+                    None,
                 )
-            constraints.append(
-                {
-                    "origin": _cumulative_origin(
-                        proposal,
-                        noun,
-                        "FrameComposition",
-                        " ".join(
-                            [proposal["action"], adjective, noun]
+                if composition is None:
+                    raise ValueError(
+                        f"no semantic composition for "
+                        f"{adjective_rule['sort']}×{noun_sort}"
+                    )
+                composed_rule = action_rules.get(composition["result_sort"])
+                if composed_rule is None:
+                    raise ValueError(
+                        f"action {proposal['action']} has no role rule for "
+                        f"{composition['result_sort']}"
+                    )
+                constraints.append(
+                    {
+                        "origin": _cumulative_origin(
+                            proposal,
+                            noun,
+                            "FrameComposition",
+                            " ".join(
+                                [proposal["action"], adjective, noun]
+                            ),
                         ),
-                    ),
-                    "payload": {
-                        "requires": composed_rule["candidate_requirement"]
-                    },
-                    "provenance": (
-                        adjective_rule["provenance"]
-                        + "+"
-                        + composition["provenance"]
-                        + "+"
-                        + composed_rule["provenance"]
-                    ),
-                }
-            )
+                        "payload": {
+                            "requires": composed_rule["candidate_requirement"]
+                        },
+                        "provenance": (
+                            adjective_rule["provenance"]
+                            + "+"
+                            + composition["provenance"]
+                            + "+"
+                            + composed_rule["provenance"]
+                        ),
+                    }
+                )
+            except ValueError:
+                pass
 
         if node.constructor == "ModifyNP" and len(node.arguments) == 2:
             head, modifier = node.arguments

@@ -446,6 +446,74 @@ class QidFiberTests(unittest.TestCase):
         )
         self.assertIn("Scientific×Programme", composition["provenance"])
 
+    def test_unsupported_adjective_noun_composition_is_skipped_not_fatal(self):
+        # Real corpus evaluation data showed the old hard-abort behavior
+        # here discarding an entire tree's worth of constraints for
+        # 38/150 ConMeC rows (25% of the corpus) -- action_object_
+        # requirements only ever covers 3 actions (sign/announce/read)
+        # to begin with, a narrow demo-scale scope never extended
+        # alongside the later VerbNet-based action vocabulary (4499
+        # real lemmas), so an unsupported adjective+noun pair is the
+        # common case for real text, not a rare edge case. "large" is
+        # absent from wordnet-context-rules.json's adjective_sorts
+        # (still only 4 words), so the FrameComposition derivation can't
+        # proceed -- but "programme" itself still has real lexical_sorts
+        # coverage, so the tree's other, unrelated FrameArgument
+        # constraint (derived independently, from the object NP's own
+        # head noun, nothing to do with the adjective) should still come
+        # through: confirms compile_gf_constraints degrades to simply
+        # not emitting the one FrameComposition constraint, rather than
+        # raising and losing every other constraint the tree could
+        # otherwise yield.
+        language_rules = json.loads(
+            (ROOT / "data/contextual-language-rules.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        wordnet_rules = json.loads(
+            (ROOT / "data/wordnet-context-rules.json").read_text(encoding="utf-8")
+        )
+        self.assertNotIn("large", wordnet_rules["adjective_sorts"])
+        constraints = compile_gf_constraints(
+            {
+                "action": "announce",
+                "role": "SubjectHole",
+                "sentence": "Waterloo announced a large programme",
+                "frames": [{"frame": "Statement"}],
+                "frame_role_projections": [],
+                "provenance": {"action": "test:VerbNet:announce"},
+                "constraints": [
+                    {
+                        "origin": {
+                            "constructor": "Verb",
+                            "lemma": "announce",
+                            "surface": "announced",
+                            "start": 9,
+                            "end": 18,
+                        },
+                        "payload": {
+                            "requires": (
+                                "AnyOf [HasSort Animate,HasSort Organization]"
+                            )
+                        },
+                        "provenance": "test:VerbNet:announce",
+                    }
+                ],
+            },
+            (
+                'Pred (OpenPN "Waterloo") '
+                '(Compl Announce '
+                '(OpenAdjIndefCN "large" "programme" "?6"))'
+            ),
+            language_rules,
+            wordnet_rules,
+            {},
+        )
+        self.assertFalse(
+            any(item["origin"]["constructor"] == "FrameComposition" for item in constraints)
+        )
+        self.assertTrue(constraints, "the rest of the tree should still derive constraints")
+
     def test_institution_in_place_is_locatedin_preference(self):
         language_rules = json.loads(
             (ROOT / "data/contextual-language-rules.json").read_text(

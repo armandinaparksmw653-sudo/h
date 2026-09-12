@@ -880,20 +880,25 @@ class Exit4TreeSourceTaggingTests(unittest.TestCase):
     """
 
     def test_tags_stanza_when_the_stanza_built_tree_was_used(self) -> None:
-        # "Waterloo announces a florbnorbish quzzleblat" -- a nonsense
-        # adjective+noun pair, guaranteed absent from the real on-disk
-        # data/wordnet-context-rules.json (unmocked here, read for real,
-        # since this test deliberately does not use --ablation
-        # no-wordnet), so compile_gf_constraints's own
-        # "unsupported GF adjective-noun semantics" ValueError fires --
-        # a real exit-4 trigger reachable through a well-formed,
-        # linearize-validated Stanza-built tree.
+        # "programme" has real data/wordnet-context-rules.json lexical_
+        # sorts coverage (unmocked here, read for real, since this test
+        # deliberately does not use --ablation no-wordnet), so
+        # compile_gf_constraints's FrameArgument derivation reaches
+        # _cumulative_origin's own token search -- which fails, because
+        # the mocked payload's own "sentence" field (deliberately
+        # distinct from the tree's actual object noun) never contains
+        # the word "programme" at all, raising "GF lexical token is
+        # absent from source: programme". A real exit-4 trigger reachable
+        # through a well-formed, linearize-validated Stanza-built tree,
+        # and (unlike an unsupported adjective+noun pair, which
+        # compile_gf_constraints now skips rather than treats as fatal --
+        # see contextual_rule_compiler.py's own "unsupported GF
+        # adjective-noun semantics" handling) still a hard failure.
         words = [
             {"id": 1, "head": 2, "deprel": "nsubj", "upos": "PROPN", "lemma": "Waterloo", "text": "Waterloo", "start_char": 0, "end_char": 8},
             {"id": 2, "head": 0, "deprel": "root", "upos": "VERB", "lemma": "announce", "text": "announces", "start_char": 9, "end_char": 18},
-            {"id": 3, "head": 5, "deprel": "det", "upos": "DET", "lemma": "a", "text": "a", "start_char": 19, "end_char": 20},
-            {"id": 4, "head": 5, "deprel": "amod", "upos": "ADJ", "lemma": "florbnorbish", "text": "florbnorbish", "start_char": 21, "end_char": 33},
-            {"id": 5, "head": 2, "deprel": "obj", "upos": "NOUN", "lemma": "quzzleblat", "text": "quzzleblat", "start_char": 34, "end_char": 44},
+            {"id": 3, "head": 4, "deprel": "det", "upos": "DET", "lemma": "a", "text": "a", "start_char": 19, "end_char": 20},
+            {"id": 4, "head": 2, "deprel": "obj", "upos": "NOUN", "lemma": "programme", "text": "programme", "start_char": 21, "end_char": 30},
         ]
         hint = {"dep_status": "direct-argument", "ud_words": words}
         sys.argv = [
@@ -903,7 +908,7 @@ class Exit4TreeSourceTaggingTests(unittest.TestCase):
             "--snapshot",
             "data/wikidata-openalex-snapshot",
             "--sentence",
-            "Waterloo announces a florbnorbish quzzleblat",
+            "Waterloo announces a programme",
             "--source",
             "Waterloo",
             "--dependency-hint",
@@ -918,12 +923,15 @@ class Exit4TreeSourceTaggingTests(unittest.TestCase):
                 # reaching the wordnet-based check this test needs --
                 # every other test in this file uses --ablation
                 # no-wordnet, which returns before that lookup; this one
-                # deliberately doesn't).
+                # deliberately doesn't). "sentence" is deliberately absent
+                # "programme" -- the whole point of this fixture.
                 payload = {
                     "status": "ready",
-                    "gf_sentence": "Waterloo announces a florbnorbish quzzleblat",
+                    "gf_sentence": "Waterloo announces a programme",
+                    "sentence": "Waterloo announces a florbnorbish quzzleblat",
                     "action": "announce",
                     "role": "SubjectHole",
+                    "provenance": {"action": "test:VerbNet:announce"},
                     "max_depth": 1,
                     "bridge_relations": ["InstitutionOf"],
                     "constraints": [
@@ -952,7 +960,7 @@ class Exit4TreeSourceTaggingTests(unittest.TestCase):
                 return subprocess.CompletedProcess(
                     args=command,
                     returncode=0,
-                    stdout="Waterloo announces a florbnorbish quzzleblat\n",
+                    stdout="Waterloo announces a programme\n",
                     stderr="",
                 )
             raise AssertionError(f"unexpected command: {command}")
