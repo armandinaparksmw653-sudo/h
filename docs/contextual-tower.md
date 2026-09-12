@@ -1939,3 +1939,135 @@ If a large `"query-network-or-timeout"` (or a new
 length, that's a decisive, different next diagnosis -- worker
 concurrency contention on a single CPU-only Ollama instance, or the
 timeout itself needs raising -- not more prompt trimming.
+
+## Fixing `root-lemma-mismatch`: build the tree around `governing_start`, not the UD root
+
+Across every real `contextual-tower-evaluation.yml` run this session,
+`decline_reason_counts`'s `root-lemma-mismatch` stayed the single
+largest bucket in the whole Stanza tier -- 35/92 WiMCor, 43/122 ConMeC
+(~63%/~46% of every Stanza-tier decline) -- unmoved since it was first
+diagnosed (Phase 1, round 5, above). Asked directly what would move the
+needle most, independent of the LLM tier's own tuning: fixing this.
+
+**The bug was architectural, not a comparison typo.**
+`_build_gf_tree_inner` finds the sentence's UD root (`deprel == "root"`)
+and requires the already-resolved action's lemma to equal *that* word's
+own lemma, or bails `"root-lemma-mismatch"`. But
+`annotate_dependency_hints.py`'s `classify_word` -- the source of the
+resolved action whenever `dependency_hint`'s `dep_status ==
+"direct-argument"` -- only ever looks exactly one level up from the
+target word, never requiring that word to be the sentence's own
+structural root. In a real, syntactically complex WiMCor/ConMeC
+sentence, the target's actual governing verb is very often embedded in
+a relative, subordinate, or complement clause -- Stanza's own parse was
+correct the whole time; the tree-builder's filter was just needlessly
+narrow.
+
+**The fix needed no new grammar.** `classify_word` already computes
+`governing_start`/`governing_end` -- the governing word's own absolute
+character span -- for exactly this case; `build_gf_tree` just never
+received it, independently re-deriving "the verb to build around" from
+the UD root instead. Confirmed by reading `compile_gf_constraints`'s own
+tree-walkers directly: `first_node` (an unconditional depth-first
+search for the first `Compl`/`PassCompl`) and `walk` (a separate,
+similarly unconditional scan for `OpenAdjDefCN`/`OpenAdjIndefCN`, for
+`FrameModifier`/`FrameComposition`) only ever derive constraints from
+whatever tree they're actually given -- never anything syntactically
+"outside" it. So a tree representing *only* the local clause around the
+target's real governing verb, deliberately not representing whatever
+wraps it, can only ever under-generate constraints, never derive a
+wrong one -- the same risk class already accepted for this module's
+other deliberately-unbuilt shapes (verb-level oblique PP adjuncts).
+
+**One subtlety, found by tracing a concrete example, not guessed**: for
+a passive clause, `classify_word`'s own `_passive_verb_span` anchors
+`governing_start` to `min(content_verb.start, aux_pass.start)` -- and in
+real English word order ("was announced"), the auxiliary precedes the
+participle, so `governing_start` for a passive *root* clause points at
+the auxiliary's own start, not the content verb's (the actual UD root).
+Comparing `governing_start` to the root's own offset directly would
+misroute a perfectly ordinary passive-root sentence into the new
+embedded-clause branch, losing today's fronted-date/subordinate-clause
+enrichment and its strict whole-sentence completeness check for no
+reason. Fixed by resolving `governing_start` to an actual `ud_words`
+entry first, hopping through exactly one `aux:pass -> its head` step
+when that's what it resolves to, and only then comparing word identity
+(never raw offsets) against the root.
+
+**Implemented** (`scripts/build_gf_tree_from_dependencies.py`):
+`build_gf_tree`/`build_gf_tree_decline_reason` gained a new optional
+`governing_start: int | None = None` parameter (default `None` = 100%
+today's pre-existing root-anchored-only behavior, unchanged). Two new
+helpers: `_word_by_governing_start` (resolves the offset to a word,
+with the `aux:pass` hop above) and `_subtree_ids` (walks `head`
+pointers to compute one word's full descendant set). When the resolved
+governing word is *not* the sentence's root, `_build_gf_tree_inner`
+builds the local clause by calling the exact same `_clause` helper the
+root-anchored path already uses (zero duplication -- `_clause`/`_np`/
+`_object_np`/`_relative_clause_vp` are completely unchanged), explicitly
+excludes any `mark` child of the governing verb from its own
+completeness check (wrapper information like "because", not local-clause
+content -- the same technique the existing subordinate-clause branch
+already uses once it picks a `Because`/`If`/`When`/`Although`
+constructor to account for its own `mark` word; here there's no such
+wrapper constructor, so this is the only place that ever accounts for
+it), and requires only its own local descendant subtree -- not the
+whole sentence -- to be fully consumed. Four new closed-vocabulary
+`_Bail` codes: `governing-start-not-found`, `governing-word-not-verb`,
+`governing-lemma-mismatch` (mirrors `root-lemma-mismatch` exactly, kept
+distinct so a future run can tell whether genuine mismatches persist on
+each path separately), and `embedded-leftover-words` (mirrors
+`leftover-words`, same reasoning). All four appear in
+`decline_reason_counts` automatically -- it's a plain `Counter`, not a
+closed allowlist, so no registration was needed anywhere else.
+`scripts/run_automatic_contextual_pipeline.py`'s only change: thread
+`dependency_hint_data.get("governing_start")` through to both call
+sites.
+
+**Deliberately not done this round**: no new `grammar/Metonymy.gf`
+constructs at all -- this widens only *which verb* the existing local-
+clause shapes get built around, never adds a new shape (an object-
+relative modifying some other NP, reported-speech/`ccomp` as a
+modifier, S-level coordination remain exactly as out of scope as
+before). Coordination on the governing verb itself surfaces as the
+already-existing `subject-count` (no bare workaround added). The
+embedded branch never attempts its own nested fronted-date/subordinate-
+clause enrichment -- any such extra structure on the embedded verb
+correctly shows up as `embedded-leftover-words`, not silently dropped.
+`governing_end` isn't threaded (`governing_start` alone, with the
+existing `len(candidates) != 1` guard, is a sufficient unique key,
+including for the Stanza multi-word-token span-collision edge case).
+Multi-level embedding (the governing verb sitting two or more UD levels
+below the root) needed no special handling at all -- `classify_word`
+already always looks exactly one level up from the target regardless of
+that verb's own depth, and this design never inspects anything above
+the governing word, so arbitrary nesting depth already works uniformly.
+
+Tests: a new `GoverningStartTests` class (10 cases) in
+`test_build_gf_tree_from_dependencies.py` -- an `acl:relcl` case with
+the embedded verb's own separate subject (distinct from the pre-existing
+`RelativeClauseTests.test_relative_clause_with_its_own_subject_is_out_
+of_scope`, which is about a relative clause modifying an NP *elsewhere*
+in the sentence via `ModifyRelVP`; here the metonymy target itself sits
+inside the relative clause, so `ModifyRelVP` is never entered at all),
+an `advcl` case, the passive-root `aux:pass`-hop regression case, the
+`governing_start=None` byte-for-byte regression case, a `ccomp`
+(reported-speech) wrapper case that must still decline for the
+*existing* `object-count` reason (proving the fix never inspects the
+wrapper's own deprel -- `ccomp` is handled identically to `acl:relcl`/
+`advcl`, it just happens to hit an unrelated, pre-existing grammar
+limitation here) paired with a positive `ccomp` case that succeeds, and
+one test per new `_Bail` code. One new test in
+`test_run_automatic_contextual_pipeline.py` confirming `governing_start`
+is threaded from `--dependency-hint` all the way into `build_gf_tree`
+and still resolves to `tree-source=stanza` for an embedded-verb
+sentence. No new GF constructors were introduced, so no new local
+`gf.exe` verification was needed this round -- every tree shape produced
+is one already verified in an earlier round. Full local suite: same
+pre-existing baseline (2 failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then re-run
+`contextual-tower-evaluation.yml` -- `decline_reason_counts` will give
+the first real measurement of how much of `root-lemma-mismatch` this
+actually recovers, and what (if anything) remains -- decisively, not
+another guess.

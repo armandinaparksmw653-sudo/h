@@ -410,6 +410,59 @@ def _clause(
     return _apply("Pred", subject_np, _apply("Compl", gf_function, object_np))
 
 
+def _word_by_governing_start(
+    words: list[dict[str, Any]], governing_start: int
+) -> dict[str, Any] | None:
+    """The ud_words entry annotate_dependency_hints.py's classify_word
+    actually pointed resolve_action at, given its own "governing_start"
+    hint field -- not always a direct start_char match: for a passive
+    clause, classify_word's own _passive_verb_span anchors
+    governing_start to min(content_verb.start, aux_pass.start), which in
+    real English is almost always the auxiliary's own start_char ("was
+    announced" -- "was" starts first), never the content verb _clause
+    actually needs to build a clause around. Resolves through exactly
+    that one hop -- an "aux:pass" word is never itself the governing verb,
+    only ever a modifier of one. (No such hop is needed for the other
+    multi-word case, an obl+case phrasal verb like "listen to": there,
+    governing_start is min(verb.start, preposition.start), and in real
+    English the preposition always follows the verb, so that minimum is
+    already the verb's own start_char -- the same word-order guarantee
+    resolve_action's own obl-fallback fix already relies on.)
+
+    Returns None on zero or more-than-one start_char match (the latter
+    possible if two sub-words share a parent multi-word token's span) --
+    either way, the caller degrades to declining, never guessing.
+    """
+    candidates = [word for word in words if word["start_char"] == governing_start]
+    if len(candidates) != 1:
+        return None
+    candidate = candidates[0]
+    if candidate["deprel"] == "aux:pass":
+        heads = [word for word in words if word["id"] == candidate["head"]]
+        return heads[0] if len(heads) == 1 else None
+    return candidate
+
+
+def _subtree_ids(words: list[dict[str, Any]], root_id: int) -> set[int]:
+    """root_id plus every word transitively dependent on it (walking
+    "head" pointers via the existing _children helper) -- scopes the
+    embedded-governing-verb branch's own "did we account for everything"
+    check to just the local clause it actually represents, the same
+    "represent everything faithfully or decline" discipline
+    _build_gf_tree_inner's whole-sentence version already applies to the
+    root-anchored branch, just scoped down to this one clause.
+    """
+    ids = {root_id}
+    frontier = [root_id]
+    while frontier:
+        current = frontier.pop()
+        for child in _children(words, current):
+            if child["id"] not in ids:
+                ids.add(child["id"])
+                frontier.append(child["id"])
+    return ids
+
+
 def _main_clause(
     words: list[dict[str, Any]],
     root: dict[str, Any],
@@ -470,12 +523,39 @@ def _build_gf_tree_inner(
     words: list[dict[str, Any]],
     lemma: str,
     gf_function_by_lemma: dict[str, str],
+    governing_start: int | None = None,
 ) -> str:
     """The single implementation build_gf_tree and
     build_gf_tree_decline_reason both delegate to -- returns tree text
     (parens-stripped) on success, always raises _Bail (never returns
     None) on any unhandled UD shape, so a caller can choose whether it
     wants the resulting tree or the reason for its absence.
+
+    ``governing_start`` is annotate_dependency_hints.py's own
+    dependency_hint field of the same name -- the char offset of the
+    word resolve_action actually resolved the target's role against.
+    When it names a word other than the sentence's own UD root (a real
+    corpus run found this dominates real-world failures: the target's
+    governing verb is very often embedded in a relative/subordinate/
+    complement clause of a more complex sentence, not the sentence's own
+    root), this builds ONLY that local clause -- reusing the exact same
+    _clause/_np/_object_np/_relative_clause_vp machinery the root-
+    anchored path below already uses, since it is structurally the same
+    shape, just a different governing verb -- and deliberately does not
+    attempt to represent whatever wraps it (no fronted-date/subordinate-
+    clause enrichment, no attaching it as a relative-clause modifier of
+    some outer NP). This is safe, not merely convenient: compile_gf_
+    constraints's own tree-walkers (first_node's depth-first Compl/
+    PassCompl search, and walk's separate OpenAdjDefCN/OpenAdjIndefCN
+    scan for FrameModifier/FrameComposition) only ever derive constraints
+    from whatever tree they are actually given -- never anything "outside"
+    it -- so omitting the wrapper can only under-generate constraints,
+    never derive a wrong one, the same risk class already accepted for
+    this module's other deliberately-unbuilt shapes (see the module
+    docstring's verb-level-oblique-PP paragraph). When ``governing_start``
+    is None (the caller has no such hint -- resolve_action fell back to
+    its own positional heuristic) or it resolves to the sentence's own
+    root, this is byte-for-byte today's existing root-anchored behavior.
     """
     roots = [word for word in words if word["deprel"] == "root"]
     if len(roots) != 1:
@@ -483,6 +563,40 @@ def _build_gf_tree_inner(
     root = roots[0]
     if root["upos"] not in {"VERB", "AUX"}:
         raise _Bail("root-not-verb")
+
+    if governing_start is not None:
+        governing_word = _word_by_governing_start(words, governing_start)
+        if governing_word is None:
+            raise _Bail("governing-start-not-found")
+        if governing_word["upos"] not in {"VERB", "AUX"}:
+            raise _Bail("governing-word-not-verb")
+        if governing_word["id"] != root["id"]:
+            if governing_word["lemma"].casefold() != lemma.casefold():
+                raise _Bail("governing-lemma-mismatch")
+            accounted = set()
+            tree = _clause(words, governing_word, accounted, gf_function_by_lemma)
+            for mark_word in _children_with_deprel(words, governing_word["id"], "mark"):
+                # Wrapper information (the word that signals this clause
+                # is itself embedded, e.g. "because") -- not local-clause
+                # content, so it is explicitly excluded from the
+                # completeness check below rather than left to trip
+                # "embedded-leftover-words", the same technique the
+                # existing subordinate-clause branch already uses for its
+                # own "mark" word once it picks a Because/If/When/
+                # Although constructor to account for it; here there is
+                # no such wrapper constructor, so this is the only place
+                # that ever accounts for it.
+                accounted.add(mark_word["id"])
+            subtree_ids = _subtree_ids(words, governing_word["id"])
+            leftover = {
+                word["id"]
+                for word in words
+                if word["id"] in subtree_ids and word["deprel"] != "punct"
+            } - accounted
+            if leftover:
+                raise _Bail("embedded-leftover-words")
+            return _strip_outer_parens(tree)
+
     accounted: set[int] = set()
     fronted_date = _fronted_date_clause(words, root)
     subordinate = _subordinate_clause(words, root) if fronted_date is None else None
@@ -518,6 +632,7 @@ def build_gf_tree(
     words: list[dict[str, Any]],
     lemma: str,
     gf_function_by_lemma: dict[str, str],
+    governing_start: int | None = None,
 ) -> str | None:
     """Build GF tree text for one sentence, or None if it can't (yet).
 
@@ -530,9 +645,14 @@ def build_gf_tree(
     only places it into a tree. ``gf_function_by_lemma`` is a
     lemma -> "CTX_<hash>" reverse lookup built from
     data/contextual-gf-actions.json (see load_gf_function_by_lemma).
+    ``governing_start`` is optional -- see _build_gf_tree_inner's own
+    docstring for what it does when given; omitting it (the default)
+    is byte-for-byte today's pre-existing root-anchored-only behavior.
     """
     try:
-        return _build_gf_tree_inner(words, lemma, gf_function_by_lemma)
+        return _build_gf_tree_inner(
+            words, lemma, gf_function_by_lemma, governing_start
+        )
     except _Bail:
         return None
 
@@ -541,6 +661,7 @@ def build_gf_tree_decline_reason(
     words: list[dict[str, Any]],
     lemma: str,
     gf_function_by_lemma: dict[str, str],
+    governing_start: int | None = None,
 ) -> str:
     """Empty string if build_gf_tree would succeed on the same input,
     else a closed-vocabulary reason code for why it declines (see each
@@ -551,7 +672,7 @@ def build_gf_tree_decline_reason(
     module's own internal structural checks, never sentence text.
     """
     try:
-        _build_gf_tree_inner(words, lemma, gf_function_by_lemma)
+        _build_gf_tree_inner(words, lemma, gf_function_by_lemma, governing_start)
         return ""
     except _Bail as bail:
         return bail.reason

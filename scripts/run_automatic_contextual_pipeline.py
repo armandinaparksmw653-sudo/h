@@ -315,11 +315,23 @@ def main() -> None:
     # Round 3 of this session's plan measured zero real successes
     # (tree_source_counts: 100% "gf-parser") without any way to tell
     # why; this answers that with real data instead of another guess.
+    # dependency_hint's own "governing_start" (below) is threaded into
+    # build_gf_tree so it can build a tree around the target's actual
+    # governing verb even when that verb isn't the sentence's own UD
+    # root (a real corpus run found this -- "root-lemma-mismatch" --
+    # was the single dominant Stanza-tier decline reason); on that path
+    # it can also decline with "governing-start-not-found",
+    # "governing-word-not-verb", "governing-lemma-mismatch", or
+    # "embedded-leftover-words" -- see build_gf_tree's own docstring.
     decline_reason = "no-ud-words"
     gf_function_by_lemma = load_gf_function_by_lemma(action_map)
     if dependency_hint_data and dependency_hint_data.get("ud_words"):
+        governing_start = dependency_hint_data.get("governing_start")
         built_tree = build_gf_tree(
-            dependency_hint_data["ud_words"], proposal["action"], gf_function_by_lemma
+            dependency_hint_data["ud_words"],
+            proposal["action"],
+            gf_function_by_lemma,
+            governing_start=governing_start,
         )
         if built_tree is not None:
             # Still validate through GF's own type system before trusting
@@ -344,7 +356,10 @@ def main() -> None:
                 decline_reason = "linearize-validation-failed"
         else:
             decline_reason = build_gf_tree_decline_reason(
-                dependency_hint_data["ud_words"], proposal["action"], gf_function_by_lemma
+                dependency_hint_data["ud_words"],
+                proposal["action"],
+                gf_function_by_lemma,
+                governing_start=governing_start,
             )
 
     # Third tier, tried only when Stanza-UD declined and an LLM proposer

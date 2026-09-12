@@ -472,9 +472,11 @@ class StanzaTreeFirstTests(unittest.TestCase):
     """
 
     def _run_main_with_hint(
-        self, ud_words: list[dict] | None, fake_run
+        self, ud_words: list[dict] | None, fake_run, governing_start: int | None = None
     ) -> tuple[str, int]:
         hint = {"dep_status": "direct-argument", "ud_words": ud_words}
+        if governing_start is not None:
+            hint["governing_start"] = governing_start
         sys.argv = [
             "run_automatic_contextual_pipeline.py",
             "--engine",
@@ -531,6 +533,76 @@ class StanzaTreeFirstTests(unittest.TestCase):
         engine_calls = [call for call in calls if call[0] != "python3"]
         self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
         self.assertFalse(any(call[1] == "parse" for call in engine_calls))
+
+    def test_governing_start_builds_a_tree_around_an_embedded_verb(self) -> None:
+        # "Because Liverpool announces Henry, Manchester praises Mary" --
+        # target=Liverpool, whose governing verb ("announces") is embedded
+        # in an advcl, not the sentence's own root ("praises"). Confirms
+        # --dependency-hint's own "governing_start" field is threaded all
+        # the way from main() into build_gf_tree, and that this still
+        # takes the Stanza tree-source path (never falling through to
+        # engine parse), even though the target's own governing verb
+        # isn't the UD root.
+        ud_words = [
+            {
+                "id": 1, "head": 3, "deprel": "mark", "upos": "SCONJ",
+                "lemma": "because", "text": "Because",
+                "start_char": 0, "end_char": 7,
+            },
+            {
+                "id": 2, "head": 3, "deprel": "nsubj", "upos": "PROPN",
+                "lemma": "Liverpool", "text": "Liverpool",
+                "start_char": 8, "end_char": 17,
+            },
+            {
+                "id": 3, "head": 6, "deprel": "advcl", "upos": "VERB",
+                "lemma": "announce", "text": "announces",
+                "start_char": 18, "end_char": 27,
+            },
+            {
+                "id": 4, "head": 3, "deprel": "obj", "upos": "PROPN",
+                "lemma": "Henry", "text": "Henry",
+                "start_char": 28, "end_char": 33,
+            },
+            {
+                "id": 5, "head": 6, "deprel": "nsubj", "upos": "PROPN",
+                "lemma": "Manchester", "text": "Manchester",
+                "start_char": 35, "end_char": 45,
+            },
+            {
+                "id": 6, "head": 0, "deprel": "root", "upos": "VERB",
+                "lemma": "praise", "text": "praises",
+                "start_char": 46, "end_char": 53,
+            },
+            {
+                "id": 7, "head": 6, "deprel": "obj", "upos": "PROPN",
+                "lemma": "Mary", "text": "Mary",
+                "start_char": 54, "end_char": 58,
+            },
+        ]
+
+        def fake_run(command, **kwargs):
+            if command[0] == "python3":
+                return propose_proposal(["Q24826"])
+            if command[1] == "linearize":
+                return subprocess.CompletedProcess(
+                    args=command, returncode=0,
+                    stdout="Liverpool announces Henry\n", stderr="",
+                )
+            if command[1] == "parse":
+                raise AssertionError(
+                    "engine parse must never run once the Stanza-built "
+                    "tree (around the embedded governing verb) validated"
+                )
+            return engine_result(0, engine_trace(["Q145"]))
+
+        printed, code = self._run_main_with_hint(
+            ud_words, fake_run, governing_start=18
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("survivors=[Q145]", printed)
+        self.assertIn("tree-source=stanza", printed)
+        self.assertIn("decline-reason=\n", printed)
 
     def test_falls_back_to_engine_parse_when_build_gf_tree_declines(self) -> None:
         # A passive clause (nsubj:pass/aux:pass) is outside Phase 1's

@@ -526,6 +526,222 @@ class SubordinateClauseTests(unittest.TestCase):
         self.assertIsNone(build_gf_tree(words, "announce", GF_FUNCTIONS))
 
 
+class GoverningStartTests(unittest.TestCase):
+    """A real corpus run found "root-lemma-mismatch" dominates Stanza-tier
+    declines (35/92 WiMCor, 43/122 ConMeC): the target's own governing
+    verb (whatever resolve_action actually resolved, per
+    annotate_dependency_hints.py's own "governing_start" hint field) is
+    very often embedded in a relative/subordinate/complement clause of a
+    real, complex sentence -- not the sentence's own UD root. These
+    build ONLY that local clause (reusing the exact same _clause/_np
+    machinery the root-anchored path already uses), deliberately not
+    representing whatever wraps it.
+    """
+
+    def test_target_inside_a_relative_clause_with_its_own_subject(self) -> None:
+        # "Napoleon renamed the county that Waterloo announces Henry" --
+        # target=Waterloo, governing verb="announces" (the relative
+        # clause's OWN verb). Distinct from
+        # RelativeClauseTests.test_relative_clause_with_its_own_subject_
+        # is_out_of_scope above: that test is about a relative clause
+        # attached as an NP MODIFIER elsewhere in the sentence
+        # (ModifyRelVP, out of scope since it has no room for the
+        # embedded verb's own subject); here the metonymy TARGET itself
+        # sits inside the relative clause, so _relative_clause_vp/
+        # ModifyRelVP is never entered at all -- this is a completely
+        # different code path (the new governing_start branch).
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "renamed", "rename", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 17),
+            word(4, "county", "county", "NOUN", "obj", 2, 21),
+            word(5, "that", "that", "SCONJ", "mark", 6, 28),
+            word(6, "announces", "announce", "VERB", "acl:relcl", 4, 33),
+            word(7, "Waterloo", "Waterloo", "PROPN", "nsubj", 6, 43),
+            word(8, "Henry", "Henry", "PROPN", "obj", 6, 52),
+        ]
+        tree = build_gf_tree(words, "announce", GF_FUNCTIONS, governing_start=33)
+        self.assertEqual(
+            tree, 'Pred (OpenPN "Waterloo") (Compl CTX_announce (OpenPN "Henry"))'
+        )
+
+    def test_target_inside_an_advcl_subordinate_clause(self) -> None:
+        # "Because Tolstoy announces Henry, Waterloo praises Mary" --
+        # target=Tolstoy, governing verb="announces" (the advcl's own
+        # verb). Confirms the "mark" word ("Because") is correctly
+        # excluded from the embedded-leftover-words check -- without
+        # that exclusion this fixture would incorrectly decline.
+        words = [
+            word(1, "Because", "because", "SCONJ", "mark", 3, 0),
+            word(2, "Tolstoy", "Tolstoy", "PROPN", "nsubj", 3, 8),
+            word(3, "announces", "announce", "VERB", "advcl", 6, 16),
+            word(4, "Henry", "Henry", "PROPN", "obj", 3, 26),
+            word(5, "Waterloo", "Waterloo", "PROPN", "nsubj", 6, 34),
+            word(6, "praises", "praise", "VERB", "root", 0, 43),
+            word(7, "Mary", "Mary", "PROPN", "obj", 6, 51),
+        ]
+        tree = build_gf_tree(words, "announce", GF_FUNCTIONS, governing_start=16)
+        self.assertEqual(
+            tree, 'Pred (OpenPN "Tolstoy") (Compl CTX_announce (OpenPN "Henry"))'
+        )
+
+    def test_omitting_governing_start_is_byte_for_byte_todays_behavior(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree(words, "announce", GF_FUNCTIONS),
+            build_gf_tree(words, "announce", GF_FUNCTIONS, governing_start=None),
+        )
+
+    def test_governing_start_pointing_at_a_passive_roots_own_aux_still_takes_the_root_path(
+        self,
+    ) -> None:
+        # "Henry was announced by Waterloo" -- root is "announced" (the
+        # content verb). annotate_dependency_hints.py's own
+        # _passive_verb_span anchors governing_start to
+        # min(content_verb.start, aux_pass.start), which for real English
+        # word order ("was announced") is the AUXILIARY's own start_char,
+        # not the root's -- this must still resolve (via the aux:pass ->
+        # its head hop) to the sentence's own root, taking the unchanged
+        # existing path (fronted-date/subordinate-clause enrichment +
+        # strict whole-sentence leftover check), not the new embedded
+        # branch.
+        words = [
+            word(1, "Henry", "Henry", "PROPN", "nsubj:pass", 3, 0),
+            word(2, "was", "be", "AUX", "aux:pass", 3, 6),
+            word(3, "announced", "announce", "VERB", "root", 0, 10),
+            word(4, "by", "by", "ADP", "case", 5, 20),
+            word(5, "Waterloo", "Waterloo", "PROPN", "obl", 3, 23),
+        ]
+        tree = build_gf_tree(words, "announce", GF_FUNCTIONS, governing_start=6)
+        self.assertEqual(
+            tree,
+            build_gf_tree(words, "announce", GF_FUNCTIONS),
+        )
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Henry") (PassCompl CTX_announce (OpenPN "Waterloo"))',
+        )
+
+    def test_a_reported_speech_wrapper_with_an_intransitive_local_clause_still_declines(
+        self,
+    ) -> None:
+        # "Napoleon announced Waterloo fell" -- target=Waterloo, governing
+        # verb="fell" (a ccomp -- reported speech/complement clause, a
+        # wrapper shape this session has never built support for, on
+        # purpose). The local clause itself is intransitive
+        # (grammar/Metonymy.gf has no intransitive VP at all -- an
+        # existing, already-documented limitation of the whole grammar,
+        # not new to this branch), so this must still decline, and for
+        # the SAME existing reason code the main-clause path already
+        # uses for any other intransitive clause -- not a new code, not a
+        # crash. Confirms the fix never inspects the wrapper's own deprel
+        # at all: ccomp is handled by the identical code path as
+        # acl:relcl/advcl above, it just happens to hit an unrelated,
+        # pre-existing limitation here.
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "announced", "announce", "VERB", "root", 0, 9),
+            word(3, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 19),
+            word(4, "fell", "fall", "VERB", "ccomp", 2, 28),
+        ]
+        functions = {**GF_FUNCTIONS, "fall": "CTX_fall"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "fall", functions, governing_start=28),
+            "object-count",
+        )
+
+    def test_a_reported_speech_wrapper_with_a_transitive_local_clause_succeeds(self) -> None:
+        # Same ccomp wrapper as above, but the local clause is
+        # transitive -- succeeds, demonstrating the fix is genuinely
+        # wrapper-agnostic (identical outcome regardless of whether the
+        # wrapper is acl:relcl, advcl, or ccomp).
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "announced", "announce", "VERB", "root", 0, 9),
+            word(3, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 19),
+            word(4, "praised", "praise", "VERB", "ccomp", 2, 28),
+            word(5, "Henry", "Henry", "PROPN", "obj", 4, 37),
+        ]
+        tree = build_gf_tree(words, "praise", GF_FUNCTIONS, governing_start=28)
+        self.assertEqual(
+            tree, 'Pred (OpenPN "Waterloo") (Compl CTX_praise (OpenPN "Henry"))'
+        )
+
+    def test_governing_start_not_found(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(
+                words, "announce", GF_FUNCTIONS, governing_start=999
+            ),
+            "governing-start-not-found",
+        )
+
+    def test_governing_word_not_verb(self) -> None:
+        # governing_start points at "county" (a NOUN), a data shape
+        # classify_word's own GOVERNING_UPOS check should never actually
+        # produce -- a defensive check, same category as root-not-verb.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "county", "county", "NOUN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(
+                words, "announce", GF_FUNCTIONS, governing_start=19
+            ),
+            "governing-word-not-verb",
+        )
+
+    def test_governing_lemma_mismatch(self) -> None:
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "renamed", "rename", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 17),
+            word(4, "county", "county", "NOUN", "obj", 2, 21),
+            word(5, "that", "that", "SCONJ", "mark", 6, 28),
+            word(6, "announces", "announce", "VERB", "acl:relcl", 4, 33),
+            word(7, "Waterloo", "Waterloo", "PROPN", "nsubj", 6, 43),
+            word(8, "Henry", "Henry", "PROPN", "obj", 6, 52),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(
+                words, "sign", GF_FUNCTIONS, governing_start=33
+            ),
+            "governing-lemma-mismatch",
+        )
+
+    def test_embedded_leftover_words(self) -> None:
+        # Same relative-clause shape as the first test above, but with an
+        # extra, unhandled adverbial modifier directly on the embedded
+        # verb ("quickly") -- content this branch doesn't understand, so
+        # it must decline rather than silently drop it.
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "renamed", "rename", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 17),
+            word(4, "county", "county", "NOUN", "obj", 2, 21),
+            word(5, "that", "that", "SCONJ", "mark", 6, 28),
+            word(6, "announces", "announce", "VERB", "acl:relcl", 4, 33),
+            word(7, "Waterloo", "Waterloo", "PROPN", "nsubj", 6, 43),
+            word(8, "quickly", "quickly", "ADV", "advmod", 6, 52),
+            word(9, "Henry", "Henry", "PROPN", "obj", 6, 60),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(
+                words, "announce", GF_FUNCTIONS, governing_start=33
+            ),
+            "embedded-leftover-words",
+        )
+
+
 class BuildGfTreeDeclineReasonTests(unittest.TestCase):
     """A real corpus evaluation run measured zero successful uses of
     build_gf_tree across 300 real rows (tree_source_counts: 100%
