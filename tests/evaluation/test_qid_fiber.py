@@ -801,7 +801,23 @@ class QidFiberTests(unittest.TestCase):
             mismatch.stdout + mismatch.stderr,
         )
 
-    def test_unknown_gf_semantic_composition_fails_closed(self):
+    def test_unknown_gf_semantic_composition_degrades_gracefully(self):
+        # Used to be test_unknown_gf_semantic_composition_fails_closed,
+        # asserting returncode==4/"semantic-composition-failed" --
+        # "secret" has no data/wordnet-context-rules.json adjective_sorts
+        # entry, which used to abort compile_gf_constraints entirely for
+        # the whole tree. Real corpus evaluation data showed this
+        # aborting far more often than not for real text (see
+        # contextual_rule_compiler.py's own comment on the
+        # OpenAdjDefCN/OpenAdjIndefCN block), so an unsupported
+        # adjective-noun pair anywhere in the tree -- unrelated to the
+        # metonymy target itself -- now simply skips deriving that one
+        # FrameComposition constraint rather than discarding every other
+        # constraint the tree could otherwise yield (see that same
+        # comment for the full reasoning: it's optional enrichment, not
+        # the target's own core action/role constraint). This is a real,
+        # deliberate behavior change, not a regression -- this scenario
+        # must no longer fail closed.
         completed = subprocess.run(
             [
                 "python3",
@@ -819,8 +835,8 @@ class QidFiberTests(unittest.TestCase):
             capture_output=True,
             cwd=ROOT,
         )
-        self.assertEqual(completed.returncode, 4)
-        self.assertIn("semantic-composition-failed", completed.stdout)
+        self.assertEqual(completed.returncode, 0)
+        self.assertNotIn("semantic-composition-failed", completed.stdout)
 
 
 if __name__ == "__main__":
