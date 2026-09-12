@@ -2071,3 +2071,67 @@ pre-existing baseline (2 failures/13 errors/8 skipped), no regressions.
 the first real measurement of how much of `root-lemma-mismatch` this
 actually recovers, and what (if anything) remains -- decisively, not
 another guess.
+
+### First real run: the fix reclassifies correctly, but redirects into other pre-existing walls -- and one, `subject-count`, is a real, buildable follow-up
+
+`root-lemma-mismatch` did drop -- 35&rarr;20 (WiMCor), 43&rarr;14
+(ConMeC) -- confirming the reclassification mechanism works. But
+`tree_source_counts` still showed **zero** real `"stanza"` successes in
+either corpus: every one of the 15 (WiMCor) / 29 (ConMeC) cases that
+left `root-lemma-mismatch` landed on a *different* decline reason, not a
+success. `root-lemma-mismatch` was masking a chain of other, pre-existing
+limitations that were always there -- just never reached, because the
+old code bailed before it could try.
+
+The single largest of the newly-surfaced reasons, by far: `subject-count`
+appeared for the first time at 12/150 (WiMCor) and 13/150 (ConMeC) --
+accounting for most of the redirected cases on its own. Read directly:
+`_clause` (the helper the new `governing_start`-anchored branch delegates
+to, same as the root-anchored branch) only ever looks for a literal
+`nsubj` child of the governing verb; when the governing verb turns out to
+itself be a subject-relative `acl:relcl` ("the county **which** governs
+Prussia" -- the relativized noun implicitly fills the embedded verb's
+subject role, no separate `nsubj` word for it at all), there simply isn't
+one to find. This exact shape was already fully supported elsewhere in
+this module -- `_relative_clause_vp`, used whenever a relative clause
+modifies some *other* NP as a `ModifyRelVP` wrapper -- just never reused
+for the case where the metonymy *target itself* is the argument that
+implicit-subject verb governs.
+
+**Fixed** (still zero new grammar constructs): refactored `_np`'s
+per-UPOS dispatch into a new `_np_base` (pure extraction, behavior-
+preserving -- confirmed by the full existing suite passing unchanged),
+so it can be reused without `_np`'s own automatic `ModifyRelVP`
+re-attachment kicking in a second time. New
+`_implicit_subject_relative_clause_np`: when the governing word is
+itself `acl:relcl` with no own `nsubj`/`nsubj:pass`, builds its subject
+NP from the head noun it modifies via `_np_base` directly (deliberately
+*not* through plain `_np`, which would incorrectly try to re-attach the
+governing verb itself as a `ModifyRelVP` wrapper around its own
+subject). One safety check this needed that a first pass might miss:
+the head noun could have a *second*, unrelated relative clause of its
+own -- outside the governing verb's own descendant subtree entirely, so
+the existing `embedded-leftover-words` check can't catch it -- handled
+with a new, explicit `governing-relcl-head-has-other-relative-clause`
+reason rather than silently dropping it. A second new reason,
+`governing-relcl-head-not-found`, guards the same defensive "should be
+structurally impossible, but never guess" case `governing-start-not-
+found` already does for the outer lookup.
+
+Tests: 2 new cases in `GoverningStartTests` (the implicit-subject
+success case, and the other-relative-clause-on-the-head decline case),
+confirmed the full existing suite (including every pre-existing
+`_np`/relative-clause test) is byte-for-byte unaffected by the `_np`/
+`_np_base` refactor. No new grammar constructors, so no new `gf.exe`
+verification needed -- the tree shape produced (`Pred subject_np (Compl
+... object_np)`) is the same already-verified shape every other active
+clause in this module produces. Full local suite: same pre-existing
+baseline, no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then re-run
+`contextual-tower-evaluation.yml` once more -- watch whether
+`subject-count` drops toward zero and whether any real `"stanza"`
+successes finally appear in `tree_source_counts`, or whether the
+remaining redirected cases (`embedded-leftover-words`,
+`common-noun-determiner-or-adjective-count`, `passive-agent-count`,
+`pronoun-unrecognized`) turn out to need their own follow-up round.

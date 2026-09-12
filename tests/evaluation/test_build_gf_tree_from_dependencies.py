@@ -741,6 +741,56 @@ class GoverningStartTests(unittest.TestCase):
             "embedded-leftover-words",
         )
 
+    def test_target_is_the_object_of_an_implicit_subject_relative_clause(self) -> None:
+        # "Napoleon renamed the county that governs Henry" -- target=
+        # Henry, governing verb="governs" (an acl:relcl on "county" with
+        # NO own nsubj word at all -- the relativizer elided, mirroring
+        # RelativeClauseTests.test_relative_clause_on_the_object's own
+        # precedent -- "county" implicitly fills "governs"'s subject
+        # role). A real corpus run found this dominates the new
+        # "subject-count" bucket the governing_start branch itself
+        # introduced: a bare _clause call has no notion of an implicit
+        # subject, only ever looks for a literal "nsubj" child.
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "renamed", "rename", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 17),
+            word(4, "county", "county", "NOUN", "obj", 2, 21),
+            word(5, "governs", "govern", "VERB", "acl:relcl", 4, 28),
+            word(6, "Henry", "Henry", "PROPN", "obj", 5, 36),
+        ]
+        functions = {**GF_FUNCTIONS, "govern": "CTX_govern"}
+        tree = build_gf_tree(words, "govern", functions, governing_start=28)
+        self.assertEqual(
+            tree, 'Pred (OpenDefCN "county" "county") (Compl CTX_govern (OpenPN "Henry"))'
+        )
+
+    def test_implicit_subject_relative_clause_head_with_another_relative_clause(
+        self,
+    ) -> None:
+        # Same shape as above, but "county" has a SECOND, different
+        # relative clause attached too ("which Waterloo praised") -- that
+        # second relative clause is outside governing_word's own subtree
+        # entirely (it modifies the head noun, not a descendant of
+        # "governs"), so the ordinary embedded-leftover-words check can't
+        # catch it; this must decline explicitly rather than silently
+        # drop it.
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "renamed", "rename", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 17),
+            word(4, "county", "county", "NOUN", "obj", 2, 21),
+            word(5, "governs", "govern", "VERB", "acl:relcl", 4, 28),
+            word(6, "Henry", "Henry", "PROPN", "obj", 5, 36),
+            word(7, "praised", "praise", "VERB", "acl:relcl", 4, 43),
+            word(8, "Waterloo", "Waterloo", "PROPN", "nsubj", 7, 51),
+        ]
+        functions = {**GF_FUNCTIONS, "govern": "CTX_govern"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "govern", functions, governing_start=28),
+            "governing-relcl-head-has-other-relative-clause",
+        )
+
 
 class BuildGfTreeDeclineReasonTests(unittest.TestCase):
     """A real corpus evaluation run measured zero successful uses of

@@ -228,6 +228,33 @@ def _np_from_common_noun(
     return _apply(constructor, noun_text, noun_text)
 
 
+def _np_base(
+    words: list[dict[str, Any]],
+    head: dict[str, Any],
+    accounted: set[int],
+) -> str:
+    """The base NP shape for one head word (proper noun / pronoun /
+    common noun), with no relative-clause attachment -- factored out of
+    _np so a caller that already knows what to do with an attached
+    "acl:relcl" itself (see _implicit_subject_relative_clause_np) can
+    still reuse this same per-UPOS dispatch without _np's own automatic
+    ModifyRelVP wrapping kicking in a second time.
+    """
+    if head["upos"] == "PROPN":
+        return _np_from_proper_noun(words, head, accounted)
+    if head["upos"] == "PRON":
+        constructor = _PRONOUN_CONSTRUCTORS.get(head["lemma"].casefold())
+        if constructor is None:
+            raise _Bail("pronoun-unrecognized")
+        accounted.add(head["id"])
+        return _apply(constructor)
+    if head["upos"] == "NOUN":
+        return _np_from_common_noun(words, head, accounted)
+    # Anything else this module doesn't build an NP from at all -- NUM,
+    # ADJ used substantively, a bare DET, etc.
+    raise _Bail("np-unsupported-upos")
+
+
 def _np(
     words: list[dict[str, Any]],
     head: dict[str, Any],
@@ -236,26 +263,13 @@ def _np(
 ) -> str:
     """Build one NP, including an attached relative clause if present.
 
-    Dispatches on the head word's own UPOS for the base NP shape
-    (proper noun / pronoun / common noun), then separately checks for a
-    UD "acl:relcl" child of the *same* head -- relative clauses can
-    modify any of those three NP shapes, so this check lives above the
-    per-UPOS dispatch, not inside any one branch of it.
+    Dispatches on the head word's own UPOS for the base NP shape via
+    _np_base, then separately checks for a UD "acl:relcl" child of the
+    *same* head -- relative clauses can modify any of those three NP
+    shapes, so this check lives above the per-UPOS dispatch, not inside
+    any one branch of it.
     """
-    if head["upos"] == "PROPN":
-        base = _np_from_proper_noun(words, head, accounted)
-    elif head["upos"] == "PRON":
-        constructor = _PRONOUN_CONSTRUCTORS.get(head["lemma"].casefold())
-        if constructor is None:
-            raise _Bail("pronoun-unrecognized")
-        accounted.add(head["id"])
-        base = _apply(constructor)
-    elif head["upos"] == "NOUN":
-        base = _np_from_common_noun(words, head, accounted)
-    else:
-        # Anything else this module doesn't build an NP from at all --
-        # NUM, ADJ used substantively, a bare DET, etc.
-        raise _Bail("np-unsupported-upos")
+    base = _np_base(words, head, accounted)
     relative_clauses = _children_with_deprel(words, head["id"], "acl:relcl")
     if not relative_clauses:
         return base
@@ -463,6 +477,58 @@ def _subtree_ids(words: list[dict[str, Any]], root_id: int) -> set[int]:
     return ids
 
 
+def _implicit_subject_relative_clause_np(
+    words: list[dict[str, Any]],
+    verb: dict[str, Any],
+    accounted: set[int],
+) -> str | None:
+    """The subject NP for a governing verb that is itself a UD
+    "acl:relcl" with no own "nsubj"/"nsubj:pass" -- the relativized noun
+    implicitly fills its subject role ("the county which governs
+    Prussia"; contrast _relative_clause_vp, which already handles this
+    exact shape, but only when SOME OTHER clause's object attaches it as
+    a ModifyRelVP modifier -- this handles the case where the metonymy
+    target itself is the argument this verb governs).
+
+    Returns None when ``verb`` isn't this shape at all (a different verb
+    entirely -- a real root-anchored clause, or an embedded verb with its
+    own explicit subject), so the caller can fall through to its own
+    ordinary _clause handling. Deliberately does NOT reuse _np on the
+    head noun (that would also re-attach ``verb`` a second time, as a
+    ModifyRelVP wrapper around the very subject this function is
+    building) -- uses _np_base instead, after confirming the head noun
+    has no *other* relative clause attached that would otherwise be
+    silently dropped.
+
+    A real corpus evaluation run found this dominates the new
+    "subject-count" bucket the governing_start branch introduced --
+    35/92 WiMCor and 43/122 ConMeC root-lemma-mismatch declines
+    redistributed almost entirely into other, more specific reasons once
+    root-lemma-mismatch itself was fixed, "subject-count" being the
+    single largest of them (12/150, 13/150).
+    """
+    if verb["deprel"] != "acl:relcl":
+        return None
+    if _children_with_deprel(words, verb["id"], "nsubj") or _children_with_deprel(
+        words, verb["id"], "nsubj:pass"
+    ):
+        return None
+    heads = [word for word in words if word["id"] == verb["head"]]
+    if len(heads) != 1:
+        raise _Bail("governing-relcl-head-not-found")
+    head_noun = heads[0]
+    other_relative_clauses = [
+        word
+        for word in _children_with_deprel(words, head_noun["id"], "acl:relcl")
+        if word["id"] != verb["id"]
+    ]
+    if other_relative_clauses:
+        raise _Bail("governing-relcl-head-has-other-relative-clause")
+    subject_np = _np_base(words, head_noun, accounted)
+    accounted.add(head_noun["id"])
+    return subject_np
+
+
 def _main_clause(
     words: list[dict[str, Any]],
     root: dict[str, Any],
@@ -574,7 +640,33 @@ def _build_gf_tree_inner(
             if governing_word["lemma"].casefold() != lemma.casefold():
                 raise _Bail("governing-lemma-mismatch")
             accounted = set()
-            tree = _clause(words, governing_word, accounted, gf_function_by_lemma)
+            implicit_subject_np = _implicit_subject_relative_clause_np(
+                words, governing_word, accounted
+            )
+            if implicit_subject_np is not None:
+                # The governing verb is itself a subject-relative
+                # acl:relcl ("the county which governs Prussia") -- the
+                # relativized head noun fills its subject role implicitly,
+                # the same shape _relative_clause_vp already supports for
+                # a relative clause attached elsewhere as a modifier, just
+                # reused here since the metonymy target is the argument
+                # THIS verb itself governs. A real corpus run found this
+                # dominates "subject-count" (the single largest new
+                # decline reason the governing_start branch introduced --
+                # a bare _clause call has no notion of an implicit subject
+                # at all, only ever looks for a literal "nsubj" child).
+                gf_function = gf_function_by_lemma.get(lemma.casefold())
+                if gf_function is None:
+                    raise _Bail("verb-not-in-lexicon")
+                object_np = _object_np(
+                    words, governing_word["id"], accounted, gf_function_by_lemma
+                )
+                accounted.add(governing_word["id"])
+                tree = _apply(
+                    "Pred", implicit_subject_np, _apply("Compl", gf_function, object_np)
+                )
+            else:
+                tree = _clause(words, governing_word, accounted, gf_function_by_lemma)
             for mark_word in _children_with_deprel(words, governing_word["id"], "mark"):
                 # Wrapper information (the word that signals this clause
                 # is itself embedded, e.g. "because") -- not local-clause
