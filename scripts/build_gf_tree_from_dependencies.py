@@ -417,7 +417,17 @@ def _clause(
 
     subjects = _children_with_deprel(words, verb["id"], "nsubj")
     if len(subjects) != 1:
-        raise _Bail("subject-count")
+        # Suffixed with the clause-building verb's own UD deprel (a
+        # small closed vocabulary -- "root" for the ordinary root-
+        # anchored path, or whatever real relation attaches an embedded
+        # governing verb to the rest of the sentence -- "conj", "xcomp",
+        # "ccomp", etc. -- for the governing_start branch) so a future
+        # real corpus run can tell which shape actually dominates,
+        # rather than guessing again: an earlier guess here
+        # (_implicit_subject_relative_clause_np, for "acl:relcl") had
+        # zero measurable effect on real data, the exact kind of mistake
+        # this suffix exists to prevent repeating blindly.
+        raise _Bail(f"subject-count:{verb['deprel']}")
     subject_np = _np(words, subjects[0], accounted, gf_function_by_lemma)
     object_np = _object_np(words, verb["id"], accounted, gf_function_by_lemma)
     accounted.add(verb["id"])
@@ -702,7 +712,12 @@ def _build_gf_tree_inner(
         embedded_verb, mark, fronted_name, trailing_name = subordinate
         main_subjects = _children_with_deprel(words, root["id"], "nsubj")
         if len(main_subjects) != 1:
-            raise _Bail("subject-count")
+            # root["deprel"] is always "root" here (see the module-level
+            # root lookup above) -- suffixed only for a uniform
+            # "subject-count:<deprel>" vocabulary alongside _clause's own
+            # same-named check, not because this particular site can
+            # vary.
+            raise _Bail(f"subject-count:{root['deprel']}")
         is_fronted = embedded_verb["start_char"] < main_subjects[0]["start_char"]
         embedded = _clause(words, embedded_verb, accounted, gf_function_by_lemma)
         accounted.add(mark["id"])

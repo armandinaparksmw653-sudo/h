@@ -671,6 +671,32 @@ class GoverningStartTests(unittest.TestCase):
             tree, 'Pred (OpenPN "Waterloo") (Compl CTX_praise (OpenPN "Henry"))'
         )
 
+    def test_subject_count_reports_the_governing_verbs_own_deprel(self) -> None:
+        # "Napoleon announced Henry and praised Waterloo" -- target=
+        # Waterloo, governing verb="praised" (a "conj" sibling of the
+        # root "announced", sharing its subject "Napoleon" -- coordination
+        # with an elided/shared subject, the most likely real-world cause
+        # of the "subject-count" bucket root-lemma-mismatch redirected
+        # into once fixed; an earlier guess at this bucket's cause
+        # (acl:relcl with an implicit subject) had zero effect on real
+        # data). _clause only ever looks for a literal "nsubj" child of
+        # the verb it's given -- "praised" has none of its own (the
+        # subject lives on "announced" instead) -- so this still
+        # declines, but now with real diagnostic value: "subject-count:
+        # conj" rather than a bare, uninformative "subject-count".
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "announced", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+            word(4, "and", "and", "CCONJ", "cc", 5, 25),
+            word(5, "praised", "praise", "VERB", "conj", 2, 29),
+            word(6, "Waterloo", "Waterloo", "PROPN", "obj", 5, 37),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS, governing_start=29),
+            "subject-count:conj",
+        )
+
     def test_governing_start_not_found(self) -> None:
         words = [
             word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
@@ -855,13 +881,17 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         )
 
     def test_subject_count(self) -> None:
+        # Suffixed with the clause-building verb's own deprel ("root"
+        # here) -- see GoverningStartTests for the embedded-verb case,
+        # where the suffix is the real diagnostic payoff (e.g. "conj",
+        # not always "root").
         words = [
             word(1, "announces", "announce", "VERB", "root", 0, 0),
             word(2, "Henry", "Henry", "PROPN", "obj", 1, 10),
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
-            "subject-count",
+            "subject-count:root",
         )
 
     def test_object_count(self) -> None:

@@ -2232,3 +2232,43 @@ entirely (it should -- this exact string can no longer be exit4's
 cause) and whether the LLM tier's now-substantial real tree output
 (63/150 ConMeC) finally converts into real detections, or whether
 recall stays flat because these trees hit some other wall next.
+
+### Sub-bucketing `subject-count` before guessing at it a second time
+
+After the LLM/adjective-composition work above, focus deliberately
+shifted back to the deterministic Stanza-UD tree-builder -- it still
+sits at zero real successes despite two rounds of fixes, and the second
+of those (the `acl:relcl`-implicit-subject fix) had measurably zero
+effect on real corpus data. Rather than guess at `subject-count`'s real
+cause a third time (the leading hypothesis: coordination with a
+shared/elided subject -- `governing_word["deprel"] == "conj"`, its own
+`nsubj` living on the *first* conjunct verb instead -- structurally
+parallel to the `acl:relcl` case that turned out not to be it), both of
+`_clause`'s "no single `nsubj` child" checks now suffix the reason with
+the clause-building verb's own UD deprel: `subject-count:root` for the
+ordinary root-anchored path (always "root" there, kept only for a
+uniform vocabulary), and whatever real relation actually attaches an
+embedded governing verb to the rest of the sentence -- `"conj"`,
+`"xcomp"`, `"ccomp"`, or anything else -- for the `governing_start`
+branch. Purely diagnostic, zero behavior change (still declines exactly
+when it did before, only the reason string is more specific) -- the
+same closed-vocabulary-deprel-suffix technique already used for
+`nested_modifier_deprel` earlier this project's history.
+
+Tests: the existing `test_subject_count` updated to expect
+`"subject-count:root"`; a new `test_subject_count_reports_the_governing_
+verbs_own_deprel` confirms the coordination case specifically
+(`"Napoleon announced Henry and praised Waterloo"`, target=Waterloo,
+governing verb="praised", a `conj` sibling of the root sharing its
+subject) resolves to `"subject-count:conj"`. Full local suite: same
+pre-existing baseline, no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then re-run
+`contextual-tower-evaluation.yml` -- `decline_reason_counts`'s
+`subject-count:<deprel>` breakdown will say, with real data, whether
+`conj` actually dominates (confirming the coordination hypothesis and
+pointing at a concrete, scoped fix: when the governing verb is `conj`
+with no own subject, borrow the first conjunct's own `nsubj`, the same
+"borrow the implicit subject from context" pattern already built for
+`acl:relcl`, just keyed off a different UD relation) or something else
+entirely does -- decisively, not a third guess.
