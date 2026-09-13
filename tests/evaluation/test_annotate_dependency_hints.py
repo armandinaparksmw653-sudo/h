@@ -176,6 +176,50 @@ class ClassifyWordTests(unittest.TestCase):
             ("direct-argument", "Object", "listen by", 13, 24, "active", ""),
         )
 
+    def test_copula_subject_is_a_copula_argument(self) -> None:
+        # "Waterloo is a county" -- nsubj attaches to the predicate NOUN
+        # "county", not the AUX "is", so GOVERNING_UPOS never fires;
+        # governing_lemma is the predicate noun's own lemma, and the
+        # span covers only "is" itself, not the whole predicate NP.
+        words = [
+            FakeWord(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 3, 0, 8),
+            FakeWord(2, "is", "be", "AUX", "cop", 3, 9, 11),
+            FakeWord(3, "county", "county", "NOUN", "root", 0, 14, 20),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[0]),
+            ("copula-argument", "Subject", "county", 9, 11, "active", ""),
+        )
+
+    def test_noun_headed_nsubj_without_a_cop_child_is_not_a_copula(self) -> None:
+        # Not every NOUN-headed nsubj is a copula -- confirms the "cop"
+        # child check is load-bearing, not just "head.upos == NOUN".
+        words = [
+            FakeWord(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0, 8),
+            FakeWord(2, "county", "county", "NOUN", "root", 0, 9, 15),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[0]),
+            ("no-governing-verb", "", "", None, None, "active", ""),
+        )
+
+    def test_adjectival_predicate_is_not_a_copula_argument(self) -> None:
+        # "Waterloo is beautiful" -- head is ADJ, not NOUN;
+        # grammar/Metonymy.gf has no AP category at all, so this stays
+        # structurally out of scope regardless of classification here.
+        words = [
+            FakeWord(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 3, 0, 8),
+            FakeWord(2, "is", "be", "AUX", "cop", 3, 9, 11),
+            FakeWord(3, "beautiful", "beautiful", "ADJ", "root", 0, 12, 21),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[0]),
+            ("no-governing-verb", "", "", None, None, "active", ""),
+        )
+
 
 class FindGoverningStructureTests(unittest.TestCase):
     def test_single_token_span_resolves_directly(self) -> None:

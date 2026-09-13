@@ -299,6 +299,19 @@ class LiteralReasonTests(unittest.TestCase):
             literal_reason(row), "failed:exit1:unsupported-action-role:floreate"
         )
 
+    def test_exit1_unsupported_copula_predicate_includes_the_lemma_suffix(
+        self,
+    ) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 1,
+            "failure": "ValueError: unsupported-copula-predicate:museum",
+        }
+        self.assertEqual(
+            literal_reason(row), "failed:exit1:unsupported-copula-predicate:museum"
+        )
+
     def test_exit1_suffixed_token_falls_back_to_bare_token_with_no_colon(
         self,
     ) -> None:

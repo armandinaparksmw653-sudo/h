@@ -165,14 +165,6 @@ class BailsOutToNoneTests(unittest.TestCase):
         ]
         self.assertIsNone(build_gf_tree(words, "announce", GF_FUNCTIONS))
 
-    def test_a_passive_clause_is_out_of_scope(self) -> None:
-        words = [
-            word(1, "Henry", "Henry", "PROPN", "nsubj:pass", 3, 0),
-            word(2, "was", "be", "AUX", "aux:pass", 3, 6),
-            word(3, "announced", "announce", "VERB", "root", 0, 10),
-        ]
-        self.assertIsNone(build_gf_tree(words, "announce", GF_FUNCTIONS))
-
     def test_coordination_is_out_of_scope(self) -> None:
         words = [
             word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
@@ -338,15 +330,22 @@ class PassiveClauseTests(unittest.TestCase):
             '(PassCompl CTX_announce (OpenPN "Henry"))',
         )
 
-    def test_passive_without_a_by_agent_is_out_of_scope(self) -> None:
-        # grammar/Metonymy.gf's PassCompl always needs an agent NP -- no
-        # bare-passive alternative exists in the grammar at all.
+    def test_passive_without_a_by_agent_uses_the_bare_passive(self) -> None:
+        # "Waterloo was announced" -- no "by"-agent at all. Used to be
+        # out of scope entirely (grammar/Metonymy.gf's PassCompl always
+        # needs an agent NP) -- a real corpus run found this the
+        # dominant share of "passive-agent-count" (most real passives
+        # never name an agent), so this round added PassCompl0 (V2 ->
+        # VP, no agent slot), verified locally against gf.exe/pinned
+        # gf-rgl: `l -lang=MetonymyEng (Pred (OpenPN "Henry") (PassCompl0
+        # Announce))` -> "Henry is announced".
         words = [
             word(1, "Waterloo", "Waterloo", "PROPN", "nsubj:pass", 3, 0),
             word(2, "was", "be", "AUX", "aux:pass", 3, 9),
             word(3, "announced", "announce", "VERB", "root", 0, 13),
         ]
-        self.assertIsNone(build_gf_tree(words, "announce", GF_FUNCTIONS))
+        tree = build_gf_tree(words, "announce", GF_FUNCTIONS)
+        self.assertEqual(tree, 'Pred (OpenPN "Waterloo") (PassCompl0 CTX_announce)')
 
 
 class RelativeClauseTests(unittest.TestCase):
@@ -387,6 +386,205 @@ class RelativeClauseTests(unittest.TestCase):
             word(6, "Henry", "Henry", "PROPN", "obj", 5, 40),
         ]
         self.assertIsNone(build_gf_tree(words, "praise", GF_FUNCTIONS))
+
+
+class NmodModifierTests(unittest.TestCase):
+    """A trailing UD "nmod"+"case" modifier on a noun ("the museum in
+    Kent") -- a real corpus run found this a real share of what
+    "leftover-words"/"embedded-leftover-words" were catching, since
+    _np/_np_base never looked for one at all. Reuses grammar/Metonymy.gf's
+    already-compiled ModifyNP + 13-preposition family (already used by
+    the fronted-date path), and contextual_rule_compiler.py's own
+    compile_gf_constraints already walks any ModifyNP node generically
+    -- no changes needed there.
+    """
+
+    def test_object_side_nmod(self) -> None:
+        # "Waterloo captured the museum in Kent"
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 18),
+            word(4, "museum", "museum", "NOUN", "obj", 2, 22),
+            word(5, "in", "in", "ADP", "case", 6, 29),
+            word(6, "Kent", "Kent", "PROPN", "nmod", 4, 32),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        tree = build_gf_tree(words, "capture", functions)
+        self.assertEqual(
+            tree,
+            'Pred (OpenPN "Waterloo") (Compl CTX_capture '
+            '(ModifyNP (OpenDefCN "museum" "museum") (InPP (OpenPN "Kent"))))',
+        )
+
+    def test_subject_side_nmod(self) -> None:
+        # "the president of France captured Waterloo"
+        words = [
+            word(1, "the", "the", "DET", "det", 2, 0),
+            word(2, "president", "president", "NOUN", "nsubj", 5, 4),
+            word(3, "of", "of", "ADP", "case", 4, 14),
+            word(4, "France", "France", "PROPN", "nmod", 2, 17),
+            word(5, "captured", "capture", "VERB", "root", 0, 24),
+            word(6, "Waterloo", "Waterloo", "PROPN", "obj", 5, 33),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        tree = build_gf_tree(words, "capture", functions)
+        self.assertEqual(
+            tree,
+            'Pred (ModifyNP (OpenDefCN "president" "president") '
+            '(OfPP (OpenPN "France"))) (Compl CTX_capture (OpenPN "Waterloo"))',
+        )
+
+    def test_nmod_count(self) -> None:
+        # Two nmod children on the same noun -- not confident which (if
+        # either) is the "real" modifier, decline rather than guess.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 18),
+            word(4, "museum", "museum", "NOUN", "obj", 2, 22),
+            word(5, "in", "in", "ADP", "case", 6, 29),
+            word(6, "Kent", "Kent", "PROPN", "nmod", 4, 32),
+            word(7, "near", "near", "ADP", "case", 8, 37),
+            word(8, "Dover", "Dover", "PROPN", "nmod", 4, 42),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "capture", functions),
+            "nmod-count",
+        )
+
+    def test_nmod_case_count(self) -> None:
+        # The nmod dependent has no "case" child at all (no recognizable
+        # preposition word) -- e.g. an appositive-like nmod this module
+        # doesn't otherwise model.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 18),
+            word(4, "museum", "museum", "NOUN", "obj", 2, 22),
+            word(5, "Kent", "Kent", "PROPN", "nmod", 4, 29),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "capture", functions),
+            "nmod-case-count",
+        )
+
+    def test_nmod_preposition_unrecognized(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 18),
+            word(4, "museum", "museum", "NOUN", "obj", 2, 22),
+            word(5, "despite", "despite", "ADP", "case", 6, 29),
+            word(6, "Kent", "Kent", "PROPN", "nmod", 4, 37),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "capture", functions),
+            "nmod-preposition-unrecognized",
+        )
+
+    def test_nmod_and_relative_clause_is_out_of_scope(self) -> None:
+        # Both a relative clause and an nmod on the same head noun --
+        # not confident which modifier matters (or how they'd compose).
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 18),
+            word(4, "museum", "museum", "NOUN", "obj", 2, 22),
+            word(5, "in", "in", "ADP", "case", 6, 29),
+            word(6, "Kent", "Kent", "PROPN", "nmod", 4, 32),
+            word(7, "that", "that", "SCONJ", "mark", 8, 38),
+            word(8, "opened", "open", "VERB", "acl:relcl", 4, 43),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "capture", functions),
+            "nmod-and-relative-clause",
+        )
+
+
+class CopulaClauseTests(unittest.TestCase):
+    """"Waterloo is a county" -- the sentence's own UD root is the
+    predicate NOUN itself, never VERB/AUX (see
+    annotate_dependency_hints.py's own "cop"-child check for why
+    classify_word never classifies this as "direct-argument" at all).
+    grammar/Metonymy.gf's PredCopNP : NP -> NP -> S already existed
+    before this module ever produced one -- no new grammar needed.
+    """
+
+    def test_a_basic_copula_clause(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 0),
+            word(2, "is", "be", "AUX", "cop", 4, 9),
+            word(3, "a", "a", "DET", "det", 4, 12),
+            word(4, "county", "county", "NOUN", "root", 0, 14),
+        ]
+        tree = build_gf_tree(words, "county", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'PredCopNP (OpenPN "Waterloo") (OpenIndefCN "county" "county")',
+        )
+
+    def test_predicate_np_gets_an_nmod_modifier_for_free(self) -> None:
+        # "Waterloo is a county in Iowa" -- _copula_clause reuses _np
+        # (not _np_base) for the predicate NP, so NmodModifierTests's
+        # own feature applies here with zero extra code.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 0),
+            word(2, "is", "be", "AUX", "cop", 4, 9),
+            word(3, "a", "a", "DET", "det", 4, 12),
+            word(4, "county", "county", "NOUN", "root", 0, 14),
+            word(5, "in", "in", "ADP", "case", 6, 21),
+            word(6, "Iowa", "Iowa", "PROPN", "nmod", 4, 24),
+        ]
+        tree = build_gf_tree(words, "county", GF_FUNCTIONS)
+        self.assertEqual(
+            tree,
+            'PredCopNP (OpenPN "Waterloo") '
+            '(ModifyNP (OpenIndefCN "county" "county") (InPP (OpenPN "Iowa")))',
+        )
+
+    def test_root_lemma_mismatch(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 0),
+            word(2, "is", "be", "AUX", "cop", 4, 9),
+            word(3, "a", "a", "DET", "det", 4, 12),
+            word(4, "county", "county", "NOUN", "root", 0, 14),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "museum", GF_FUNCTIONS),
+            "root-lemma-mismatch",
+        )
+
+    def test_copula_count(self) -> None:
+        # No "cop" child at all reaches _copula_clause (dispatch already
+        # requires one), but two would be a genuine, unexpected
+        # ambiguity -- confirms the count is actually checked, not just
+        # assumed.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 0),
+            word(2, "is", "be", "AUX", "cop", 4, 9),
+            word(3, "was", "be", "AUX", "cop", 4, 12),
+            word(4, "county", "county", "NOUN", "root", 0, 17),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "county", GF_FUNCTIONS),
+            "copula-count",
+        )
+
+    def test_subject_count(self) -> None:
+        words = [
+            word(1, "is", "be", "AUX", "cop", 3, 0),
+            word(2, "a", "a", "DET", "det", 3, 3),
+            word(3, "county", "county", "NOUN", "root", 0, 5),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "county", GF_FUNCTIONS),
+            "subject-count:root",
+        )
 
 
 class FrontedDateClauseTests(unittest.TestCase):
@@ -896,8 +1094,10 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         )
 
     def test_root_not_verb(self) -> None:
-        # "county" as the sentence's own root (a copula clause's UD
-        # shape, "Waterloo is a county") -- NOUN, not VERB/AUX.
+        # A NOUN root with no "cop" child at all -- not a copula clause
+        # (see CopulaClauseTests for the "Waterloo is a county" shape,
+        # which now succeeds), just some other NOUN-rooted UD shape this
+        # module still doesn't model.
         words = [
             word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
             word(2, "county", "county", "NOUN", "root", 0, 9),
@@ -1033,10 +1233,17 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         )
 
     def test_passive_agent_count(self) -> None:
+        # Two distinct "by"-agents -- a genuine ambiguity (which one is
+        # real?), unlike the zero-agent case (now a supported bare
+        # passive via PassCompl0, see PassiveClauseTests).
         words = [
             word(1, "Henry", "Henry", "PROPN", "nsubj:pass", 3, 0),
             word(2, "was", "be", "AUX", "aux:pass", 3, 6),
             word(3, "announced", "announce", "VERB", "root", 0, 10),
+            word(4, "by", "by", "ADP", "case", 5, 20),
+            word(5, "Waterloo", "Waterloo", "PROPN", "obl", 3, 23),
+            word(6, "by", "by", "ADP", "case", 7, 32),
+            word(7, "Napoleon", "Napoleon", "PROPN", "obl", 3, 35),
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),

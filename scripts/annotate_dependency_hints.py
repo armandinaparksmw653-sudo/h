@@ -13,10 +13,12 @@ candidate was found. See docs/architecture.md for the trust boundary.
 
 Output schema, one object per input row keyed by ``id``:
 
-    {"id": ..., "dep_status": "direct-argument" | "nested-modifier"
-                              | "no-governing-verb" | "parse-error",
+    {"id": ..., "dep_status": "direct-argument" | "copula-argument"
+                              | "nested-modifier" | "no-governing-verb"
+                              | "parse-error",
      "hole_role": "Subject" | "Object" | "",
-     "governing_lemma": "<verb lemma>" | "<verb lemma> <preposition>" | "",
+     "governing_lemma": "<verb lemma>" | "<verb lemma> <preposition>"
+                       | "<predicate noun lemma>" | "",
      "governing_start": <int or null>, "governing_end": <int or null>,
      "voice": "active" | "passive",
      "nested_modifier_deprel": "<UD deprel>" | "",
@@ -34,15 +36,22 @@ docstring and docs/contextual-tower.md). ``null`` when the row's text
 didn't parse at all (mirrors ``dep_status == "parse-error"``).
 
 ``hole_role``, ``governing_lemma``, ``governing_start`` and
-``governing_end`` are non-empty/non-null only when
-``dep_status == "direct-argument"``. ``governing_start``/``governing_end``
-are the governing word's own absolute character span in the input text
-(covering the case-marking preposition too for a reconstructed phrasal
-verb, or the passive auxiliary too for a passive clause) -- needed by
-consumers that substitute a canonical verb form back into the sentence
-(e.g. scripts/contextual_rule_compiler.py's ``resolve_action``, which
-builds a GF-parseable sentence this way); the open-domain frontend
-consuming ``hole_role``/``governing_lemma`` alone does not need them.
+``governing_end`` are non-empty/non-null only when ``dep_status`` is
+``"direct-argument"`` or ``"copula-argument"``. ``governing_start``/
+``governing_end`` are the governing word's own absolute character span
+in the input text (covering the case-marking preposition too for a
+reconstructed phrasal verb, or the passive auxiliary too for a passive
+clause) -- needed by consumers that substitute a canonical verb form
+back into the sentence (e.g. scripts/contextual_rule_compiler.py's
+``resolve_action``, which builds a GF-parseable sentence this way); the
+open-domain frontend consuming ``hole_role``/``governing_lemma`` alone
+does not need them. For ``"copula-argument"`` specifically these three
+fields mean something structurally different, since there is no verb at
+all: ``governing_lemma`` is the *predicate noun's* own lemma ("county"
+for "Waterloo is a county"), and ``governing_start``/``governing_end``
+cover only the copula word itself ("is"/"was"/etc), not the whole
+predicate NP -- see ``contextual_rule_compiler.py``'s
+``_resolve_copula_predicate`` for how this is consumed.
 
 ``nested_modifier_deprel`` is non-empty only when
 ``dep_status == "nested-modifier"`` -- the specific closed-vocabulary UD
@@ -176,10 +185,12 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
     ``governing_end`` are the governing word's own absolute character
     span -- covering the case-marking preposition too for a
     reconstructed phrasal verb, or the passive auxiliary too for a
-    passive clause -- or ``None`` when there is no governing verb to
-    report. ``voice`` is ``"passive"`` only for a passive subject or its
-    "by"-agent phrase; ``"active"`` otherwise (including every
-    non-``direct-argument`` status, where it is unused).
+    passive clause, or (for ``"copula-argument"``) just the copula word
+    itself, with ``governing_lemma`` then being the *predicate noun's*
+    lemma, not a verb at all -- or ``None`` when there is no governing
+    verb to report. ``voice`` is ``"passive"`` only for a passive
+    subject or its "by"-agent phrase; ``"active"`` otherwise (including
+    every non-``direct-argument`` status, where it is unused).
     ``nested_modifier_deprel`` is the specific closed-vocabulary UD
     relation from ``NESTED_MODIFIER_DEPRELS`` that matched, non-empty
     only when ``dep_status == "nested-modifier"``.
@@ -198,6 +209,36 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                 "active",
                 "",
             )
+        if head is not None and head.upos == "NOUN":
+            # Copula ("Waterloo is a county") -- UD attaches nsubj to
+            # the predicate NOUN, not the copula AUX, so the ordinary
+            # GOVERNING_UPOS check above never fires for it; this is a
+            # structurally different resolution path (see
+            # contextual_rule_compiler.py's resolve_action -- there is
+            # no VerbNet "action" for a copula at all, the predicate
+            # noun's own lexical_sorts entry is the only evidence
+            # source), so it gets its own dep_status rather than being
+            # folded into "direct-argument". Deliberately scoped to a
+            # NOUN predicate only -- grammar/Metonymy.gf has no AP
+            # (adjective-predicate) category at all, so "Waterloo is
+            # beautiful" is structurally unreachable regardless of this
+            # classification, not worth reporting differently here.
+            cop_children = [
+                candidate
+                for candidate in sentence.words
+                if candidate.head == head.id and candidate.deprel == "cop"
+            ]
+            if len(cop_children) == 1:
+                cop = cop_children[0]
+                return (
+                    "copula-argument",
+                    "Subject",
+                    head.lemma,
+                    cop.parent.start_char,
+                    cop.parent.end_char,
+                    "active",
+                    "",
+                )
         return ("no-governing-verb", "", "", None, None, "active", "")
 
     if word.deprel in PASSIVE_SUBJECT_DEPRELS:

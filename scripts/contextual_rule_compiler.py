@@ -32,6 +32,7 @@ ARITIES = {
     "NegPred": 2,
     "Compl": 2,
     "PassCompl": 2,
+    "PassCompl0": 1,
     "InPP": 1,
     "AboutPP": 1,
     "WithPP": 1,
@@ -244,12 +245,79 @@ def _disjunction_members(requirement: str) -> list[str]:
     return [requirement]
 
 
+def _resolve_copula_predicate(
+    sentence: str, dependency_hint: dict, wordnet_rules: dict | None
+) -> dict:
+    """Resolve a "copula-argument" dependency_hint ("Waterloo is a
+    county") -- structurally separate from the rest of resolve_action
+    since there is no VerbNet "action" for a copula at all (confirmed:
+    data/predicates.tsv and data/verbnet-action-roles.tsv contain zero
+    "is-a" entries). The predicate noun's own lemma stands in for
+    "action" (reused exactly the way the verb path reuses a resolved
+    verb lemma -- build_gf_tree_from_dependencies.py's _copula_clause
+    checks the UD root's own lemma against it, the same
+    "root-lemma-mismatch" meaning, generalized to a non-verb root); the
+    requirement comes directly from wordnet_rules["lexical_sorts"], not
+    from any ActionRole (a genuinely different data source than every
+    other branch of this function uses).
+
+    Real corpus data found this predicate-noun-lookup a hard coverage
+    ceiling, not just a wiring detail: data/wordnet-context-rules.json's
+    lexical_sorts (5148 entries) does not contain "county"/"museum"/
+    "town"/"city"/"river" -- correctly, safely declining
+    ("unsupported-copula-predicate:<lemma>") for a real share of "X is a
+    Y" sentences is expected, not a bug to chase further this round.
+    """
+    start = dependency_hint.get("governing_start")
+    end = dependency_hint.get("governing_end")
+    predicate_lemma = (dependency_hint.get("governing_lemma") or "").casefold()
+    if start is None or end is None or not predicate_lemma:
+        raise ValueError("copula-predicate-unresolved")
+    head_rule = (wordnet_rules or {}).get("lexical_sorts", {}).get(predicate_lemma)
+    if not head_rule:
+        raise ValueError(f"unsupported-copula-predicate:{predicate_lemma}")
+    evidence = [
+        {
+            "identity": f"wordnet-lexical-sort:{predicate_lemma}",
+            "provenance": head_rule["provenance"],
+            "strength": "hard",
+            "requirement": head_rule["requirement"],
+        }
+    ]
+    digest = hashlib.sha256(
+        json.dumps(evidence, separators=(",", ":")).encode()
+    ).hexdigest()[:16]
+    role = (dependency_hint.get("hole_role") or "Subject") + "Hole"
+    return {
+        "lemma": predicate_lemma,
+        "surface": sentence[start:end],
+        "start": start,
+        "end": end,
+        "role": role,
+        "requirement": head_rule["requirement"],
+        "strength": "hard",
+        "provenance": f"compiled-copula-predicate:v1:hard:{digest}",
+        "evidence": evidence,
+        # A fixed present-tense normalization of whatever copula form
+        # was actually in the text ("was"/"are"/"were" -> "is"), mirroring
+        # the existing tense-normalization discipline this function
+        # already applies to verbs (third_person(lemma) for active, "is
+        # " + passive_form for passive) -- needed for the legacy `engine
+        # parse` fallback path to have any chance, since PredCopNP's own
+        # linearization always defaults to present tense regardless of
+        # input.
+        "gf_form": "is",
+        "voice": "active",
+    }
+
+
 def resolve_action(
     sentence: str,
     target_surfaces: list[str],
     roles: list[ActionRole],
     morphology_overrides: dict,
     dependency_hint: dict | None = None,
+    wordnet_rules: dict | None = None,
 ) -> dict:
     by_form: dict[str, list[ActionRole]] = {}
     for role in roles:
@@ -261,6 +329,8 @@ def resolve_action(
             by_form.setdefault(form.casefold(), []).extend(matching)
 
     dep_status = dependency_hint.get("dep_status") if dependency_hint else None
+    if dep_status == "copula-argument":
+        return _resolve_copula_predicate(sentence, dependency_hint, wordnet_rules)
     if dep_status == "nested-modifier":
         # nested_modifier_deprel (annotate_dependency_hints.py) is a
         # closed-vocabulary UD relation label (one of

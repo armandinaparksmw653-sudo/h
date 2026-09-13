@@ -156,6 +156,11 @@ def main() -> None:
         (args.snapshot / "rules.json").read_text(encoding="utf-8")
     )
     language_rules = json.loads(args.rules.read_text(encoding="utf-8"))
+    wordnet_rules = (
+        json.loads(args.wordnet_rules.read_text(encoding="utf-8"))
+        if args.wordnet_rules.exists()
+        else None
+    )
     tokens = list(re.finditer(r"[A-Za-z][A-Za-z'-]*", args.sentence))
     source_text = args.source or args.target_surface
     if not source_text:
@@ -173,6 +178,7 @@ def main() -> None:
                 language_rules.get("actions", {}),
             ),
             dependency_hint=dependency_hint,
+            wordnet_rules=wordnet_rules,
         )
     except ValueError as error:
         raise SystemExit(str(error)) from error
@@ -291,8 +297,7 @@ def main() -> None:
             }
         ],
     }
-    if args.wordnet_rules.exists():
-        wordnet_rules = json.loads(args.wordnet_rules.read_text(encoding="utf-8"))
+    if wordnet_rules is not None:
         lexical_evidence = []
         for match in tokens:
             lexical_rule = wordnet_rules.get("lexical_sorts", {}).get(

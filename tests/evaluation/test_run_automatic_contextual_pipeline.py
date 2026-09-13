@@ -605,9 +605,12 @@ class StanzaTreeFirstTests(unittest.TestCase):
         self.assertIn("decline-reason=\n", printed)
 
     def test_falls_back_to_engine_parse_when_build_gf_tree_declines(self) -> None:
-        # A passive clause (nsubj:pass/aux:pass) is outside Phase 1's
-        # scope -- build_gf_tree returns None, so this must fall back to
-        # asking GF's own parser to read raw text, unchanged.
+        # A passive clause with two distinct "by"-agents -- a genuine
+        # ambiguity (which one is real?), still outside scope even after
+        # this round's PassCompl0 addition (which only covers the ZERO-
+        # agent case -- see scripts/build_gf_tree_from_dependencies.py's
+        # _clause) -- build_gf_tree returns None, so this must fall back
+        # to asking GF's own parser to read raw text, unchanged.
         passive_ud_words = [
             {
                 "id": 1, "head": 3, "deprel": "nsubj:pass", "upos": "PROPN",
@@ -621,6 +624,28 @@ class StanzaTreeFirstTests(unittest.TestCase):
                 "id": 3, "head": 0, "deprel": "root", "upos": "VERB",
                 "lemma": "announce", "text": "announced",
                 "start_char": 10, "end_char": 19,
+            },
+            {
+                "id": 4, "head": 5, "deprel": "case", "upos": "ADP",
+                "lemma": "by", "text": "by", "start_char": 20, "end_char": 22,
+            },
+            {
+                "id": 5, "head": 3, "deprel": "obl", "upos": "PROPN",
+                "lemma": "Waterloo", "text": "Waterloo",
+                "start_char": 23, "end_char": 31,
+            },
+            {
+                "id": 6, "head": 8, "deprel": "case", "upos": "ADP",
+                "lemma": "by", "text": "by", "start_char": 36, "end_char": 38,
+            },
+            {
+                "id": 7, "head": 3, "deprel": "cc", "upos": "CCONJ",
+                "lemma": "and", "text": "and", "start_char": 32, "end_char": 35,
+            },
+            {
+                "id": 8, "head": 3, "deprel": "obl", "upos": "PROPN",
+                "lemma": "Napoleon", "text": "Napoleon",
+                "start_char": 39, "end_char": 47,
             },
         ]
 
@@ -639,8 +664,9 @@ class StanzaTreeFirstTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
         self.assertIn("tree-source=gf-parser", printed)
-        # No "by"-agent oblique in this fixture -- build_gf_tree's own
-        # passive handling declines specifically because of that.
+        # Two "by"-agents in this fixture -- build_gf_tree's own passive
+        # handling declines specifically because of that genuine
+        # ambiguity (not the zero-agent case, which now succeeds).
         self.assertIn("decline-reason=passive-agent-count", printed)
 
     def test_falls_back_to_engine_parse_when_linearize_validation_fails(self) -> None:

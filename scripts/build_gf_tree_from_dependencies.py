@@ -115,6 +115,29 @@ _FRONTED_DATE_CONSTRUCTORS = {
     "from": "FromFrontedS",
 }
 
+# The same 13 ModifyNP+PP constructors scripts/contextual_rule_compiler.py's
+# own compile_gf_constraints already walks generically (its "pp_constructions"
+# table, keyed the other way around -- constructor name to preposition) --
+# used here for a *noun's own* "nmod"+"case" modifier ("the museum in Kent"),
+# a different UD attachment point than the fronted-date family above (which
+# is "obl"+"case" on the *verb*), but the same closed preposition vocabulary
+# and the same already-compiled, already-verified grammar constructors.
+_NMOD_PP_CONSTRUCTORS = {
+    "in": "InPP",
+    "about": "AboutPP",
+    "with": "WithPP",
+    "for": "ForPP",
+    "on": "OnPP",
+    "at": "AtPP",
+    "from": "FromPP",
+    "by": "ByPP",
+    "over": "OverPP",
+    "under": "UnderPP",
+    "during": "DuringPP",
+    "near": "NearPP",
+    "of": "OfPP",
+}
+
 
 class _Bail(Exception):
     """Internal control-flow only: this narrow builder hit a UD shape it
@@ -261,24 +284,55 @@ def _np(
     accounted: set[int],
     gf_function_by_lemma: dict[str, str],
 ) -> str:
-    """Build one NP, including an attached relative clause if present.
+    """Build one NP, including an attached relative clause or "nmod" PP
+    modifier if present.
 
     Dispatches on the head word's own UPOS for the base NP shape via
-    _np_base, then separately checks for a UD "acl:relcl" child of the
-    *same* head -- relative clauses can modify any of those three NP
-    shapes, so this check lives above the per-UPOS dispatch, not inside
-    any one branch of it.
+    _np_base, then separately checks for a UD "acl:relcl" or "nmod"
+    child of the *same* head -- either modifier can attach to any of
+    those three NP shapes, so this check lives above the per-UPOS
+    dispatch, not inside any one branch of it. Real corpus evaluation
+    data found a trailing "nmod" ("the museum in Kent") a real share of
+    what "leftover-words"/"embedded-leftover-words" were catching --
+    scripts/contextual_rule_compiler.py's own compile_gf_constraints
+    already walks any ModifyNP node generically (built for the fronted-
+    date path), so this needed no changes there at all, only here.
     """
     base = _np_base(words, head, accounted)
     relative_clauses = _children_with_deprel(words, head["id"], "acl:relcl")
-    if not relative_clauses:
-        return base
-    if len(relative_clauses) != 1:
-        raise _Bail("relative-clause-count")
-    embedded_vp = _relative_clause_vp(
-        words, relative_clauses[0], accounted, gf_function_by_lemma
-    )
-    return _apply("ModifyRelVP", base, embedded_vp)
+    nmods = _children_with_deprel(words, head["id"], "nmod")
+    if relative_clauses and nmods:
+        # Both a relative clause and an nmod PP on the same head -- not
+        # confident which one actually matters (or how they'd compose),
+        # so decline rather than guess, the same "only one shape at a
+        # time" discipline relative-clause-count already applies.
+        raise _Bail("nmod-and-relative-clause")
+    if relative_clauses:
+        if len(relative_clauses) != 1:
+            raise _Bail("relative-clause-count")
+        embedded_vp = _relative_clause_vp(
+            words, relative_clauses[0], accounted, gf_function_by_lemma
+        )
+        return _apply("ModifyRelVP", base, embedded_vp)
+    if nmods:
+        if len(nmods) != 1:
+            raise _Bail("nmod-count")
+        nmod = nmods[0]
+        case_children = _children_with_deprel(words, nmod["id"], "case")
+        if len(case_children) != 1:
+            raise _Bail("nmod-case-count")
+        case_word = case_children[0]
+        constructor = _NMOD_PP_CONSTRUCTORS.get(case_word["text"].casefold())
+        if constructor is None:
+            raise _Bail("nmod-preposition-unrecognized")
+        # Recurses on a different word id each call (nmod's own id, not
+        # head's) -- UD dependency graphs are acyclic, so this always
+        # terminates; also lets the modifier NP have its own relcl/nmod
+        # of its own ("the museum in the county of Kent").
+        modifier_np = _np(words, nmod, accounted, gf_function_by_lemma)
+        accounted.add(case_word["id"])
+        return _apply("ModifyNP", base, _apply(constructor, modifier_np))
+    return base
 
 
 def _object_np(
@@ -379,10 +433,11 @@ def _clause(
     accounted: set[int],
     gf_function_by_lemma: dict[str, str],
 ) -> str:
-    """"SubjectNP (Compl/PassCompl V2 ObjectNP)" for any verb -- shared
-    by the main action clause and any embedded clause (relative,
-    fronted/trailing subordinate) this module builds, since each is
-    structurally the same shape, just with a different governing verb.
+    """"SubjectNP (Compl/PassCompl/PassCompl0 V2 [ObjectNP])" for any verb
+    -- shared by the main action clause and any embedded clause
+    (relative, fronted/trailing subordinate) this module builds, since
+    each is structurally the same shape, just with a different governing
+    verb.
     """
     gf_function = gf_function_by_lemma.get(verb["lemma"].casefold())
     if gf_function is None:
@@ -401,19 +456,27 @@ def _clause(
                 for case in _children_with_deprel(words, oblique["id"], "case")
             )
         ]
-        if len(agents) != 1:
-            # grammar/Metonymy.gf's PassCompl always needs an agent NP
-            # (V2 -> NP -> VP, no bare-passive alternative) -- a passive
-            # without a "by"-agent is out of scope for the whole grammar
-            # today, not just this module.
+        if len(agents) > 1:
+            # 2+ "by"-agents is a genuine ambiguity (which one is real?)
+            # -- still declines, unlike the 0-agent case below.
             raise _Bail("passive-agent-count")
-        agent_np = _np(words, agents[0], accounted, gf_function_by_lemma)
         subject_np = _np(words, passive_subjects[0], accounted, gf_function_by_lemma)
         accounted.add(aux_pass[0]["id"])
-        for case in _children_with_deprel(words, agents[0]["id"], "case"):
-            accounted.add(case["id"])
         accounted.add(verb["id"])
-        return _apply("Pred", subject_np, _apply("PassCompl", gf_function, agent_np))
+        if agents:
+            agent_np = _np(words, agents[0], accounted, gf_function_by_lemma)
+            for case in _children_with_deprel(words, agents[0]["id"], "case"):
+                accounted.add(case["id"])
+            return _apply("Pred", subject_np, _apply("PassCompl", gf_function, agent_np))
+        # No "by"-agent at all ("Henry is announced") -- grammar/Metonymy.gf's
+        # PassCompl0 (V2 -> VP, added alongside this) is a bare passive
+        # with no agent slot, verified locally against gf.exe/pinned
+        # gf-rgl before this round: `l -lang=MetonymyEng (Pred (OpenPN
+        # "Henry") (PassCompl0 Announce))` -> "Henry is announced". A
+        # real corpus run found this the dominant share of what used to
+        # be a blanket "passive-agent-count" decline -- most real
+        # passives simply never name an agent at all.
+        return _apply("Pred", subject_np, _apply("PassCompl0", gf_function))
 
     subjects = _children_with_deprel(words, verb["id"], "nsubj")
     if len(subjects) != 1:
@@ -687,6 +750,43 @@ def _subordinate_clause(
     return embedded_verb, mark, pair[0], pair[1]
 
 
+def _copula_clause(
+    words: list[dict[str, Any]],
+    root: dict[str, Any],
+    lemma: str,
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str:
+    """"SubjectNP (PredCopNP) PredicateNP" for a copula clause ("Waterloo
+    is a county") -- the sentence's UD root is the predicate NOUN itself
+    (not a verb at all; classify_word never classifies this case as
+    "direct-argument", see annotate_dependency_hints.py's own "cop"-child
+    check), with the copula word ("is"/"was"/...) attached to it via UD
+    "cop". grammar/Metonymy.gf's PredCopNP : NP -> NP -> S already
+    existed before this module ever produced one -- both NPs reuse _np
+    (not _np_base), so a copula predicate/subject with its own nmod/
+    relative-clause modifier is fully supported for free, the same way
+    _clause's own subject/object already are.
+
+    gf_function_by_lemma is unused here (a copula has no V2 to look up)
+    -- kept in the signature only so this matches _clause's own call
+    shape, in case a future round needs it (e.g. a modifier on the
+    predicate/subject NP that itself requires a verb lookup).
+    """
+    if root["lemma"].casefold() != lemma.casefold():
+        raise _Bail("root-lemma-mismatch")
+    subjects = _children_with_deprel(words, root["id"], "nsubj")
+    if len(subjects) != 1:
+        raise _Bail(f"subject-count:{root['deprel']}")
+    cop_children = _children_with_deprel(words, root["id"], "cop")
+    if len(cop_children) != 1:
+        raise _Bail("copula-count")
+    subject_np = _np(words, subjects[0], accounted, gf_function_by_lemma)
+    predicate_np = _np(words, root, accounted, gf_function_by_lemma)
+    accounted.add(cop_children[0]["id"])
+    return _apply("PredCopNP", subject_np, predicate_np)
+
+
 def _build_gf_tree_inner(
     words: list[dict[str, Any]],
     lemma: str,
@@ -730,6 +830,24 @@ def _build_gf_tree_inner(
         raise _Bail("root-count")
     root = roots[0]
     if root["upos"] not in {"VERB", "AUX"}:
+        if root["upos"] == "NOUN" and _children_with_deprel(words, root["id"], "cop"):
+            # Copula ("Waterloo is a county") -- the sentence's own root
+            # is the predicate NOUN, never VERB/AUX, so this must be
+            # checked before the unconditional root-not-verb bail below,
+            # not folded into the governing_start branch (copula-
+            # argument's own dependency_hint carries a governing_start,
+            # but nothing here actually needs it -- see _copula_clause's
+            # own docstring). Deliberately not hooked into fronted-date/
+            # subordinate-clause dispatch this round; a fronted-date
+            # copula sentence still safely declines via leftover-words.
+            accounted: set[int] = set()
+            tree = _copula_clause(words, root, lemma, accounted, gf_function_by_lemma)
+            leftover = {
+                word["id"] for word in words if word["deprel"] != "punct"
+            } - accounted
+            if leftover:
+                raise _Bail("leftover-words")
+            return _strip_outer_parens(tree)
         raise _Bail("root-not-verb")
 
     if governing_start is not None:

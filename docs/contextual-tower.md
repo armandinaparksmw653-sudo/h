@@ -2337,3 +2337,171 @@ with `conj` in one commit.
 drops to (near) zero, whether any real `"stanza"` tree-source successes
 finally appear, and what `advcl`/`xcomp`'s own real shares look like
 once `conj` is no longer inflating the total.
+
+## Third real run: still 0% real successes, three more buckets diagnosed and closed in one round
+
+A fresh `decline_reason_counts` breakdown (after conj-coordination) gave
+the honest, uncomfortable headline: the Stanza tree-builder is still at
+**zero** real `tree_source="stanza"` successes across both corpora,
+after five rounds of fixes that each mechanically work but keep
+revealing the next barrier in the same sentence. Meanwhile the LLM tier
+(discussed with the user directly) gave a first real true positive in
+ConMeC and doubled WiMCor's -- but its own timeout volatility and lack
+of per-failure diagnosability (we can tell *what shape* a bad LLM answer
+took, never *why* the model produced it) made the user choose to keep
+pushing the deterministic path, explicitly accepting that progress
+there is slower but fully explainable and reproducible.
+
+Three parallel Explore agents characterized the four largest remaining
+buckets (`root-not-verb`=36, `root-lemma-mismatch`=34,
+`passive-agent-count`=31, plus the `common-noun`/`leftover-words`
+family combined &asymp;58), a Plan agent validated concrete designs for
+three of them, and every non-obvious claim (grammar `open`/`cat`/`fun`
+lists, `resolve_action`'s exact branch order, `propose_contextual_
+scenario.py`'s real `wordnet_rules` load order relative to
+`resolve_action`) was independently re-verified by reading the actual
+current code before writing the plan, not just trusted from agent
+output. `object-count` (12, intransitive verbs) was deliberately
+deferred -- a deeper architectural question (what a constraint even
+means without an object) than a tree-builder gap, and the smallest of
+the four.
+
+### 1. nmod PP-modifier on NPs -- zero grammar risk, done first
+
+"the museum **in Kent**" -- a trailing UD `nmod`+`case` modifier on a
+noun -- was never checked by `_np`/`_np_base` at all (only
+`det`/`amod`/`acl:relcl` were). `grammar/Metonymy.gf`'s `ModifyNP` +
+13-preposition family was already compiled and already used (the
+fronted-date path), and `contextual_rule_compiler.py`'s own `walk`/
+`lexical_head` already traverse any `ModifyNP` node generically
+(confirmed directly by the existing `test_of_pp_modifier_does_not_
+crash_the_walker` in `test_compile_gf_constraints_batch2.py`, which
+needed zero changes to keep proving the point) -- so this feature is
+entirely self-contained inside `build_gf_tree_from_dependencies.py`. New
+`_NMOD_PP_CONSTRUCTORS` (the same 13-word table, inverted); `_np` now
+checks for an `nmod` child alongside its existing `acl:relcl` check,
+declining (`nmod-and-relative-clause`) if a noun somehow has both rather
+than guessing which one matters, and (`nmod-count`/`nmod-case-count`/
+`nmod-preposition-unrecognized`) on anything else unrecognized. Recurses
+through `_np` itself (not `_np_base`) so a modifier NP can have its own
+nested nmod/relative clause too ("the museum in the county of Kent").
+No `gf.exe` verification needed -- no new grammar constructs at all.
+
+### 2. Agentless passive -- the one new grammar construct this round
+
+`passive-agent-count` (31, second-largest bucket): `_clause` required
+exactly one "by"-agent for *any* `nsubj:pass`, but most real passives
+never name one at all. `PassCompl : V2 -> NP -> VP` had no agentless
+alternative. Read directly from the pinned `gf-rgl-src` clone (not
+fetched, not guessed): `Verb.gf`/`VerbEng.gf` already declare
+`PassV2 : V2 -> VP` ("be loved"), structurally independent of
+`PassCompl`'s own `ExtendEng.PassAgentVPSlash`+`SlashV2a` combination --
+`VerbEng` was already `open`ed, and a repo-wide grep of the whole pinned
+RGL tree found no competing `PassV2` declaration anywhere, unlike
+`PassCompl`'s own collision history. New `PassCompl0 : V2 -> VP` in
+`grammar/Metonymy.gf`, `PassCompl0 verb = VerbEng.PassV2 verb ;` in
+`grammar/MetonymyEng.gf` (qualified anyway, matching this file's
+existing defensive discipline). **Verified locally against `gf.exe` +
+the pinned `gf-rgl-src` clone before writing a single test**: compiled
+with zero new conflicts beyond the pre-existing harmless `CatEng.*`
+ones; `l -lang=MetonymyEng (Pred (OpenPN "Henry") (PassCompl0
+Announce))` -> "Henry is announced"; the pre-existing agent-present
+`(PassCompl Announce (OpenPN "Waterloo")))` re-checked unaffected ->
+"Henry is announced by Waterloo"; a round-trip parse of "Henry is
+announced" found our new tree as its first (and, expectedly, not only --
+GF's parser also offers a `PredCopNP`-based reading treating "announced"
+as a bare-string predicate, a pre-existing ambiguity class this addition
+didn't create, and one our own tree-builders never rely on `p` to
+disambiguate anyway) reading.
+
+`_clause`'s passive branch: `len(agents) > 1` still declines (genuine
+ambiguity -- which agent is real?); `len(agents) == 0` now builds
+`Pred subject_np (PassCompl0 gf_function)` instead. `ARITIES["PassCompl0"]
+= 1`; deliberately *not* added to `first_node`'s `{"Compl", "PassCompl"}`
+set (a 1-arg node has no agent to derive a `FrameArgument` enrichment
+from anyway, and `len(complement.arguments) == 2` would be `False`
+regardless -- confirmed by tracing the exact code, not assumed). A real
+existing-test inversion: the old `test_passive_without_a_by_agent_is_
+out_of_scope`/`test_a_passive_clause_is_out_of_scope` fixtures now
+*succeed* -- rewritten into a success test (exact tree string) and
+removed as a now-redundant duplicate, respectively; `test_passive_agent_
+count` rebuilt around a genuine 2-agent ambiguity instead.
+
+### 3. Copula -- the largest bucket, and a genuinely separate resolution path
+
+`root-not-verb` (36, the single largest bucket): "Waterloo is a county"
+-- UD's own root is the predicate NOUN "county", never VERB/AUX, so
+`classify_word`'s existing `GOVERNING_UPOS` check never fires for it at
+all; the whole pipeline never reached tree-building for such a target.
+`PredCopNP : NP -> NP -> S` already existed in the grammar (confirmed:
+it needed no new construct) and was already proven a safe no-op by
+`compile_gf_constraints`'s own existing
+`test_a_pure_copula_tree_is_a_safe_no_op_not_a_crash`.
+
+**The real scope, found by tracing rather than assuming**: there is no
+VerbNet "action" for a copula at all -- `data/predicates.tsv`/
+`data/verbnet-action-roles.tsv` contain zero "is-a" entries (grep-
+confirmed). So this needed a genuinely separate resolution path inside
+`resolve_action`, not just a new tree-builder branch: the predicate
+noun's own lemma stands in for "action" (the same role `root-lemma-
+mismatch`'s check already generalizes to), and the `HasSort` requirement
+comes directly from `wordnet_rules["lexical_sorts"][predicate_lemma]`
+-- a different data source than every other branch of `resolve_action`
+touches. This also surfaced a real, honest coverage ceiling worth
+stating up front rather than discovering after the fact:
+`data/wordnet-context-rules.json`'s `lexical_sorts` (5148 entries) does
+**not** contain "county"/"museum"/"town"/"city"/"river" (only
+"company"/"country" among common examples checked) -- even a fully
+correct implementation will correctly, safely decline
+(`unsupported-copula-predicate:<lemma>`, tracked in
+`literal_prediction_reasons` the same way `unsupported-action-role`
+already is) for a real share of "X is a Y" sentences, the same class of
+ceiling already documented for `adjective_sorts`'s own 4-word coverage.
+
+New `dep_status == "copula-argument"` in `annotate_dependency_hints.py`'s
+`classify_word` (inside the existing `SUBJECT_DEPRELS` branch, scoped to
+a `NOUN`-headed subject with exactly one `cop` child -- deliberately not
+`ADJ`/`PROPN`: `grammar/Metonymy.gf` has no `AP` category at all,
+confirmed by reading its full `cat` list, so an adjectival predicate is
+structurally unreachable regardless of Python wiring). `governing_lemma`/
+`governing_start`/`governing_end` are repurposed with copula-specific
+meaning (predicate noun's lemma; span of the copula word alone, not the
+whole predicate NP) -- documented distinctly in the module's own schema
+comment. New `resolve_action(..., wordnet_rules=None)` parameter and
+`_resolve_copula_predicate` early-exit branch (right after the existing
+`"nested-modifier"` check); `propose_contextual_scenario.py`'s
+`wordnet_rules` load moved earlier (it previously loaded *after*
+`resolve_action`'s own call site -- confirmed by reading the file, not
+assumed) and threaded through, with the existing `lexical_evidence`
+block downstream reusing the same loaded object instead of loading
+twice. New `_copula_clause` in `build_gf_tree_from_dependencies.py`,
+dispatched as an alternative to the unconditional `root-not-verb` bail
+when the root is `NOUN`-with-`cop`; reuses `_np` (not `_np_base`) for
+*both* subject and predicate NPs, so a copula predicate already gets
+feature 1's `nmod` support for free ("Waterloo is a county in Iowa"),
+verified directly via `gf.exe`: `l -lang=MetonymyEng (PredCopNP (OpenPN
+"Waterloo") (ModifyNP (OpenIndefCN "county" "county") (InPP (OpenPN
+"Iowa"))))` -> "Waterloo is a county in Iowa". Every downstream consumer
+of `resolve_action`'s return dict was traced and confirmed already fully
+generic over lemma/role/requirement (not "is this a verb") -- zero
+changes needed anywhere else in that chain.
+
+### Tests (all three features)
+
+`NmodModifierTests` (6), `PassiveClauseTests`/`BuildGfTreeDeclineReasonTests`
+updates + a new standalone `test_compile_gf_constraints_passcompl0.py`
+(3), `ClassifyWordTests` copula cases (3) + a new
+`test_resolve_action_copula.py` (5) + `CopulaClauseTests` (5) in
+`test_build_gf_tree_from_dependencies.py`, plus one new
+`literal_reason` suffix test for `unsupported-copula-predicate`. Full
+local suite: same pre-existing baseline (2 failures/13 errors/8
+skipped), no regressions, across all three features together.
+
+**Next step**: commit (one commit per feature -- each is independently
+testable and revertible, matching this project's own established
+discipline), push, wait for `ci.yml` for each, then ask the user to
+re-run `contextual-tower-evaluation.yml` -- decisive this time on
+whether any of `root-not-verb`/`passive-agent-count`/`leftover-words`'s
+`nmod` share actually convert into real `tree_source="stanza"`
+successes, or whether (as happened with `conj`) they mechanically work
+but reveal yet another compounding barrier in the same real sentences.

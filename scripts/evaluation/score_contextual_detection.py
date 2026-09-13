@@ -82,6 +82,7 @@ KNOWN_FAILURE_TOKENS = (
     "target-occurrence-not-found",
     "unsupported-action-role",
     "nested-modifier-unsupported",
+    "unsupported-copula-predicate",
     "source-qid-unresolved",
     "contract-target-qid-unresolved",
     "unsupported-linker-cache-schema",
@@ -142,17 +143,22 @@ GENERIC_RUNTIME_CRASH_TOKENS = (
     "divide by zero",
 )
 
-# Two of KNOWN_FAILURE_TOKENS above now carry an optional ":<suffix>" --
+# Three of KNOWN_FAILURE_TOKENS above now carry an optional ":<suffix>" --
 # resolve_action (contextual_rule_compiler.py) appends a closed-vocabulary
-# UD deprel to "nested-modifier-unsupported" and a single governing verb
-# lemma to "unsupported-action-role" (see each raise site's own comment
-# for why that's safe to surface: a UD relation label from a fixed
-# 8-entry vocabulary, or one common English lemma / "<verb> <preposition>"
-# phrasal reconstruction -- never sentence text). Listed here so
-# literal_reason knows which two of the many KNOWN_FAILURE_TOKENS entries
-# to look for a suffix on, rather than trying (and failing) to parse one
-# off every token indiscriminately.
-SUFFIXED_FAILURE_TOKENS = ("nested-modifier-unsupported", "unsupported-action-role")
+# UD deprel to "nested-modifier-unsupported", a single governing verb
+# lemma to "unsupported-action-role", and (_resolve_copula_predicate) a
+# single predicate-noun lemma to "unsupported-copula-predicate" (see each
+# raise site's own comment for why that's safe to surface: a UD relation
+# label from a fixed 8-entry vocabulary, or one common English lemma /
+# "<verb> <preposition>" phrasal reconstruction / predicate-noun lemma --
+# never sentence text). Listed here so literal_reason knows which of the
+# many KNOWN_FAILURE_TOKENS entries to look for a suffix on, rather than
+# trying (and failing) to parse one off every token indiscriminately.
+SUFFIXED_FAILURE_TOKENS = (
+    "nested-modifier-unsupported",
+    "unsupported-action-role",
+    "unsupported-copula-predicate",
+)
 
 # Every fixed message compile_gf_constraints/_origin/_cumulative_origin
 # (scripts/contextual_rule_compiler.py) can raise as a ValueError, reaching
@@ -367,7 +373,7 @@ def exit4_suffixed_token(token: str, detail: str) -> str:
 def exit1_suffixed_token(token: str, failure_text: str) -> str:
     """Recover a SUFFIXED_FAILURE_TOKENS entry's ":<suffix>", if present.
 
-    Both suffixed tokens can only originate from resolve_action, called
+    All three suffixed tokens can only originate from resolve_action, called
     exclusively from propose_contextual_scenario.py, which turns its
     ValueError into `raise SystemExit(str(error))` -- printing the bare
     message ("nested-modifier-unsupported:appos", say) to stderr with no
@@ -386,7 +392,7 @@ def exit1_suffixed_token(token: str, failure_text: str) -> str:
     has no way to know where the JSON string value actually ends. Falls
     back to searching failure_text directly (still excluding stray quote
     characters, as a second line of defense) when it isn't JSON-wrapped
-    at all -- defensive only, since every known origin of these two
+    at all -- defensive only, since every known origin of these three
     particular tokens is confirmed JSON-wrapped as described above.
     Falls back to the bare token when there's no ":" at all (the
     backward-compatible, no-deprel/no-lemma raise still supported at each

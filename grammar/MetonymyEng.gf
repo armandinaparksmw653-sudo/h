@@ -20,6 +20,16 @@ concrete MetonymyEng of Metonymy =
     -- ambiguous the moment ExtraEng was added to `open` -- confirmed by
     -- reading Extra.gf's actual source, not guessed.
     PassCompl verb agent = ExtendEng.PassAgentVPSlash (SlashV2a verb) agent ;
+    -- Bare/agentless passive ("Henry is announced") -- Verb.gf's own
+    -- PassV2 : V2 -> VP, structurally independent of PassCompl's
+    -- ExtendEng.PassAgentVPSlash+SlashV2a combo above (not that
+    -- construction with the agent stripped out). VerbEng is already
+    -- opened; grepped the whole pinned gf-rgl-src tree for a second
+    -- "PassV2" fun/oper declaration before adding this -- none found,
+    -- so no qualifier is strictly required, but qualified anyway,
+    -- matching this file's own established defensive discipline (see
+    -- the PassCompl/ModifyRelVP comments elsewhere in this file).
+    PassCompl0 verb = VerbEng.PassV2 verb ;
     InPP np = SyntaxEng.mkAdv in_Prep np ;
     AboutPP np = SyntaxEng.mkAdv (mkPrep "about") np ;
     WithPP np = SyntaxEng.mkAdv (mkPrep "with") np ;
