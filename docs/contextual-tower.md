@@ -2272,3 +2272,68 @@ with no own subject, borrow the first conjunct's own `nsubj`, the same
 "borrow the implicit subject from context" pattern already built for
 `acl:relcl`, just keyed off a different UD relation) or something else
 entirely does -- decisively, not a third guess.
+
+### Real breakdown: subject-count is a heterogeneous mix, conj the largest single share
+
+`"unsupported GF adjective-noun semantics"` disappeared from
+`literal_prediction_reasons` entirely in both corpora, confirming the
+skip-not-abort fix worked exactly as intended. The `subject-count:
+<deprel>` breakdown gave a decisive, real answer instead of a third
+guess: **`conj`** (6/150 WiMCor, 4/150 ConMeC -- 10 combined) is the
+single largest share, but not an overwhelming majority -- `advcl` (8
+combined) and `acl` (4 combined, this module's own already-built
+`acl:relcl` shape, confirmed a real but modest slice as its own updated
+docstring now says) and `xcomp` (3, ConMeC only) all contribute too.
+`subject-count` was never one clean cause; it is several genuinely
+different UD shapes bundled under one label.
+
+**Implemented `conj` (the largest share)**: new
+`_shared_subject_from_conjunct` -- when the governing verb is itself a
+UD `"conj"` with no own `nsubj`/`nsubj:pass`, English coordination
+shares the first conjunct's subject with every later one unless a later
+conjunct states its own (a real syntactic fact `"conj"` encodes, not a
+guess -- the same class of confidence as the already-built `acl:relcl`
+case). Walks the `"conj"` chain up past however many hops a 3+-way list
+needs ("A, B, and C" -- UD may attach both B and C as `"conj"` of A
+directly, or chain C as `"conj"` of B; both resolve the same way) to the
+true first conjunct, borrows its own `nsubj` if it has exactly one.
+`_implicit_subject_relative_clause_np` and this new function are now
+unified behind a single `_implicit_subject_np` dispatcher, tried once
+from `_build_gf_tree_inner`'s embedded branch, trying each known shape
+in turn.
+
+**A real bug caught by testing the fix against a realistic fixture, not
+just the simplest one**: the coordinating conjunction word itself
+("and"/"or", UD's own `"cc"` relation, attached to the conjunct it
+precedes) sat inside the governing verb's own descendant subtree but
+was never added to `accounted` -- so `embedded-leftover-words` fired
+even when the shared subject was found correctly, on nearly every real
+coordinated sentence (almost all of them spell "and"/"or" out
+explicitly; only a two-word toy fixture without it happened to pass by
+accident). Fixed by explicitly excluding the governing verb's own `"cc"`
+child from the completeness check, the same treatment already given to
+`"mark"` for subordinate clauses.
+
+Tests: the earlier `subject-count:conj`-asserting test became a real
+success test (`test_shared_subject_from_the_first_conjunct`); a new
+`test_conj_without_a_clean_first_conjunct_subject_still_declines`
+confirms the still-honest decline path when the first conjunct itself
+has no single clean subject to borrow; a new
+`test_shared_subject_walks_a_chained_three_way_conjunct` confirms the
+multi-hop walk *and* deliberately includes a real `"cc"` word to catch
+the exact leftover-words bug above (this test failed against the first
+version of the fix, caught before commit). Full local suite: same
+pre-existing baseline, no regressions.
+
+Deliberately not attempted this round: `advcl` and `xcomp` (both real,
+smaller shares of the same bucket) -- each is a different UD shape
+(likely needing its own control/shared-subject reasoning, not
+necessarily the same pattern as `conj`) and deserves its own
+narrow-slice-then-measure round rather than being guessed at together
+with `conj` in one commit.
+
+**Next step**: commit, push, wait for `ci.yml`, then re-run
+`contextual-tower-evaluation.yml` -- watch whether `subject-count:conj`
+drops to (near) zero, whether any real `"stanza"` tree-source successes
+finally appear, and what `advcl`/`xcomp`'s own real shares look like
+once `conj` is no longer inflating the total.

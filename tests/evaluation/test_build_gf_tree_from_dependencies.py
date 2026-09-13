@@ -671,19 +671,17 @@ class GoverningStartTests(unittest.TestCase):
             tree, 'Pred (OpenPN "Waterloo") (Compl CTX_praise (OpenPN "Henry"))'
         )
 
-    def test_subject_count_reports_the_governing_verbs_own_deprel(self) -> None:
+    def test_shared_subject_from_the_first_conjunct(self) -> None:
         # "Napoleon announced Henry and praised Waterloo" -- target=
         # Waterloo, governing verb="praised" (a "conj" sibling of the
-        # root "announced", sharing its subject "Napoleon" -- coordination
-        # with an elided/shared subject, the most likely real-world cause
-        # of the "subject-count" bucket root-lemma-mismatch redirected
-        # into once fixed; an earlier guess at this bucket's cause
-        # (acl:relcl with an implicit subject) had zero effect on real
-        # data). _clause only ever looks for a literal "nsubj" child of
-        # the verb it's given -- "praised" has none of its own (the
-        # subject lives on "announced" instead) -- so this still
-        # declines, but now with real diagnostic value: "subject-count:
-        # conj" rather than a bare, uninformative "subject-count".
+        # root "announced", sharing its subject "Napoleon" -- English
+        # coordination shares the first conjunct's subject unless a
+        # later conjunct states its own, a real syntactic fact UD's own
+        # "conj" relation encodes, not a guess). Real corpus evaluation
+        # data (after suffixing "subject-count" with the governing verb's
+        # own deprel -- an earlier, different guess about this bucket's
+        # cause, acl:relcl, had measured zero real effect) found "conj"
+        # the single largest share of it.
         words = [
             word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
             word(2, "announced", "announce", "VERB", "root", 0, 9),
@@ -692,9 +690,60 @@ class GoverningStartTests(unittest.TestCase):
             word(5, "praised", "praise", "VERB", "conj", 2, 29),
             word(6, "Waterloo", "Waterloo", "PROPN", "obj", 5, 37),
         ]
+        tree = build_gf_tree(words, "praise", GF_FUNCTIONS, governing_start=29)
         self.assertEqual(
-            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS, governing_start=29),
+            tree, 'Pred (OpenPN "Napoleon") (Compl CTX_praise (OpenPN "Waterloo"))'
+        )
+
+    def test_conj_without_a_clean_first_conjunct_subject_still_declines(self) -> None:
+        # Same shape as above, but the first conjunct ("announced") has
+        # no subject of its own either (e.g. itself embedded some other
+        # way not modeled here) -- _shared_subject_from_conjunct only
+        # borrows a subject it can find with total confidence (exactly
+        # one plain "nsubj" on the true first conjunct); with none to
+        # borrow, this still declines, reporting the real UD deprel
+        # (still "subject-count:conj", diagnostically honest) rather
+        # than silently guessing at any other word in the sentence.
+        words = [
+            word(1, "announced", "announce", "VERB", "root", 0, 0),
+            word(2, "Henry", "Henry", "PROPN", "obj", 1, 10),
+            word(3, "and", "and", "CCONJ", "cc", 4, 16),
+            word(4, "praised", "praise", "VERB", "conj", 1, 20),
+            word(5, "Waterloo", "Waterloo", "PROPN", "obj", 4, 28),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "praise", GF_FUNCTIONS, governing_start=20),
             "subject-count:conj",
+        )
+
+    def test_shared_subject_walks_a_chained_three_way_conjunct(self) -> None:
+        # "Napoleon announced Henry, praised Waterloo, and greeted Mary"
+        # -- target=Mary, governing verb="greeted", UD-attached as "conj"
+        # of "praised" (itself "conj" of the root "announced") rather
+        # than directly of the root -- one real, valid way UD represents
+        # a 3+-way coordinated list. Confirms the "walk up while conj"
+        # loop keeps going past one hop to find the true first conjunct
+        # ("announced") and its subject ("Napoleon"), not just its
+        # immediate "conj" parent ("praised", which has no subject of
+        # its own either). Also includes the real UD "cc" word ("and",
+        # attached to the last conjunct it precedes) the simpler two-way
+        # test above omitted -- catching a real bug the first version of
+        # this fix had (embedded-leftover-words firing on "and" even
+        # though the shared subject was found correctly).
+        words = [
+            word(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0),
+            word(2, "announced", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+            word(4, "praised", "praise", "VERB", "conj", 2, 26),
+            word(5, "Waterloo", "Waterloo", "PROPN", "obj", 4, 34),
+            word(6, "and", "and", "CCONJ", "cc", 7, 44),
+            word(7, "greeted", "greet", "VERB", "conj", 4, 48),
+            word(8, "Mary", "Mary", "PROPN", "obj", 7, 56),
+        ]
+        functions = {**GF_FUNCTIONS, "greet": "CTX_greet"}
+        tree = build_gf_tree(words, "greet", functions, governing_start=48)
+        self.assertEqual(
+            tree, 'Pred (OpenPN "Napoleon") (Compl CTX_greet (OpenPN "Mary"))'
         )
 
     def test_governing_start_not_found(self) -> None:

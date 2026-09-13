@@ -510,12 +510,19 @@ def _implicit_subject_relative_clause_np(
     has no *other* relative clause attached that would otherwise be
     silently dropped.
 
-    A real corpus evaluation run found this dominates the new
-    "subject-count" bucket the governing_start branch introduced --
-    35/92 WiMCor and 43/122 ConMeC root-lemma-mismatch declines
-    redistributed almost entirely into other, more specific reasons once
-    root-lemma-mismatch itself was fixed, "subject-count" being the
-    single largest of them (12/150, 13/150).
+    First tried as the leading hypothesis for the new "subject-count"
+    bucket the governing_start branch introduced (12/150 WiMCor, 13/150
+    ConMeC, the single largest of them) -- but a real corpus run measured
+    ZERO effect from this fix alone: decline_reason_counts came back
+    byte-identical, a real reversal (see docs/contextual-tower.md's own
+    writeup). A follow-up round suffixed "subject-count" with the
+    governing verb's own UD deprel and measured the real breakdown:
+    "acl:relcl" (this function's own shape) turned out to be only a
+    modest slice (1/150 WiMCor, 3/150 ConMeC) -- "conj" (coordination
+    with a shared subject, see _shared_subject_from_conjunct) is the
+    actual largest single share, with "advcl" and "xcomp" both
+    significant too. This function stays (it is a real, correct shape,
+    just not the dominant one guessed).
     """
     if verb["deprel"] != "acl:relcl":
         return None
@@ -537,6 +544,91 @@ def _implicit_subject_relative_clause_np(
     subject_np = _np_base(words, head_noun, accounted)
     accounted.add(head_noun["id"])
     return subject_np
+
+
+def _shared_subject_from_conjunct(
+    words: list[dict[str, Any]],
+    verb: dict[str, Any],
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str | None:
+    """The subject NP for a governing verb that is itself a UD "conj"
+    with no own "nsubj"/"nsubj:pass" -- English coordination shares the
+    first conjunct's subject with every later one unless a later
+    conjunct states its own ("Napoleon announced Henry and praised
+    Waterloo" -- "praised" has no subject of its own; it is Napoleon's,
+    the same subject "announced" already has). A real syntactic fact UD's
+    own "conj" relation encodes, not a guess -- the same class of
+    confidence as _implicit_subject_relative_clause_np's own relativized-
+    noun-fills-the-subject-role reasoning, just for a different UD shape.
+
+    Walks the "conj" chain up to whichever word is NOT itself a further
+    "conj" (the true first conjunct -- for a 3+-way list, "A, B, and C",
+    UD may attach both B and C as "conj" of A directly, or chain C as
+    "conj" of B; either shape resolves to A here the same way).
+
+    Returns None when ``verb`` isn't this shape (has its own subject, or
+    isn't a "conj" at all), or when the first conjunct itself doesn't
+    have exactly one plain "nsubj" -- a passive (or otherwise-shaped)
+    first conjunct is a genuinely different, unexplored case, not
+    guessed at here.
+
+    Real corpus evaluation data (after suffixing "subject-count" with
+    the governing verb's own deprel) found "conj" the single largest
+    share of that bucket (6/150 WiMCor, 4/150 ConMeC) -- bigger than
+    _implicit_subject_relative_clause_np's own "acl:relcl" share.
+    """
+    if verb["deprel"] != "conj":
+        return None
+    if _children_with_deprel(words, verb["id"], "nsubj") or _children_with_deprel(
+        words, verb["id"], "nsubj:pass"
+    ):
+        return None
+    current = verb
+    while current["deprel"] == "conj":
+        heads = [word for word in words if word["id"] == current["head"]]
+        if len(heads) != 1:
+            raise _Bail("governing-conj-head-not-found")
+        current = heads[0]
+    first_conjunct_subjects = _children_with_deprel(words, current["id"], "nsubj")
+    if len(first_conjunct_subjects) != 1:
+        return None
+    subject_np = _np(words, first_conjunct_subjects[0], accounted, gf_function_by_lemma)
+    for cc_word in _children_with_deprel(words, verb["id"], "cc"):
+        # The coordinating conjunction itself ("and"/"or") -- wrapper
+        # information (what signals this clause is coordinated at all),
+        # not local-clause content, the same treatment the embedded
+        # branch's own "mark" exclusion already gives "because"/"if"/
+        # "when"/"although". Without this, embedded-leftover-words would
+        # incorrectly fire on nearly every real coordinated sentence
+        # (almost all of them spell out "and"/"or" explicitly) even
+        # though the shared subject was found correctly -- caught by a
+        # real fixture with an explicit "and" word, not by the first,
+        # simpler test that happened to omit it.
+        accounted.add(cc_word["id"])
+    return subject_np
+
+
+def _implicit_subject_np(
+    words: list[dict[str, Any]],
+    verb: dict[str, Any],
+    accounted: set[int],
+    gf_function_by_lemma: dict[str, str],
+) -> str | None:
+    """The subject NP for a governing verb with no own "nsubj"/
+    "nsubj:pass" but still an unambiguous, structurally-determined
+    subject elsewhere in the sentence -- tries each shape this module
+    knows in turn (subject-relative acl:relcl, then conj-coordination
+    sharing), returning None (the caller falls through to _clause's own
+    literal-nsubj-only handling, which correctly declines) if none
+    apply.
+    """
+    relative_clause_subject = _implicit_subject_relative_clause_np(
+        words, verb, accounted
+    )
+    if relative_clause_subject is not None:
+        return relative_clause_subject
+    return _shared_subject_from_conjunct(words, verb, accounted, gf_function_by_lemma)
 
 
 def _main_clause(
@@ -650,21 +742,21 @@ def _build_gf_tree_inner(
             if governing_word["lemma"].casefold() != lemma.casefold():
                 raise _Bail("governing-lemma-mismatch")
             accounted = set()
-            implicit_subject_np = _implicit_subject_relative_clause_np(
-                words, governing_word, accounted
+            implicit_subject_np = _implicit_subject_np(
+                words, governing_word, accounted, gf_function_by_lemma
             )
             if implicit_subject_np is not None:
-                # The governing verb is itself a subject-relative
-                # acl:relcl ("the county which governs Prussia") -- the
-                # relativized head noun fills its subject role implicitly,
-                # the same shape _relative_clause_vp already supports for
-                # a relative clause attached elsewhere as a modifier, just
-                # reused here since the metonymy target is the argument
-                # THIS verb itself governs. A real corpus run found this
-                # dominates "subject-count" (the single largest new
-                # decline reason the governing_start branch introduced --
-                # a bare _clause call has no notion of an implicit subject
-                # at all, only ever looks for a literal "nsubj" child).
+                # The governing verb has no own "nsubj"/"nsubj:pass" but
+                # an unambiguous, structurally-determined subject
+                # elsewhere in the sentence -- a subject-relative
+                # acl:relcl ("the county which governs Prussia", the
+                # relativized head noun) or a conj-coordination sharing
+                # the first conjunct's own subject ("announced Henry and
+                # praised Waterloo"). A bare _clause call has no notion
+                # of either at all, only ever looks for a literal
+                # "nsubj" child -- see _implicit_subject_np's own
+                # docstring for which of these two actually dominates
+                # real corpus data.
                 gf_function = gf_function_by_lemma.get(lemma.casefold())
                 if gf_function is None:
                     raise _Bail("verb-not-in-lexicon")
