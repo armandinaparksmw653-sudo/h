@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import re
 from collections import Counter
@@ -292,6 +293,41 @@ def row_decline_reason(inference_row: dict) -> str:
         except (json.JSONDecodeError, TypeError):
             return "unrecognized"
     return "unrecognized"
+
+
+def row_all_decline_reasons(inference_row: dict) -> list[str]:
+    """Every reason enumerate_gf_tree_blockers found for this row, in
+    order -- not just the first one row_decline_reason reports. Mirrors
+    row_decline_reason exactly, just for the "all_decline_reasons" list
+    field instead of the single "decline_reason" string.
+
+    A real corpus evaluation round found several decline_reason buckets
+    grow even as others shrank after a real fix -- exactly what "a
+    sentence that now passes an earlier check just hits a different,
+    still-unaddressed one next" predicts, but decline_reason_counts
+    alone (only ever the *first* blocker) can't confirm it. This is what
+    score() aggregates into "blockers_per_sentence_histogram" and
+    "co_occurring_blocker_pairs" to answer that directly. [] means
+    either zero blockers (the row's own tree actually built) or
+    "not-applicable" (exit 1/2, tree-building never attempted) --
+    row_tree_source/row_decline_reason already distinguish those two for
+    the same row, so this doesn't need its own separate sentinel for it.
+    ["unrecognized"] if a row that should carry the field doesn't.
+    """
+    if "all_decline_reasons" in inference_row:
+        return inference_row["all_decline_reasons"]
+    exit_code = inference_row.get("exit_code")
+    if exit_code in _EXIT_CODES_BEFORE_TREE_BUILDING:
+        return []
+    if exit_code in (3, 4, 7):
+        try:
+            reasons = json.loads(inference_row.get("failure", "")).get(
+                "all_decline_reasons"
+            )
+            return reasons if isinstance(reasons, list) else ["unrecognized"]
+        except (json.JSONDecodeError, TypeError):
+            return ["unrecognized"]
+    return ["unrecognized"]
 
 
 def row_llm_decline_reason(inference_row: dict) -> str:
@@ -626,6 +662,16 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     tree_source_counts: Counter[str] = Counter()
     decline_reason_counts: Counter[str] = Counter()
     llm_decline_reason_counts: Counter[str] = Counter()
+    # How many *independent* blockers a sentence actually carries at
+    # once (0 = already builds, 1 = decline_reason_counts's own first-
+    # blocker view already captures it fully, 2+ = the compounding
+    # pattern several real rounds' growing decline_reason buckets only
+    # ever suggested indirectly) -- keyed by len(row_all_decline_reasons(...)).
+    blockers_per_sentence_histogram: Counter[int] = Counter()
+    # Which pairs of reason codes co-occur in the same sentence most
+    # often -- points at which TWO fixes together would actually free a
+    # sentence, rather than just shifting it one blocker forward.
+    co_occurring_blocker_pairs: Counter[str] = Counter()
     for gold in gold_rows:
         inference_row = inference_by_id.get(gold["id"])
         if inference_row is None:
@@ -634,6 +680,10 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         tree_source_counts[row_tree_source(inference_row)] += 1
         decline_reason_counts[row_decline_reason(inference_row)] += 1
         llm_decline_reason_counts[row_llm_decline_reason(inference_row)] += 1
+        all_reasons = row_all_decline_reasons(inference_row)
+        blockers_per_sentence_histogram[len(all_reasons)] += 1
+        for first, second in itertools.combinations(sorted(set(all_reasons)), 2):
+            co_occurring_blocker_pairs[f"{first} + {second}"] += 1
         predicted = predict(inference_row)
         actual = gold["gold_label"]
         if predicted == "metonymic" and actual == "metonymic":
@@ -698,6 +748,16 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "tree_source_counts": dict(sorted(tree_source_counts.items())),
         "decline_reason_counts": dict(sorted(decline_reason_counts.items())),
         "llm_decline_reason_counts": dict(sorted(llm_decline_reason_counts.items())),
+        # JSON object keys are always strings -- len(...) counts are
+        # stringified here rather than relying on json.dumps to do it
+        # implicitly, so the report's own on-disk shape is explicit.
+        "blockers_per_sentence_histogram": {
+            str(count): occurrences
+            for count, occurrences in sorted(blockers_per_sentence_histogram.items())
+        },
+        "co_occurring_blocker_pairs": dict(
+            sorted(co_occurring_blocker_pairs.items(), key=lambda item: (-item[1], item[0]))
+        ),
         "unrecognized_fingerprints": [
             {"sha256_prefix": prefix, "length": length, "count": count}
             for (prefix, length), count in sorted(

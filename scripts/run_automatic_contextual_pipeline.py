@@ -72,6 +72,7 @@ from build_gf_tree_from_dependencies import (
     build_gf_tree_decline_reason,
     build_gf_tree_from_llm_structure,
     build_gf_tree_from_llm_structure_decline_reason,
+    enumerate_gf_tree_blockers,
     load_gf_function_by_lemma,
 )
 from contextual_rule_compiler import compile_gf_constraints
@@ -324,9 +325,32 @@ def main() -> None:
     # "governing-word-not-verb", "governing-lemma-mismatch", or
     # "embedded-leftover-words" -- see build_gf_tree's own docstring.
     decline_reason = "no-ud-words"
+    # Every _Bail this sentence would hit in turn, not just the first
+    # one decline_reason (above) reports -- see enumerate_gf_tree_
+    # blockers's own docstring for the "ablate and retry" mechanism.
+    # Computed unconditionally alongside decline_reason (even when a
+    # Stanza tree is actually trusted, where it is always []) so a real
+    # corpus run can directly confirm the "a sentence that now passes
+    # an earlier check just hits a different, still-unaddressed one"
+    # pattern several real evaluation rounds' growing decline_reason
+    # buckets already suggested, rather than inferring it indirectly
+    # from bucket sizes moving between runs. Wrapped defensively: this
+    # is purely diagnostic, so any unexpected exception in it must never
+    # take down a row that would otherwise have succeeded or failed for
+    # an unrelated, already-understood reason.
+    all_decline_reasons: list[str] = []
     gf_function_by_lemma = load_gf_function_by_lemma(action_map)
     if dependency_hint_data and dependency_hint_data.get("ud_words"):
         governing_start = dependency_hint_data.get("governing_start")
+        try:
+            all_decline_reasons = enumerate_gf_tree_blockers(
+                dependency_hint_data["ud_words"],
+                proposal["action"],
+                gf_function_by_lemma,
+                governing_start=governing_start,
+            )
+        except Exception:
+            all_decline_reasons = ["enumeration-error"]
         built_tree = build_gf_tree(
             dependency_hint_data["ud_words"],
             proposal["action"],
@@ -440,6 +464,7 @@ def main() -> None:
                         "detail": parsed.stderr.strip(),
                         "tree_source": tree_source,
                         "decline_reason": decline_reason,
+                        "all_decline_reasons": all_decline_reasons,
                         "llm_decline_reason": llm_decline_reason,
                     },
                     ensure_ascii=False,
@@ -469,6 +494,7 @@ def main() -> None:
                     "gf_sentence": proposal["gf_sentence"],
                     "tree_source": tree_source,
                     "decline_reason": decline_reason,
+                    "all_decline_reasons": all_decline_reasons,
                     "llm_decline_reason": llm_decline_reason,
                 },
                 ensure_ascii=False,
@@ -536,6 +562,7 @@ def main() -> None:
                     # tree-building) -- otherwise which of
                     # build_gf_tree_decline_reason's reasons applies.
                     "decline_reason": decline_reason,
+                    "all_decline_reasons": all_decline_reasons,
                     # Same idea, for the LLM tier -- "" when tree_source
                     # is "llm", "not-attempted" when the LLM tier never
                     # ran at all (Stanza already succeeded, or
@@ -558,6 +585,7 @@ def main() -> None:
     # never reach these lines either.
     print("tree-source=" + tree_source, flush=True)
     print("decline-reason=" + decline_reason, flush=True)
+    print("all-decline-reasons=" + ",".join(all_decline_reasons), flush=True)
     print("llm-decline-reason=" + llm_decline_reason, flush=True)
     encoded_constraints = ";;".join(
         encode_constraint(item) for item in proposal["constraints"]

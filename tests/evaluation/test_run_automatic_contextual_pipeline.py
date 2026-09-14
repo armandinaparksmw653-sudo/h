@@ -530,6 +530,10 @@ class StanzaTreeFirstTests(unittest.TestCase):
         # Empty decline_reason -- the Stanza-built tree was trusted, so
         # there's nothing to report a reason for.
         self.assertIn("decline-reason=\n", printed)
+        # enumerate_gf_tree_blockers is still computed unconditionally
+        # alongside decline_reason -- an already-successful build has no
+        # blockers to enumerate at all.
+        self.assertIn("all-decline-reasons=\n", printed)
         engine_calls = [call for call in calls if call[0] != "python3"]
         self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
         self.assertFalse(any(call[1] == "parse" for call in engine_calls))
@@ -668,6 +672,16 @@ class StanzaTreeFirstTests(unittest.TestCase):
         # handling declines specifically because of that genuine
         # ambiguity (not the zero-agent case, which now succeeds).
         self.assertIn("decline-reason=passive-agent-count", printed)
+        # enumerate_gf_tree_blockers keeps going past that first _Bail:
+        # once the extra "by"-agent is ablated away, the fixture's own
+        # "and" (cc) word -- never accounted for by the passive branch,
+        # which only ever consumes the subject/aux/verb/single agent --
+        # surfaces as a second, genuinely different blocker. A real,
+        # useful finding this diagnostic exists to surface, not a test
+        # artifact to hide.
+        self.assertIn(
+            "all-decline-reasons=passive-agent-count,leftover-words", printed
+        )
 
     def test_falls_back_to_engine_parse_when_linearize_validation_fails(self) -> None:
         def fake_run(command, **kwargs):

@@ -135,6 +135,14 @@ def run_one(
             # build_gf_tree_decline_reason's own docstring) -- printed
             # alongside "tree-source=" for the same reason.
             result["decline_reason"] = line.split("=", 1)[1]
+        elif line.startswith("all-decline-reasons="):
+            # Every reason this sentence's tree-building would hit in
+            # turn, not just the first (see enumerate_gf_tree_blockers's
+            # own docstring) -- comma-joined reason codes, safe to split
+            # since the closed vocabulary never contains a comma; "" (no
+            # commas at all) means zero blockers.
+            value = line.split("=", 1)[1]
+            result["all_decline_reasons"] = value.split(",") if value else []
         elif line.startswith("llm-decline-reason="):
             # Same idea, for the third (LLM) tier -- "not-attempted"
             # when it never ran at all (Stanza already succeeded, or no

@@ -2505,3 +2505,107 @@ whether any of `root-not-verb`/`passive-agent-count`/`leftover-words`'s
 `nmod` share actually convert into real `tree_source="stanza"`
 successes, or whether (as happened with `conj`) they mechanically work
 but reveal yet another compounding barrier in the same real sentences.
+
+## Enumerating every blocker a sentence carries, not just the first
+
+The three-feature batch above (`25305f9`) landed and CI went green, and
+the next real corpus run confirmed the mechanism works exactly as
+intended, bucket by bucket: `root-not-verb` dropped substantially
+(WiMCor 23→8, ConMeC 13→6, the copula path firing for real), a new
+`unsupported-copula-predicate:mile` appeared (the copula path reaching
+all the way to `lexical_sorts`'s own known coverage ceiling), and
+`passive-agent-count` vanished entirely. At the same time several other
+buckets *grew*: `root-lemma-mismatch` (WiMCor 20→33, ConMeC 14→21),
+`leftover-words`, and `common-noun-determiner-or-adjective-count`. And
+`tree_source_counts` still showed **zero** real `"stanza"` successes in
+either corpus -- the sixth consecutive round where every individual fix
+is independently confirmed correct (unit tests plus, where the grammar
+changed, real `gf.exe` verification) yet the corpus-level number does
+not move.
+
+The user asked directly how to get a precise list of every blocker a
+sentence carries, not a guess. The honest answer: today's code
+structurally cannot answer that. `_build_gf_tree_inner` raises `_Bail`
+(a plain exception) on the very first check it fails, and every caller
+(`build_gf_tree`, `build_gf_tree_decline_reason`) stops there --
+`decline_reason_counts` has only ever reported the *first* blocker per
+sentence. A bucket growing after a real fix is exactly consistent with
+"sentences that used to fail an early, coarse check now pass it and
+reach a different, still-unaddressed one further down the same
+pipeline" -- the same "compounding blockers" pattern named at the very
+start of Phase 1 -- but `decline_reason_counts` alone can only ever
+suggest that indirectly, from bucket sizes moving between runs, never
+confirm it.
+
+**New diagnostic: `enumerate_gf_tree_blockers`
+(`scripts/build_gf_tree_from_dependencies.py`)**, an "ablate and retry"
+search built entirely on top of `_build_gf_tree_inner` *unmodified* --
+zero risk to the production tree-building path, since none of its own
+code changed. On each `_Bail`, it applies one of a small set of
+deliberately narrow "ablations" -- each one either deletes an
+already-unbuildable subtree (an unrecognized preposition's `nmod`, an
+extra determiner/adjective/agent/object/subject beyond the first) or
+coerces one already-wrong field (an unrecognized pronoun/determiner
+lemma, or injects a placeholder lexicon entry for a missing verb) -- and
+retries the *exact same* `_build_gf_tree_inner` to see what the next
+independent blocker is. It never invents new syntactic structure, and
+the ablated tree is never linearized, never reaches
+`compile_gf_constraints`, and never influences any real prediction --
+only the ordered list of reason codes it collects is ever returned.
+Roughly half the closed reason-code vocabulary has a known ablation
+(every "N != 1" multiplicity check, plus the two unrecognized-vocabulary
+checks and the two lexicon-gap checks); the rest (`root-count`,
+`root-not-verb`, `leftover-words`/`embedded-leftover-words`, the
+`governing-*` family, `root-lemma-mismatch`, and a handful of others)
+stay honestly terminal in this round -- a real, not-yet-diagnosable-
+further limitation, not a guess past it. `leftover-words` in particular
+has no *single* structural cause (it is a catch-all "something wasn't
+accounted for"), so distinguishing its own sub-causes is left for a
+later round, informed by what this one measures.
+
+Wired in exactly like `tree_source`/`decline_reason` already are:
+`run_automatic_contextual_pipeline.py` computes `all_decline_reasons`
+unconditionally alongside `decline_reason` (defensively wrapped -- any
+unexpected exception degrades to `["enumeration-error"]` rather than
+taking down a row that would otherwise have succeeded or failed for an
+unrelated reason), threads it into every exit3/4/7 JSON payload and a
+new unconditional `all-decline-reasons=` stdout line;
+`run_contextual_corpus.py`'s line-scan picks it up (comma-joined, since
+the closed reason-code vocabulary never contains a comma);
+`score_contextual_detection.py`'s new `row_all_decline_reasons` mirrors
+`row_decline_reason` exactly, aggregated into two new report fields:
+`blockers_per_sentence_histogram` (how many sentences carry 0/1/2/3+
+independent blockers at once -- the direct, measured answer to the
+compounding-blockers question, not an inference from bucket sizes) and
+`co_occurring_blocker_pairs` (which pairs of reason codes co-occur most
+often in the same sentence -- points at which *two* fixes together
+would actually free a sentence, rather than shifting it one blocker
+forward, the exact failure mode this round's own data kept showing).
+
+**A real finding surfaced immediately while writing the test suite**:
+the existing two-"by"-agent passive fixture
+(`test_falls_back_to_engine_parse_when_build_gf_tree_declines`,
+`"Henry was announced by Waterloo and by Napoleon"`) enumerates to
+`["passive-agent-count", "leftover-words"]`, not just the one blocker --
+once the extra agent is ablated away, the sentence's own "and" (`cc`)
+word is left unaccounted for (the passive branch only ever consumes the
+subject/aux/verb/single agent, never a coordinating conjunction between
+two agents), a second, genuinely different blocker the single-reason
+view could never have shown.
+
+Tests: `EnumerateAllBlockersTests` (11, `test_build_gf_tree_from_dependencies.py`)
+covering the zero/one/terminal/two-compounding-blockers cases plus one
+direct test per ablation; new stdout-line/JSON-field assertions in
+`test_run_automatic_contextual_pipeline.py` and
+`test_run_contextual_corpus.py`; `RowAllDeclineReasonsTests` (7) plus a
+new `ScoreTests` case for both aggregate fields in
+`test_score_contextual_detection.py`. Full local suite: same pre-
+existing baseline (2 failures/13 errors/8 skipped), no regressions. No
+grammar changed this round, so no `gf.exe` verification was needed.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user to
+re-run `contextual-tower-evaluation.yml` -- `blockers_per_sentence_
+histogram` gives the first *measured* (not inferred) answer to how many
+real sentences carry 2+ simultaneous blockers, and
+`co_occurring_blocker_pairs` should point at the next pair of fixes
+worth doing together.

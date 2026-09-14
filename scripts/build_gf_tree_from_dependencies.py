@@ -88,11 +88,22 @@ comment), exposed via ``build_gf_tree_decline_reason`` -- a second,
 diagnostics-only entry point run_automatic_contextual_pipeline.py calls
 whenever ``build_gf_tree`` itself returns ``None``, purely to answer
 that question with real data instead of another hypothesis.
+
+``build_gf_tree_decline_reason`` only ever reports the *first* _Bail a
+sentence hits, though -- several fix rounds later, real corpus data
+showed decline_reason_counts buckets growing even as others shrank,
+exactly what "a sentence that now passes an earlier check just hits a
+different, still-unaddressed one" predicts, but unprovable from a
+single reason per row. ``enumerate_gf_tree_blockers`` answers that
+directly: on each _Bail it applies a small, safe "ablation" (delete
+already-unbuildable content, or coerce one already-wrong field -- never
+invent new structure) and retries, to find every blocker a sentence
+would hit in turn, not just the first.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 _PRONOUN_CONSTRUCTORS = {
     "he": "HePN",
@@ -993,6 +1004,311 @@ def build_gf_tree_decline_reason(
         return ""
     except _Bail as bail:
         return bail.reason
+
+
+def _group_children_by_head(
+    words: list[dict[str, Any]], deprels: set[str]
+) -> dict[int, list[dict[str, Any]]]:
+    groups: dict[int, list[dict[str, Any]]] = {}
+    for word in words:
+        if word["deprel"] in deprels:
+            groups.setdefault(word["head"], []).append(word)
+    return groups
+
+
+def _keep_earliest_per_group(
+    words: list[dict[str, Any]], groups: dict[int, list[dict[str, Any]]]
+) -> list[dict[str, Any]] | None:
+    """For every head with 2+ candidates, delete every candidate's own
+    subtree except the earliest by ``start_char`` -- the shared
+    "multiplicity" ablation enumerate_gf_tree_blockers uses for every
+    "N != 1" _Bail this module raises (subject-count, object-count,
+    nmod-count, ...). Returns None (a no-op) when no head actually had
+    2+ candidates -- the caller reads that as "this _Bail wasn't a
+    multiplicity problem after all" (e.g. the real count was 0, not 2+)
+    and treats the reason as terminal rather than looping forever on an
+    ablation that changes nothing.
+
+    Safe by construction for enumerate_gf_tree_blockers's purposes: the
+    candidates passed in are always *dependents* of some clause verb
+    (nsubj/obj/nmod/relcl/cop/aux:pass/by-agent children), never a verb
+    itself, so this can never delete the word a later
+    _word_by_governing_start lookup depends on.
+    """
+    to_delete: set[int] = set()
+    changed = False
+    for candidates in groups.values():
+        if len(candidates) < 2:
+            continue
+        changed = True
+        for extra in sorted(candidates, key=lambda word: word["start_char"])[1:]:
+            to_delete |= _subtree_ids(words, extra["id"])
+    if not changed:
+        return None
+    return [word for word in words if word["id"] not in to_delete]
+
+
+def _ablate_passive_agent_count(words: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    groups: dict[int, list[dict[str, Any]]] = {}
+    for word in words:
+        if word["deprel"] != "obl":
+            continue
+        if any(
+            case["text"].casefold() == "by"
+            for case in _children_with_deprel(words, word["id"], "case")
+        ):
+            groups.setdefault(word["head"], []).append(word)
+    return _keep_earliest_per_group(words, groups)
+
+
+def _ablate_nmod_preposition_unrecognized(
+    words: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    to_delete: set[int] = set()
+    for word in words:
+        if word["deprel"] != "nmod":
+            continue
+        case_children = _children_with_deprel(words, word["id"], "case")
+        if len(case_children) != 1:
+            continue
+        if case_children[0]["text"].casefold() not in _NMOD_PP_CONSTRUCTORS:
+            to_delete |= _subtree_ids(words, word["id"])
+    if not to_delete:
+        return None
+    return [word for word in words if word["id"] not in to_delete]
+
+
+def _ablate_nmod_and_relative_clause(
+    words: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    """Drops the nmod (keeps the relative clause) wherever a head has
+    both -- an arbitrary but deterministic tie-break; this diagnostic
+    only needs forward progress, never the "right" choice, since the
+    resulting tree is never used for anything but counting the next
+    reason code.
+    """
+    to_delete: set[int] = set()
+    for word in words:
+        if word["deprel"] != "nmod":
+            continue
+        if _children_with_deprel(words, word["head"], "acl:relcl"):
+            to_delete |= _subtree_ids(words, word["id"])
+    if not to_delete:
+        return None
+    return [word for word in words if word["id"] not in to_delete]
+
+
+def _ablate_proper_noun_chain_too_long(
+    words: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    to_delete: set[int] = set()
+    for word in words:
+        if word["upos"] != "PROPN" or word["deprel"] == "compound":
+            continue
+        chain = [word] + [
+            child
+            for child in _children(words, word["id"])
+            if child["deprel"] == "compound" and child["upos"] == "PROPN"
+        ]
+        if len(chain) <= 3:
+            continue
+        # Real English compound-noun order puts the head *last*
+        # (start_char-wise) -- "Royal Shipley School", not "School
+        # Royal Shipley" -- the same ordering _np_from_proper_noun's
+        # own chain.sort already relies on. Drop the earliest-starting
+        # modifiers, keeping the head plus its nearest two, never the
+        # head itself (chain[0] is always `word`, the actual obj/
+        # nsubj/etc. head this ablation must not delete).
+        chain.sort(key=lambda w: w["start_char"])
+        for extra in chain[:-3]:
+            to_delete |= _subtree_ids(words, extra["id"])
+    if not to_delete:
+        return None
+    return [word for word in words if word["id"] not in to_delete]
+
+
+def _ablate_pronoun_unrecognized(
+    words: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    changed = False
+    new_words = []
+    for word in words:
+        if word["upos"] == "PRON" and word["lemma"].casefold() not in _PRONOUN_CONSTRUCTORS:
+            word = dict(word)
+            word["lemma"] = "he"
+            changed = True
+        new_words.append(word)
+    return new_words if changed else None
+
+
+def _ablate_common_noun_unrecognized_determiner(
+    words: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    recognized = _DEFINITE_DETERMINERS | _INDEFINITE_DETERMINERS
+    changed = False
+    new_words = []
+    for word in words:
+        if word["deprel"] == "det" and word["lemma"].casefold() not in recognized:
+            word = dict(word)
+            word["lemma"] = "the"
+            changed = True
+        new_words.append(word)
+    return new_words if changed else None
+
+
+def _ablate_common_noun_determiner_or_adjective_count(
+    words: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    """Only handles the "2+ determiners" and "2+ adjectives" sub-cases
+    (dedupe each independently, chaining the second dedupe onto the
+    first's own result) -- the "0 determiners" sub-case stays terminal
+    on purpose: there is no existing word to keep, and inventing one
+    out of thin air is a different, riskier kind of ablation this round
+    deliberately does not attempt (see the plan file).
+    """
+    det_result = _keep_earliest_per_group(words, _group_children_by_head(words, {"det"}))
+    working = det_result if det_result is not None else words
+    amod_result = _keep_earliest_per_group(working, _group_children_by_head(working, {"amod"}))
+    if amod_result is not None:
+        return amod_result
+    return det_result
+
+
+def _ablate_lexicon_gap(
+    words: list[dict[str, Any]], gf_function_by_lemma: dict[str, str], lemma: str
+) -> dict[str, str] | None:
+    """Injects a placeholder GF-function entry for whichever lemma
+    _clause's own lexicon lookup actually missed -- the main clause's
+    own governing lemma (always exactly ``lemma``, the same identity
+    root-lemma-mismatch/governing-lemma-mismatch already verify) and/or
+    any acl:relcl embedded verb's lemma (_relative_clause_vp's own,
+    separate lookup). The placeholder function name is never checked
+    against grammar/Metonymy.gf or fed to compile_gf_constraints for
+    real -- this ablated tree is only ever used to find the *next*
+    reason code, never trusted.
+    """
+    changed = False
+    new_lexicon = dict(gf_function_by_lemma)
+    if lemma.casefold() not in new_lexicon:
+        new_lexicon[lemma.casefold()] = "CTX_DIAGNOSTIC_PLACEHOLDER"
+        changed = True
+    for word in words:
+        if word["deprel"] == "acl:relcl" and word["upos"] in {"VERB", "AUX"}:
+            relcl_lemma = word["lemma"].casefold()
+            if relcl_lemma not in new_lexicon:
+                new_lexicon[relcl_lemma] = "CTX_DIAGNOSTIC_PLACEHOLDER"
+                changed = True
+    return new_lexicon if changed else None
+
+
+# Reason code (the part before any ":" suffix) -> ablation over `words`.
+# Every entry here is a "multiplicity" or "unrecognized vocabulary"
+# check whose failure can be safely neutralized without inventing new
+# structure -- see the plan file's own table for the full rationale.
+# Any reason code NOT in this dict (root-count, root-not-verb,
+# leftover-words, ...) is treated as terminal by enumerate_gf_tree_
+# blockers: a real, not-yet-diagnosable-further limitation, honestly
+# reported rather than guessed past.
+_GROUP_ABLATIONS: dict[str, Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None]] = {
+    "subject-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"nsubj"})
+    ),
+    "object-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"obj", "iobj"})
+    ),
+    "passive-agent-count": _ablate_passive_agent_count,
+    "passive-aux-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"aux:pass"})
+    ),
+    "nmod-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"nmod"})
+    ),
+    "nmod-case-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"case"})
+    ),
+    "relative-clause-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"acl:relcl"})
+    ),
+    "copula-count": lambda words: _keep_earliest_per_group(
+        words, _group_children_by_head(words, {"cop"})
+    ),
+    "nmod-preposition-unrecognized": _ablate_nmod_preposition_unrecognized,
+    "nmod-and-relative-clause": _ablate_nmod_and_relative_clause,
+    "proper-noun-chain-too-long": _ablate_proper_noun_chain_too_long,
+    "pronoun-unrecognized": _ablate_pronoun_unrecognized,
+    "common-noun-unrecognized-determiner": _ablate_common_noun_unrecognized_determiner,
+    "common-noun-determiner-or-adjective-count": _ablate_common_noun_determiner_or_adjective_count,
+}
+
+_LEXICON_ABLATION_REASONS = {"verb-not-in-lexicon", "relative-clause-verb-not-in-lexicon"}
+
+
+def enumerate_gf_tree_blockers(
+    words: list[dict[str, Any]],
+    lemma: str,
+    gf_function_by_lemma: dict[str, str],
+    governing_start: int | None = None,
+    max_iterations: int = 12,
+) -> list[str]:
+    """Every _Bail reason this sentence would hit, in order -- not just
+    the first one build_gf_tree/build_gf_tree_decline_reason report.
+
+    A real corpus run after this module's third feature batch (nmod/
+    agentless-passive/copula) found several decline_reason buckets grow
+    even as others shrank -- exactly what "a sentence now passes an
+    earlier check only to hit a different, still-unaddressed one"
+    predicts, but decline_reason_counts alone can never confirm it:
+    _build_gf_tree_inner raises _Bail (and therefore returns) on the
+    very first unmet check. This answers that directly: on each _Bail,
+    it applies a small, safe "ablation" (see _GROUP_ABLATIONS/
+    _ablate_lexicon_gap) that only ever deletes already-unbuildable
+    content or coerces one already-wrong field, never invents new
+    structure, and retries the exact same _build_gf_tree_inner (never
+    modified itself) to see what the *next* independent blocker is.
+
+    Returns [] when build_gf_tree would already succeed (no blockers at
+    all). Stops and returns the reasons collected so far as soon as a
+    reason has no known ablation, or its ablation is a no-op (the
+    _Bail's real cause wasn't the kind of "multiplicity"/"unrecognized
+    vocabulary" problem this diagnostic can safely see past) -- that
+    last entry is honestly terminal, not a guess. Never raises: any
+    reason code outside the closed vocabulary this module itself
+    defines simply stops the search, and max_iterations is a defensive
+    cap (each successful ablation strictly shrinks the word list, drops
+    a lexicon gap, or coerces a field, so runaway looping isn't expected
+    in practice).
+
+    The ablated words/lexicon are purely internal to this search --
+    never returned, never linearized, never reaching compile_gf_
+    constraints or any real prediction. Only the list of reason codes
+    (the same closed, safe-to-aggregate vocabulary build_gf_tree_
+    decline_reason already uses) is ever returned.
+    """
+    working_words = words
+    working_lexicon = gf_function_by_lemma
+    reasons: list[str] = []
+    for _ in range(max_iterations):
+        try:
+            _build_gf_tree_inner(working_words, lemma, working_lexicon, governing_start)
+            return reasons
+        except _Bail as bail:
+            reasons.append(bail.reason)
+            reason_key = bail.reason.split(":", 1)[0]
+            if reason_key in _LEXICON_ABLATION_REASONS:
+                new_lexicon = _ablate_lexicon_gap(working_words, working_lexicon, lemma)
+                if new_lexicon is None:
+                    return reasons
+                working_lexicon = new_lexicon
+                continue
+            ablation = _GROUP_ABLATIONS.get(reason_key)
+            if ablation is None:
+                return reasons
+            new_words = ablation(working_words)
+            if new_words is None:
+                return reasons
+            working_words = new_words
+    reasons.append("max-iterations-reached")
+    return reasons
 
 
 def _np_from_llm_description(np: Any) -> str:

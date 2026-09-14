@@ -20,6 +20,7 @@ from build_gf_tree_from_dependencies import (  # noqa: E402
     build_gf_tree_decline_reason,
     build_gf_tree_from_llm_structure,
     build_gf_tree_from_llm_structure_decline_reason,
+    enumerate_gf_tree_blockers,
     load_gf_function_by_lemma,
 )
 
@@ -1627,6 +1628,194 @@ class LoadGfFunctionByLemmaTests(unittest.TestCase):
         self.assertEqual(
             load_gf_function_by_lemma(actions_json),
             {"abandon": "CTX_abc123", "announce": "CTX_def456"},
+        )
+
+
+class EnumerateAllBlockersTests(unittest.TestCase):
+    """enumerate_gf_tree_blockers -- unlike build_gf_tree_decline_reason,
+    which only ever reports the *first* _Bail a sentence hits, this
+    keeps going past each ablatable one to answer the compounding-
+    blockers question a real corpus run raised directly: does a
+    sentence that now passes an earlier check actually build, or does
+    it just hit a different, still-unaddressed blocker next?
+    """
+
+    def test_zero_blockers_returns_an_empty_list(self) -> None:
+        # Same fixture as SimpleTransitiveClauseTests's own -- already
+        # builds on the first attempt, nothing to enumerate.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(enumerate_gf_tree_blockers(words, "announce", GF_FUNCTIONS), [])
+
+    def test_a_terminal_blocker_with_no_known_ablation_stops_immediately(self) -> None:
+        # No subject at all -- the ablatable "2+ nsubj" path has nothing
+        # to dedupe (its own groups dict is empty), so this correctly
+        # stays terminal rather than looping.
+        words = [
+            word(1, "captured", "capture", "VERB", "root", 0, 0),
+            word(2, "the", "the", "DET", "det", 3, 10),
+            word(3, "museum", "museum", "NOUN", "obj", 1, 14),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "capture", functions),
+            ["subject-count:root"],
+        )
+
+    def test_two_blockers_compound_on_the_same_noun(self) -> None:
+        # "Waterloo captured the big beautiful museum despite Kent" --
+        # the object noun has both 2 adjectives (common-noun-determiner-
+        # or-adjective-count) *and* an nmod with an unrecognized
+        # preposition. _np_base's own adjective-count check runs first,
+        # so that is the reason build_gf_tree_decline_reason alone would
+        # report; this confirms the *second*, still-unaddressed nmod
+        # problem on the very same noun is found right after the first
+        # is ablated away -- the exact "fix one, hit the next" pattern a
+        # real corpus run's growing decline_reason buckets predicted.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 6, 18),
+            word(4, "big", "big", "ADJ", "amod", 6, 22),
+            word(5, "beautiful", "beautiful", "ADJ", "amod", 6, 26),
+            word(6, "museum", "museum", "NOUN", "obj", 2, 36),
+            word(7, "despite", "despite", "ADP", "case", 8, 43),
+            word(8, "Kent", "Kent", "PROPN", "nmod", 6, 51),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            build_gf_tree_decline_reason(words, "capture", functions),
+            "common-noun-determiner-or-adjective-count",
+        )
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "capture", functions),
+            ["common-noun-determiner-or-adjective-count", "nmod-preposition-unrecognized"],
+        )
+
+    def test_subject_count_multiplicity_is_ablated(self) -> None:
+        # Two literal "nsubj" arcs on the same verb -- an artificial UD
+        # shape (like NmodModifierTests's own test_nmod_count fixture),
+        # but a valid exercise of the "keep earliest, drop the rest"
+        # ablation regardless of real-world naturalness.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 3, 0),
+            word(2, "Napoleon", "Napoleon", "PROPN", "nsubj", 3, 13),
+            word(3, "captured", "capture", "VERB", "root", 0, 23),
+            word(4, "the", "the", "DET", "det", 5, 32),
+            word(5, "museum", "museum", "NOUN", "obj", 3, 36),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "capture", functions),
+            ["subject-count:root"],
+        )
+
+    def test_object_count_multiplicity_is_ablated(self) -> None:
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "captured", "capture", "VERB", "root", 0, 9),
+            word(3, "the", "the", "DET", "det", 4, 18),
+            word(4, "museum", "museum", "NOUN", "obj", 2, 22),
+            word(5, "the", "the", "DET", "det", 6, 33),
+            word(6, "palace", "palace", "NOUN", "obj", 2, 37),
+        ]
+        functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "capture", functions), ["object-count"]
+        )
+
+    def test_passive_agent_count_multiplicity_is_ablated(self) -> None:
+        # Same fixture as BuildGfTreeDeclineReasonTests's own
+        # test_passive_agent_count.
+        words = [
+            word(1, "Henry", "Henry", "PROPN", "nsubj:pass", 3, 0),
+            word(2, "was", "be", "AUX", "aux:pass", 3, 6),
+            word(3, "announced", "announce", "VERB", "root", 0, 10),
+            word(4, "by", "by", "ADP", "case", 5, 20),
+            word(5, "Waterloo", "Waterloo", "PROPN", "obl", 3, 23),
+            word(6, "by", "by", "ADP", "case", 7, 32),
+            word(7, "Napoleon", "Napoleon", "PROPN", "obl", 3, 35),
+        ]
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "announce", GF_FUNCTIONS),
+            ["passive-agent-count"],
+        )
+
+    def test_pronoun_unrecognized_is_ablated(self) -> None:
+        words = [
+            word(1, "Something", "something", "PRON", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 10),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 20),
+        ]
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "announce", GF_FUNCTIONS),
+            ["pronoun-unrecognized"],
+        )
+
+    def test_common_noun_unrecognized_determiner_is_ablated(self) -> None:
+        # Same fixture as BuildGfTreeDeclineReasonTests's own
+        # test_common_noun_unrecognized_determiner.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "every", "every", "DET", "det", 4, 19),
+            word(4, "county", "county", "NOUN", "obj", 2, 25),
+        ]
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "announce", GF_FUNCTIONS),
+            ["common-noun-unrecognized-determiner"],
+        )
+
+    def test_proper_noun_chain_too_long_is_truncated(self) -> None:
+        # Same fixture as BuildGfTreeDeclineReasonTests's own
+        # test_proper_noun_chain_too_long -- "D" (start_char 25) is the
+        # real head, last by real English compound-noun word order; the
+        # ablation must drop the earliest-starting modifier ("A"), never
+        # the head itself.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "A", "A", "PROPN", "compound", 6, 19),
+            word(4, "B", "B", "PROPN", "compound", 6, 21),
+            word(5, "C", "C", "PROPN", "compound", 6, 23),
+            word(6, "D", "D", "PROPN", "obj", 2, 25),
+        ]
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "announce", GF_FUNCTIONS),
+            ["proper-noun-chain-too-long"],
+        )
+
+    def test_verb_not_in_lexicon_is_ablated(self) -> None:
+        # Same fixture as BuildGfTreeDeclineReasonTests's own
+        # test_verb_not_in_lexicon -- the injected placeholder lexicon
+        # entry is never a real GF function name, only ever used inside
+        # this diagnostic search, so this can safely keep going.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "floreates", "floreate", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "floreate", GF_FUNCTIONS),
+            ["verb-not-in-lexicon"],
+        )
+
+    def test_relative_clause_verb_not_in_lexicon_is_ablated(self) -> None:
+        # Same fixture as BuildGfTreeDeclineReasonTests's own
+        # test_relative_clause_verb_not_in_lexicon.
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "praises", "praise", "VERB", "root", 0, 9),
+            word(3, "Tolstoy", "Tolstoy", "PROPN", "obj", 2, 17),
+            word(4, "floreates", "floreate", "VERB", "acl:relcl", 3, 26),
+            word(5, "Henry", "Henry", "PROPN", "obj", 4, 36),
+        ]
+        self.assertEqual(
+            enumerate_gf_tree_blockers(words, "praise", GF_FUNCTIONS),
+            ["relative-clause-verb-not-in-lexicon"],
         )
 
 

@@ -20,6 +20,7 @@ from score_contextual_detection import (  # noqa: E402
     fingerprint_failure_text,
     literal_reason,
     predict,
+    row_all_decline_reasons,
     row_decline_reason,
     row_llm_decline_reason,
     row_tree_source,
@@ -758,6 +759,88 @@ class RowDeclineReasonTests(unittest.TestCase):
         self.assertEqual(row_decline_reason(row), "unrecognized")
 
 
+class RowAllDeclineReasonsTests(unittest.TestCase):
+    """Mirrors RowDeclineReasonTests exactly, for the "all_decline_reasons"
+    list field enumerate_gf_tree_blockers populates instead of the
+    single "decline_reason" string.
+    """
+
+    def test_reads_the_top_level_field_for_a_successful_row(self) -> None:
+        row = {"id": "a", "status": "ok", "fiber": ["Q1"], "all_decline_reasons": []}
+        self.assertEqual(row_all_decline_reasons(row), [])
+
+    def test_reads_the_top_level_field_for_a_fallback_success(self) -> None:
+        row = {
+            "id": "a",
+            "status": "ok",
+            "fiber": [],
+            "all_decline_reasons": ["subject-count:advcl"],
+        }
+        self.assertEqual(row_all_decline_reasons(row), ["subject-count:advcl"])
+
+    def test_falls_back_to_parsing_the_failure_json_for_exit4(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "y",
+                    "tree_source": "gf-parser",
+                    "decline_reason": "object-count",
+                    "all_decline_reasons": ["object-count", "leftover-words"],
+                }
+            ),
+        }
+        self.assertEqual(
+            row_all_decline_reasons(row), ["object-count", "leftover-words"]
+        )
+
+    def test_falls_back_to_parsing_the_failure_json_for_exit3_and_exit7(self) -> None:
+        for exit_code, status in ((3, "gf-parse-failed"), (7, "gf-parse-empty")):
+            with self.subTest(exit_code=exit_code):
+                row = {
+                    "id": "a",
+                    "status": "failed",
+                    "exit_code": exit_code,
+                    "failure": json.dumps(
+                        {
+                            "status": status,
+                            "tree_source": "gf-parser",
+                            "decline_reason": "no-ud-words",
+                            "all_decline_reasons": [],
+                        }
+                    ),
+                }
+                self.assertEqual(row_all_decline_reasons(row), [])
+
+    def test_exit1_and_exit2_are_empty_not_not_applicable(self) -> None:
+        # Unlike row_decline_reason's own "not-applicable" sentinel (a
+        # string value), this returns [] for the same "tree-building
+        # never even attempted" case -- row_tree_source/row_decline_reason
+        # on the very same row already carry that distinction, so this
+        # field doesn't need its own separate not-applicable marker.
+        for exit_code in (1, 2):
+            with self.subTest(exit_code=exit_code):
+                row = {"id": "a", "status": "failed", "exit_code": exit_code}
+                self.assertEqual(row_all_decline_reasons(row), [])
+
+    def test_an_unexpected_shape_is_unrecognized_not_a_crash(self) -> None:
+        row = {"id": "a", "status": "failed", "exit_code": 99}
+        self.assertEqual(row_all_decline_reasons(row), ["unrecognized"])
+
+    def test_a_non_list_field_inside_the_failure_json_is_unrecognized(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps({"all_decline_reasons": "not-a-list"}),
+        }
+        self.assertEqual(row_all_decline_reasons(row), ["unrecognized"])
+
+
 class RowLlmDeclineReasonTests(unittest.TestCase):
     def test_reads_the_top_level_field_for_a_successful_row(self) -> None:
         row = {"id": "a", "status": "ok", "fiber": ["Q1"], "llm_decline_reason": ""}
@@ -1197,6 +1280,40 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(
             report["decline_reason_counts"],
             {"": 1, "not-applicable": 1, "subject-count": 2},
+        )
+
+    def test_blockers_per_sentence_histogram_and_co_occurring_pairs(self) -> None:
+        zero_blockers = ok_row("a", ["Q1"])
+        zero_blockers["all_decline_reasons"] = []
+        one_blocker = ok_row("b", [])
+        one_blocker["all_decline_reasons"] = ["subject-count:advcl"]
+        two_blockers = ok_row("c", [])
+        two_blockers["all_decline_reasons"] = [
+            "common-noun-determiner-or-adjective-count",
+            "nmod-preposition-unrecognized",
+        ]
+        another_two_blockers = ok_row("d", [])
+        another_two_blockers["all_decline_reasons"] = [
+            "common-noun-determiner-or-adjective-count",
+            "nmod-preposition-unrecognized",
+        ]
+        inference = [zero_blockers, one_blocker, two_blockers, another_two_blockers]
+        gold = [
+            {"id": "a", "gold_label": "metonymic", "gold_bridge_family": "x"},
+            {"id": "b", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "c", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "d", "gold_label": "literal", "gold_bridge_family": None},
+        ]
+        report = score(inference, gold)
+        self.assertEqual(
+            report["blockers_per_sentence_histogram"], {"0": 1, "1": 1, "2": 2}
+        )
+        self.assertEqual(
+            report["co_occurring_blocker_pairs"],
+            {
+                "common-noun-determiner-or-adjective-count + "
+                "nmod-preposition-unrecognized": 2
+            },
         )
 
     def test_llm_decline_reason_counts_aggregate_across_every_outcome(self) -> None:
