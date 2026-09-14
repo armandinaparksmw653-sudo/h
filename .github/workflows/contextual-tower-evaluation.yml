@@ -146,6 +146,7 @@ jobs:
 
       - name: Install and start Ollama (LLM clause-structure proposer)
         if: github.event.inputs.llm_proposer_model != ''
+        id: ollama
         run: |
           # install.sh already installs a systemd unit and starts it
           # (confirmed by a real run's own log: "Enabling and starting
@@ -154,12 +155,28 @@ jobs:
           # just raced that instance for the same port and always lost
           # ("address already in use"), so don't start a second one;
           # just wait for the systemd-started one to answer.
-          curl -fsSL https://ollama.com/install.sh | sh
-          for _ in $(seq 1 30); do
-            curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break
-            sleep 1
-          done
-          ollama pull "${{ github.event.inputs.llm_proposer_model }}"
+          #
+          # ollama.com's install endpoint is occasionally flaky (a real
+          # run hit a transient 504, which silently short-circuited the
+          # piped `sh` into a no-op, then crashed the whole job at
+          # `ollama pull` with a bare "command not found") -- retry the
+          # download itself, and if a working `ollama` binary still
+          # doesn't materialize, degrade gracefully by disabling this
+          # (optional, third-tier) proposer for the run instead of
+          # losing the Stanza-tier data below, which doesn't depend on
+          # Ollama at all.
+          curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL https://ollama.com/install.sh | sh || true
+          if command -v ollama >/dev/null 2>&1; then
+            for _ in $(seq 1 30); do
+              curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break
+              sleep 1
+            done
+            ollama pull "${{ github.event.inputs.llm_proposer_model }}"
+            echo "model=${{ github.event.inputs.llm_proposer_model }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Ollama install failed (see log above) -- continuing without the LLM proposer tier for this run"
+            echo "model=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run the contextual tower on the sampled corpora
         run: |
@@ -169,7 +186,7 @@ jobs:
               --engine build/metonymy \
               --snapshot build/wikidata-tower-snapshot \
               --workers "${{ github.event.inputs.workers }}" \
-              --llm-proposer-model "${{ github.event.inputs.llm_proposer_model }}" \
+              --llm-proposer-model "${{ steps.ollama.outputs.model }}" \
               --allow-failures \
               --output build/evaluation/$ds.tower-inference.jsonl
           done
