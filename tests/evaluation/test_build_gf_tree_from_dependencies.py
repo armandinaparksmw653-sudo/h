@@ -557,7 +557,26 @@ class CopulaClauseTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "museum", GF_FUNCTIONS),
-            "root-lemma-mismatch",
+            "root-lemma-mismatch:no-governing-start",
+        )
+
+    def test_root_lemma_mismatch_with_a_governing_start(self) -> None:
+        # copula-argument's own dependency_hint does carry a
+        # governing_start (the "is"/"was" word's own start_char) --
+        # _copula_clause's own branch never resolves/verifies it against
+        # anything (see its own comment), so this only ever tells apart
+        # "no UD grounding at all" from "the hint carried one".
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 4, 0),
+            word(2, "is", "be", "AUX", "cop", 4, 9),
+            word(3, "a", "a", "DET", "det", 4, 12),
+            word(4, "county", "county", "NOUN", "root", 0, 14),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(
+                words, "museum", GF_FUNCTIONS, governing_start=9
+            ),
+            "root-lemma-mismatch:governing-start-present",
         )
 
     def test_copula_count(self) -> None:
@@ -1109,6 +1128,10 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         )
 
     def test_root_lemma_mismatch(self) -> None:
+        # No governing_start passed at all -- the "no-governing-start"
+        # suffix (see _main_clause's own docstring for the full
+        # vocabulary, added after a real corpus run found this the
+        # single largest terminal blocker in both corpora).
         words = [
             word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
             word(2, "announces", "announce", "VERB", "root", 0, 9),
@@ -1116,7 +1139,28 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "sign", GF_FUNCTIONS),
-            "root-lemma-mismatch",
+            "root-lemma-mismatch:no-governing-start",
+        )
+
+    def test_root_lemma_mismatch_with_governing_start_resolving_to_the_root(
+        self,
+    ) -> None:
+        # governing_start resolves successfully, and to this very root --
+        # yet the lemmas still disagree. A real, previously-unnamed third
+        # case this suffix distinguishes from both "no-governing-start"
+        # (no UD grounding at all) and the governing_start branch's own,
+        # separate "governing-lemma-mismatch" (governing_start resolves
+        # to a *different* word than root).
+        words = [
+            word(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0),
+            word(2, "announces", "announce", "VERB", "root", 0, 9),
+            word(3, "Henry", "Henry", "PROPN", "obj", 2, 19),
+        ]
+        self.assertEqual(
+            build_gf_tree_decline_reason(
+                words, "sign", GF_FUNCTIONS, governing_start=9
+            ),
+            "root-lemma-mismatch:governing-start-is-root",
         )
 
     def test_verb_not_in_lexicon(self) -> None:

@@ -2609,3 +2609,87 @@ histogram` gives the first *measured* (not inferred) answer to how many
 real sentences carry 2+ simultaneous blockers, and
 `co_occurring_blocker_pairs` should point at the next pair of fixes
 worth doing together.
+
+## The real corpus run: still 0% Stanza successes, and root-lemma-mismatch confirmed dominant
+
+The first real run of `enumerate_gf_tree_blockers` (after fixing an
+unrelated, real CI infra bug it surfaced along the way -- a transient
+504 from `ollama.com`'s install endpoint was silently short-circuiting
+the whole job before it ever reached the Stanza-tier data at all; see
+that commit for the fix) gave decisive numbers, not another guess:
+
+- **`tree_source_counts` still shows zero real `"stanza"` successes in
+  either corpus** -- the eighth consecutive round where every
+  individual fix is independently verified correct, yet the corpus-
+  level number does not move.
+- **`blockers_per_sentence_histogram` confirmed real compounding, but at
+  a smaller scale than expected, for an explainable reason**: WiMCor
+  `{0: 59, 1: 89, 2: 2}`, ConMeC `{0: 28, 1: 106, 2: 15, 3: 1}`. Every
+  "0" row is a `not-applicable` row (no `ud_words` at all), confirmed by
+  `decline_reason_counts`/`tree_source_counts` reporting the exact same
+  count -- there is *no* genuine zero-blocker success hiding in that
+  bucket. The reason ConMeC shows far more real compounding (16/122,
+  ~13%) than WiMCor (2/91, ~2%) is that WiMCor's declines are dominated
+  by reasons this round's ablation set treats as terminal
+  (`root-lemma-mismatch`, `leftover-words`, `root-not-verb` alone cover
+  57/91) -- `enumerate_gf_tree_blockers` correctly stops at 1 for those,
+  since it has no safe way to see past them yet. Real compounding behind
+  those terminal reasons may well be larger still; it is simply not
+  visible with today's ablation coverage.
+- **`root-lemma-mismatch` is now unambiguously the single largest
+  terminal blocker in both corpora** (WiMCor 33/91 ≈ 36%, ConMeC
+  21/122 ≈ 17%), and has grown every round it has been measured
+  (20→33, 14→21).
+- ConMeC's `co_occurring_blocker_pairs` gave real, actionable pairs for
+  a future round: `common-noun-determiner-or-adjective-count +
+  pronoun-unrecognized` (4) and `common-noun-unrecognized-determiner +
+  leftover-words` (4) stand out -- an unusual pronoun (outside the
+  4-word `he`/`she`/`it`/`they` closed set) or determiner often
+  co-occurs with a separate NP-building problem in the same sentence.
+
+The user asked directly to break `root-lemma-mismatch` down further
+before guessing at a fix. Reading `_build_gf_tree_inner` closely found a
+third, previously-unnamed case hiding inside the single reason code:
+`_main_clause`'s own lemma check (`root["lemma"] != lemma`) fires in
+three structurally distinct situations, only two of which had ever been
+named:
+
+1. `governing_start` is `None` entirely -- `resolve_action` fell back to
+   its own positional heuristic, with no UD grounding at all (the
+   original, already-understood cause).
+2. `governing_start` resolves to a *different* word than the sentence's
+   own root -- already reported separately, as `governing-lemma-
+   mismatch`, by the `governing_start` branch itself.
+3. **`governing_start` resolves successfully, and to this very root --
+   yet the lemmas still disagree.** This case was silently folded into
+   the same `root-lemma-mismatch` bucket as case 1, even though it means
+   something completely different: real UD grounding *was* available
+   and *did* point at the sentence's own root, so the mismatch must come
+   from somewhere else entirely -- a genuine Stanza/`resolve_action`
+   lemmatization discrepancy (irregular verb forms, tokenizer
+   differences), or an MWT (multi-word token) edge case, not a "wrong
+   clause" problem at all.
+
+Fixed by threading `governing_start` into `_main_clause` (and
+`_copula_clause`, which has its own separate but structurally similar
+check -- though its own branch dispatches *before* the governing_start
+resolution code ever runs, so it can only report "a hint was present at
+all" and not the stronger "resolves to this same root") and suffixing
+the reason: `root-lemma-mismatch:no-governing-start` for case 1,
+`root-lemma-mismatch:governing-start-is-root` for case 3,
+`root-lemma-mismatch:governing-start-present` for the copula path's own
+weaker version of case 3. Purely diagnostic -- no behavior change, only
+which string a `_Bail` carries. New tests directly exercise both
+suffixes on both call paths, matching this project's established
+sub-bucketing pattern (the same technique already used for
+`subject-count:<deprel>`). Full local suite: same pre-existing baseline
+(2 failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user to
+re-run `contextual-tower-evaluation.yml` once more -- the real split
+between `no-governing-start` and `governing-start-is-root` (and the
+copula path's own `governing-start-present`) will say whether
+`root-lemma-mismatch` is mostly a `resolve_action` dependency-hint
+coverage gap (cause 1, meaning the real fix is upstream of this module
+entirely) or mostly a genuine tree-builder/lemmatization discrepancy
+(cause 3, meaning the fix belongs here).

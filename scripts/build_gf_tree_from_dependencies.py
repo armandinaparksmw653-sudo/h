@@ -711,6 +711,7 @@ def _main_clause(
     lemma: str,
     accounted: set[int],
     gf_function_by_lemma: dict[str, str],
+    governing_start: int | None = None,
 ) -> str:
     """The S built around the resolved action's own root verb -- active
     or passive, matching whichever UD shape is actually present.
@@ -729,7 +730,25 @@ def _main_clause(
         # embedded inside a relative/subordinate clause of a more
         # complex real sentence. Either way, building a tree around the
         # wrong clause must never happen silently.
-        raise _Bail("root-lemma-mismatch")
+        #
+        # Suffixed with whether dependency_hint's own "governing_start"
+        # was even available for this call -- a real corpus run found
+        # root-lemma-mismatch the single largest *terminal* blocker in
+        # both corpora after enumerate_gf_tree_blockers shipped, and it
+        # can fire for two structurally distinct reasons this suffix
+        # tells apart: "no-governing-start" is exactly cause (a) above
+        # (no UD grounding at all, pure positional guess); "governing-
+        # start-is-root" is a *third*, previously unnamed case --
+        # _build_gf_tree_inner's own governing_start branch resolved
+        # successfully and found it equals this very root, yet the
+        # lemmas still disagree (a genuine Stanza/resolve_action
+        # lemmatization discrepancy, or an MWT edge case), never before
+        # distinguished from cause (b), which the governing_start branch
+        # already reports separately as "governing-lemma-mismatch".
+        suffix = (
+            "no-governing-start" if governing_start is None else "governing-start-is-root"
+        )
+        raise _Bail(f"root-lemma-mismatch:{suffix}")
     return _clause(words, root, accounted, gf_function_by_lemma)
 
 
@@ -767,6 +786,7 @@ def _copula_clause(
     lemma: str,
     accounted: set[int],
     gf_function_by_lemma: dict[str, str],
+    governing_start: int | None = None,
 ) -> str:
     """"SubjectNP (PredCopNP) PredicateNP" for a copula clause ("Waterloo
     is a county") -- the sentence's UD root is the predicate NOUN itself
@@ -785,7 +805,15 @@ def _copula_clause(
     predicate/subject NP that itself requires a verb lookup).
     """
     if root["lemma"].casefold() != lemma.casefold():
-        raise _Bail("root-lemma-mismatch")
+        # Same "no-governing-start" half of _main_clause's own suffix
+        # vocabulary -- but this branch is dispatched *before*
+        # _build_gf_tree_inner's own governing_start-resolution code
+        # ever runs (the copula check short-circuits ahead of it), so
+        # there is no verified "resolves to this same root" fact to
+        # report the way _main_clause's "governing-start-is-root" can --
+        # only ever "the hint carried one at all" or not.
+        suffix = "no-governing-start" if governing_start is None else "governing-start-present"
+        raise _Bail(f"root-lemma-mismatch:{suffix}")
     subjects = _children_with_deprel(words, root["id"], "nsubj")
     if len(subjects) != 1:
         raise _Bail(f"subject-count:{root['deprel']}")
@@ -852,7 +880,10 @@ def _build_gf_tree_inner(
             # subordinate-clause dispatch this round; a fronted-date
             # copula sentence still safely declines via leftover-words.
             accounted: set[int] = set()
-            tree = _copula_clause(words, root, lemma, accounted, gf_function_by_lemma)
+            tree = _copula_clause(
+                words, root, lemma, accounted, gf_function_by_lemma,
+                governing_start=governing_start,
+            )
             leftover = {
                 word["id"] for word in words if word["deprel"] != "punct"
             } - accounted
@@ -927,7 +958,10 @@ def _build_gf_tree_inner(
         oblique, case_word, constructor = fronted_date
         date_np = _np(words, oblique, accounted, gf_function_by_lemma)
         accounted.add(case_word["id"])
-        main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+        main = _main_clause(
+            words, root, lemma, accounted, gf_function_by_lemma,
+            governing_start=governing_start,
+        )
         tree = _apply(constructor, date_np, main)
     elif subordinate is not None:
         embedded_verb, mark, fronted_name, trailing_name = subordinate
@@ -942,14 +976,20 @@ def _build_gf_tree_inner(
         is_fronted = embedded_verb["start_char"] < main_subjects[0]["start_char"]
         embedded = _clause(words, embedded_verb, accounted, gf_function_by_lemma)
         accounted.add(mark["id"])
-        main = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+        main = _main_clause(
+            words, root, lemma, accounted, gf_function_by_lemma,
+            governing_start=governing_start,
+        )
         tree = (
             _apply(fronted_name, embedded, main)
             if is_fronted
             else _apply(trailing_name, main, embedded)
         )
     else:
-        tree = _main_clause(words, root, lemma, accounted, gf_function_by_lemma)
+        tree = _main_clause(
+            words, root, lemma, accounted, gf_function_by_lemma,
+            governing_start=governing_start,
+        )
     leftover = {word["id"] for word in words if word["deprel"] != "punct"} - accounted
     if leftover:
         raise _Bail("leftover-words")
