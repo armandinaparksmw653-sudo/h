@@ -2693,3 +2693,60 @@ copula path's own `governing-start-present`) will say whether
 coverage gap (cause 1, meaning the real fix is upstream of this module
 entirely) or mostly a genuine tree-builder/lemmatization discrepancy
 (cause 3, meaning the fix belongs here).
+
+## The split confirms cause 1: sub-bucketing `no-governing-verb` itself
+
+The real numbers were decisive, cleanly resolving the question the
+previous round asked: **`root-lemma-mismatch:no-governing-start`
+dominates overwhelmingly** (WiMCor 30/33 ≈ 91%, ConMeC 17/21 ≈ 81% of
+all `root-lemma-mismatch` rows) over `governing-start-is-root`/
+`governing-start-present` (a handful of rows total in each corpus). So
+`root-lemma-mismatch` is, in the overwhelming majority of real cases,
+**not a tree-builder problem at all** -- it is
+`annotate_dependency_hints.py` never computing a `governing_start` in
+the first place, forcing `resolve_action` back onto its own unreliable
+positional heuristic. (The same real run also confirmed the whole
+`enumerate_gf_tree_blockers` mechanism from the previous round is
+stable and inert on its own: `blockers_per_sentence_histogram`/
+`co_occurring_blocker_pairs` came back byte-identical to the prior run
+in both corpora, exactly as expected -- this round changed no tree-
+building behavior, only reason-code labels. `tree_source_counts` still
+shows zero real `"stanza"` successes in either corpus -- the ninth
+consecutive round. F1 moved (WiMCor 0.048→0.093, ConMeC null→0.045),
+but `llm_decline_reason_counts`'s own `query-network-or-timeout` count
+dropping sharply in this run -- the same CI-runner variance already
+documented for the LLM tier, unrelated to anything in this round.)
+
+That single `"no-governing-verb"` status was itself undifferentiated --
+`classify_word`'s own final catch-all, reached whenever the target's UD
+deprel isn't one of the handful explicitly checked (`nsubj`/`csubj`/
+`nsubj:pass`/`csubj:pass`/`obj`/`iobj`/`obl`/the `NESTED_MODIFIER_DEPRELS`
+family), *or* when the deprel is a good clause-argument relation but the
+UD head itself isn't a usable governor (wrong UPOS, or no `case` word for
+an oblique). Rather than guess which of these dominates before extending
+`classify_word`'s coverage, the same real question this whole session
+keeps returning to -- sub-bucketed it first: `_no_governing_verb`'s new
+suffix vocabulary distinguishes `:head-upos-<UPOS>` (target had a good
+deprel, bad head type), `:no-head` (dangling head reference), `:no-case-
+word` (a verbal-headed oblique with no preposition attached at all), and
+`:target-deprel-<deprel>` (the target's own deprel wasn't checked at
+all -- e.g. `"conj"`, `"xcomp"`, `"ccomp"`, `"advcl"`, `"parataxis"`) --
+the same technique already used for `nested_modifier_deprel`/
+`subject-count:<deprel>`/`root-lemma-mismatch:<suffix>`. Confirmed safe
+to change: `resolve_action` (`scripts/contextual_rule_compiler.py`) only
+ever checks `dep_status` against the exact strings `"direct-argument"`/
+`"copula-argument"`/`"nested-modifier"`; nothing anywhere in the repo
+checks for the bare string `"no-governing-verb"`, so suffixing it changes
+no real control flow, only which label a row carries.
+
+Tests: 3 existing `ClassifyWordTests` updated for the new suffix, 2 new
+ones covering the previously-untested `:no-head`/`:no-case-word`
+sub-cases directly. Full local suite: same pre-existing baseline (2
+failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user to
+re-run `contextual-tower-evaluation.yml` once more -- the real split
+across `no-governing-verb`'s four sub-reasons will say which UD shape
+(a specific deprel like `"conj"`/`"xcomp"`, or a specific bad-head
+pattern) actually dominates the positional-fallback cases, pointing at
+exactly which branch of `classify_word` is worth extending next.

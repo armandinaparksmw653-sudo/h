@@ -124,7 +124,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[0]),
-            ("no-governing-verb", "", "", None, None, "active", ""),
+            ("no-governing-verb:target-deprel-advmod", "", "", None, None, "active", ""),
         )
 
     def test_passive_subject_is_the_object_hole_not_the_subject_hole(self) -> None:
@@ -176,6 +176,36 @@ class ClassifyWordTests(unittest.TestCase):
             ("direct-argument", "Object", "listen by", 13, 24, "active", ""),
         )
 
+    def test_oblique_with_a_verbal_head_but_no_case_word(self) -> None:
+        # A bare temporal oblique ("obl:tmod") -- head is a good VERB,
+        # but there is no preposition child at all, a genuinely different
+        # reason than the head itself being wrong (_no_governing_verb's
+        # own "head-upos-VERB" would be misleading here).
+        words = [
+            FakeWord(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 2, 0, 8),
+            FakeWord(2, "left", "leave", "VERB", "root", 0, 9, 13),
+            FakeWord(3, "yesterday", "yesterday", "NOUN", "obl", 2, 14, 23),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[2]),
+            ("no-governing-verb:no-case-word", "", "", None, None, "active", ""),
+        )
+
+    def test_subject_with_no_head_at_all(self) -> None:
+        # word.head points at an id that isn't in the sentence at all --
+        # defensive, but a real "no-head" case _no_governing_verb's own
+        # suffix vocabulary names distinctly from a *present* but
+        # unusable head (see the two tests above/below).
+        words = [
+            FakeWord(1, "Waterloo", "Waterloo", "PROPN", "nsubj", 99, 0, 8),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[0]),
+            ("no-governing-verb:no-head", "", "", None, None, "active", ""),
+        )
+
     def test_copula_subject_is_a_copula_argument(self) -> None:
         # "Waterloo is a county" -- nsubj attaches to the predicate NOUN
         # "county", not the AUX "is", so GOVERNING_UPOS never fires;
@@ -202,7 +232,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[0]),
-            ("no-governing-verb", "", "", None, None, "active", ""),
+            ("no-governing-verb:head-upos-NOUN", "", "", None, None, "active", ""),
         )
 
     def test_adjectival_predicate_is_not_a_copula_argument(self) -> None:
@@ -217,7 +247,7 @@ class ClassifyWordTests(unittest.TestCase):
         sentence = FakeSentence(words)
         self.assertEqual(
             classify_word(sentence, words[0]),
-            ("no-governing-verb", "", "", None, None, "active", ""),
+            ("no-governing-verb:head-upos-ADJ", "", "", None, None, "active", ""),
         )
 
 

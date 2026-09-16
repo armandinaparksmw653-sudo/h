@@ -14,7 +14,8 @@ candidate was found. See docs/architecture.md for the trust boundary.
 Output schema, one object per input row keyed by ``id``:
 
     {"id": ..., "dep_status": "direct-argument" | "copula-argument"
-                              | "nested-modifier" | "no-governing-verb"
+                              | "nested-modifier"
+                              | "no-governing-verb:<reason>"
                               | "parse-error",
      "hole_role": "Subject" | "Object" | "",
      "governing_lemma": "<verb lemma>" | "<verb lemma> <preposition>"
@@ -61,6 +62,21 @@ aggregate (a fixed relation label, never sentence text) so
 scripts/evaluation/score_contextual_detection.py can report which
 specific nested-modifier shape actually dominates instead of one
 undifferentiated count.
+
+``"no-governing-verb"`` (see ``classify_word``/``_no_governing_verb``)
+always carries one of two closed-vocabulary ``:<reason>`` suffixes for
+the same reason: ``:head-upos-<UPOS>`` (or ``:no-head``) when the
+target's own deprel *was* one of the checked clause-argument relations
+but its UD head wasn't a usable governor, or ``:no-case-word`` (an
+oblique with a verbal head but no preposition attached at all), or
+``:target-deprel-<deprel>`` when the target's own deprel isn't in any
+checked relation set to begin with (e.g. ``"conj"``, ``"xcomp"``). Added
+after a real corpus run found this status the dominant cause behind
+``build_gf_tree_decline_reason``'s own ``root-lemma-mismatch:no-
+governing-start`` -- ``resolve_action`` falls back to its own
+(unreliable) positional heuristic whenever ``dep_status`` isn't
+``"direct-argument"``/``"copula-argument"``, and undifferentiated
+``"no-governing-verb"`` was by far the largest such case.
 
 ``voice`` is ``"passive"`` only for a passive subject (UD ``nsubj:pass``,
 correctly reported as ``hole_role="Object"`` -- it is semantically the
@@ -171,6 +187,27 @@ def _is_passive(sentence: Any, head: Any) -> bool:
     )
 
 
+def _no_governing_verb(head: Any) -> ClassifyResult:
+    """The shared "no-governing-verb" result for the four clause-argument
+    deprel branches (SUBJECT_DEPRELS/PASSIVE_SUBJECT_DEPRELS/
+    OBJECT_DEPRELS/OBLIQUE_DEPRELS) -- suffixed by the *head's* own UPOS
+    (or "no-head" when there isn't one at all), a small closed
+    vocabulary, safe to aggregate. A real corpus run found
+    "no-governing-verb" (undifferentiated) the dominant cause behind
+    root-lemma-mismatch:no-governing-start -- resolve_action falls back
+    to its own positional heuristic whenever dep_status isn't
+    "direct-argument"/"copula-argument", and "no-governing-verb" is by
+    far the most common of the non-"direct-argument" statuses. This
+    suffix (and the deprel-based one the catch-all branch below uses
+    instead, since there ``head.upos`` isn't the discriminating fact --
+    the target's own deprel not being in the checked vocabulary at all
+    is) exists to tell apart which UD shape actually dominates before
+    guessing which one to extend classify_word's own coverage for next.
+    """
+    suffix = "no-head" if head is None else f"head-upos-{head.upos}"
+    return (f"no-governing-verb:{suffix}", "", "", None, None, "active", "")
+
+
 def classify_word(sentence: Any, word: Any) -> ClassifyResult:
     """Classify one target word given its UD parent sentence.
 
@@ -239,7 +276,7 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                     "active",
                     "",
                 )
-        return ("no-governing-verb", "", "", None, None, "active", "")
+        return _no_governing_verb(head)
 
     if word.deprel in PASSIVE_SUBJECT_DEPRELS:
         if head is not None and head.upos in GOVERNING_UPOS:
@@ -247,7 +284,7 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
             return (
                 "direct-argument", "Object", head.lemma, start, end, "passive", ""
             )
-        return ("no-governing-verb", "", "", None, None, "active", "")
+        return _no_governing_verb(head)
 
     if word.deprel in OBJECT_DEPRELS:
         if head is not None and head.upos in GOVERNING_UPOS:
@@ -260,7 +297,7 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                 "active",
                 "",
             )
-        return ("no-governing-verb", "", "", None, None, "active", "")
+        return _no_governing_verb(head)
 
     if word.deprel in OBLIQUE_DEPRELS:
         if head is not None and head.upos in GOVERNING_UPOS:
@@ -286,12 +323,23 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
                 start = min(head.parent.start_char, case_word.parent.start_char)
                 end = max(head.parent.end_char, case_word.parent.end_char)
                 return ("direct-argument", "Object", lemma, start, end, "active", "")
-        return ("no-governing-verb", "", "", None, None, "active", "")
+            # A good VERB/AUX head, but no "case" (preposition) word at
+            # all -- e.g. "obl:tmod" -- a genuinely different reason than
+            # the head itself being wrong, so _no_governing_verb's own
+            # head-upos suffix (which would misleadingly say "head-upos-
+            # VERB" here, as if the head were the problem) doesn't apply.
+            return ("no-governing-verb:no-case-word", "", "", None, None, "active", "")
+        return _no_governing_verb(head)
 
     if word.deprel in NESTED_MODIFIER_DEPRELS:
         return ("nested-modifier", "", "", None, None, "active", word.deprel)
 
-    return ("no-governing-verb", "", "", None, None, "active", "")
+    # The target's own deprel isn't in any checked vocabulary at all
+    # (e.g. "conj", "xcomp", "ccomp", "advcl", "parataxis") -- unlike the
+    # four branches above, the head's own UPOS was never even examined
+    # here, so the *target's* deprel is the discriminating fact, not the
+    # head's.
+    return (f"no-governing-verb:target-deprel-{word.deprel}", "", "", None, None, "active", "")
 
 
 def _sentence_containing_span(
