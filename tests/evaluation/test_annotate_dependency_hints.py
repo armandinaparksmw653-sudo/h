@@ -116,6 +116,46 @@ class ClassifyWordTests(unittest.TestCase):
             ("nested-modifier", "", "", None, None, "active", "nmod:poss"),
         )
 
+    def test_an_unlisted_nmod_subtype_is_still_a_nested_modifier(self) -> None:
+        # "the museum yesterday" (nmod:unmarked -- no "case" preposition
+        # word at all) -- a real corpus run found this specific subtype
+        # falling through to undifferentiated "no-governing-verb", even
+        # though "nmod:unmarked" means the exact same "modifier nested
+        # inside an NP" thing bare "nmod"/"nmod:poss" already do.
+        words = [
+            FakeWord(1, "Anna", "Anna", "PROPN", "nsubj", 2, 0, 4),
+            FakeWord(2, "visited", "visit", "VERB", "root", 0, 5, 12),
+            FakeWord(3, "the", "the", "DET", "det", 4, 13, 16),
+            FakeWord(4, "museum", "museum", "NOUN", "obj", 2, 17, 23),
+            FakeWord(5, "yesterday", "yesterday", "NOUN", "nmod:unmarked", 4, 24, 33),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[4]),
+            ("nested-modifier", "", "", None, None, "active", "nmod:unmarked"),
+        )
+
+    def test_an_unlisted_obl_subtype_still_reconstructs_a_governing_structure(
+        self,
+    ) -> None:
+        # "The teenager listened attentively" as an obl:agent stand-in --
+        # a real corpus run found "obl:agent"/"obl:unmarked" falling
+        # through to undifferentiated "no-governing-verb", even though
+        # the underlying case-word/by-agent detection logic already
+        # works identically regardless of the obl subtype.
+        words = [
+            FakeWord(1, "Waterloo", "Waterloo", "PROPN", "nsubj:pass", 3, 0, 8),
+            FakeWord(2, "was", "be", "AUX", "aux:pass", 3, 9, 12),
+            FakeWord(3, "captured", "capture", "VERB", "root", 0, 13, 21),
+            FakeWord(4, "by", "by", "ADP", "case", 5, 22, 24),
+            FakeWord(5, "Napoleon", "Napoleon", "PROPN", "obl:agent", 3, 25, 33),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[4]),
+            ("direct-argument", "Subject", "capture", 9, 21, "passive", ""),
+        )
+
     def test_no_governing_verb_for_an_unhandled_relation(self) -> None:
         words = [
             FakeWord(1, "Yesterday", "yesterday", "ADV", "advmod", 2, 0, 9),

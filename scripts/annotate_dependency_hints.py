@@ -138,7 +138,11 @@ GOVERNING_UPOS = {"VERB", "AUX"}
 # this phase: promoting it correctly requires widening the checked
 # construction vocabulary in engine/src/Metonymy/Elaborator.hs
 # (PositiveGFTree), which is out of scope here. See the plan's "Дальше"
-# section.
+# section. classify_word also matches any colon-subtyped "nmod:*"
+# variant (e.g. "nmod:unmarked") against this set's own bare "nmod"
+# entry -- see that function's own check for why only "nmod" (and
+# "obl", checked the same way against OBLIQUE_DEPRELS) get this
+# treatment, not every member here.
 NESTED_MODIFIER_DEPRELS = {
     "nmod",
     "nmod:poss",
@@ -299,7 +303,18 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
             )
         return _no_governing_verb(head)
 
-    if word.deprel in OBLIQUE_DEPRELS:
+    if word.deprel in OBLIQUE_DEPRELS or word.deprel.startswith("obl:"):
+        # UD English EWT emits several colon-subtyped "obl" relations
+        # ("obl:agent", "obl:tmod", "obl:unmarked", ...) that carry the
+        # exact same structural meaning as bare "obl" for this module's
+        # purposes -- the real semantic work below (case-word lookup,
+        # by-agent/_is_passive detection) already does the right thing
+        # regardless of which subtype fired; a real corpus run found
+        # these falling through to the undifferentiated catch-all
+        # unrecognized, not even reaching this branch's own dedicated
+        # "no-case-word" reason. Deliberately scoped to just "obl" (not
+        # generalized to every deprel family) -- confirmed as the one
+        # the data actually showed being missed, not guessed broader.
         if head is not None and head.upos in GOVERNING_UPOS:
             case_children = [
                 candidate
@@ -331,7 +346,13 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
             return ("no-governing-verb:no-case-word", "", "", None, None, "active", "")
         return _no_governing_verb(head)
 
-    if word.deprel in NESTED_MODIFIER_DEPRELS:
+    if word.deprel in NESTED_MODIFIER_DEPRELS or word.deprel.startswith("nmod:"):
+        # Same colon-subtype broadening as OBLIQUE_DEPRELS above, scoped
+        # just as narrowly -- a real corpus run found "nmod:unmarked"/
+        # "nmod:desc" (among others "nmod:poss" already names explicitly)
+        # falling through unrecognized, even though any "nmod:*" subtype
+        # means the same "modifier nested inside an NP, not a clause
+        # argument" thing this branch already declines for.
         return ("nested-modifier", "", "", None, None, "active", word.deprel)
 
     # The target's own deprel isn't in any checked vocabulary at all

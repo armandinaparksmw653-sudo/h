@@ -2800,3 +2800,60 @@ failures/13 errors/8 skipped), no regressions.
 re-run `contextual-tower-evaluation.yml` once more, on this actually-
 current commit -- `dep_status_counts` will, for the first time, show
 the real split behind `root-lemma-mismatch:no-governing-start`.
+
+## `dep_status_counts` finally answers the question, and finds a real (not just missing-coverage) bug along the way
+
+The real (this time genuinely current) run gave a decisive breakdown.
+WiMCor's `no-governing-verb` (38 rows) is dominated by one shape:
+**`target-deprel-conj` alone is 27/38 (≈71%)** -- the target itself is
+a second-or-later conjunct in a coordination ("Napoleon and **Waterloo**
+announced...", target's own UD deprel is `"conj"`, not `"nsubj"`/`"obj"`
+directly). `classify_word` has no notion of this at all today -- it is
+a structurally different question from the tree-builder's own
+`_shared_subject_from_conjunct` (which handles a *governing verb* being
+coordinated, not the *target* itself). ConMeC's own split is far more
+even (`xcomp`/`ccomp`/`advcl`/`parataxis`/`obl:*`/`root`, 1-3 rows
+each) -- no single dominant shape there.
+
+A second, smaller finding turned out to be a real bug, not just missing
+coverage: `target-deprel-nmod:unmarked` (5, WiMCor) and
+`target-deprel-nmod:desc`/`target-deprel-obl:agent`/`target-deprel-obl:unmarked`
+(3+2+3, ConMeC) are all UD colon-subtyped variants of relations
+`classify_word` already handles -- `NESTED_MODIFIER_DEPRELS`/
+`OBLIQUE_DEPRELS` matched by *exact* set membership, so a subtype like
+`"nmod:unmarked"` (structurally identical to bare `"nmod"` for this
+module's purposes) fell through to the undifferentiated catch-all
+instead of the safe, already-correct `"nested-modifier"`/oblique path.
+That is strictly worse than a coverage gap: it meant `resolve_action`
+fell back to its unreliable positional heuristic on rows that already
+had a perfectly good, honest answer available.
+
+Fixed narrowly, exactly matching what the data showed (not
+generalized to every deprel family): `word.deprel.startswith("obl:")`
+and `word.deprel.startswith("nmod:")` are now checked alongside the
+existing exact-set membership, in both the `OBLIQUE_DEPRELS` and
+`NESTED_MODIFIER_DEPRELS` branches respectively. Deliberately does
+*not* touch `amod`/`appos`/`compound`/`acl`/`nummod` (no subtype misses
+observed for those in real data) or `nsubj`/`obj`/`csubj` (already have
+their own explicit passive-subtype family, `PASSIVE_SUBJECT_DEPRELS`,
+which broadening `SUBJECT_DEPRELS` by prefix would have silently
+bypassed). The underlying resolution logic inside each branch (case-word
+lookup, `_is_passive` detection) already worked correctly for any
+subtype -- only the *entry* check needed broadening.
+
+Tests: 2 new `ClassifyWordTests` (`nmod:unmarked` routing to
+`"nested-modifier"`; `obl:agent` still correctly reconstructing a
+passive by-agent, confirming the subtype broadening doesn't disturb the
+existing `_is_passive` logic). Full local suite: same pre-existing
+baseline (2 failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user to
+re-run `contextual-tower-evaluation.yml` -- expect the `nmod:*`/`obl:*`
+slice of `no-governing-verb` to disappear from `dep_status_counts`
+(reclassified as `"nested-modifier"` or correctly resolved as
+`"direct-argument"`), and `target-deprel-conj`'s own share to become
+even more clearly the dominant remaining cause in WiMCor. The larger,
+separate question -- whether to build real `"conj"`-coordination
+handling into `classify_word` -- is a bigger design decision left for
+its own round, per the user's own explicit choice to do the narrow, safe
+fix first.
