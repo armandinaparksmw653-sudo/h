@@ -2750,3 +2750,53 @@ across `no-governing-verb`'s four sub-reasons will say which UD shape
 (a specific deprel like `"conj"`/`"xcomp"`, or a specific bad-head
 pattern) actually dominates the positional-fallback cases, pointing at
 exactly which branch of `classify_word` is worth extending next.
+
+## A real gap found before the data could even be re-measured: `dep_status` was never surfaced anywhere
+
+The user reported the next `contextual-tower-evaluation.yml` run's
+numbers came back byte-identical to the previous one. Checked directly
+rather than assumed: the run's own `head_sha` (via the GitHub API)
+showed it had actually run against the *previous* commit (the
+`root-lemma-mismatch` sub-bucketing one), not the `no-governing-verb`
+one -- a stale/duplicate dispatch, not a real null result.
+
+But re-reading the wiring found a second, more important problem that
+would have made even a fresh run uninformative: the new
+`no-governing-verb:<reason>` suffix lives entirely inside
+`annotate_dependency_hints.py`'s own `dep_status` field, and
+`run_automatic_contextual_pipeline.py` never reads `dep_status` off
+`dependency_hint_data` *at all* -- it only ever reads `ud_words` and
+`governing_start` from it. `resolve_action` consumes `dep_status`
+internally (`scripts/contextual_rule_compiler.py`), but nothing
+downstream of that ever reports which value it saw. The previous
+round's suffixing work was real and correct, but invisible to every
+report this project produces -- exactly the kind of "changed the code,
+forgot the wiring" gap the *measure* half of "measure before fixing"
+exists to catch, before spending another CI round on a guess.
+
+Fixed by threading `dep_status` through the exact same path
+`tree_source`/`decline_reason`/`all_decline_reasons` already use:
+`run_automatic_contextual_pipeline.py` reads it once
+(`(dependency_hint_data or {}).get("dep_status") or "no-hint"` --
+`"no-hint"` is a genuinely distinct case from any status
+`classify_word` itself produces, when `--dependency-hint` wasn't passed
+at all), includes it in every exit3/4/7 JSON payload, and prints an
+unconditional `dep-status=` stdout line on every other outcome;
+`run_contextual_corpus.py`'s line-scan picks it up;
+`score_contextual_detection.py`'s new `row_dep_status` mirrors
+`row_llm_decline_reason` exactly, aggregated into a new
+`dep_status_counts` report field.
+
+Tests: `RowDepStatusTests` (6, mirroring `RowLlmDeclineReasonTests`), a
+new `ScoreTests` case for `dep_status_counts`, new line-scan tests in
+`test_run_contextual_corpus.py`, and new `dep-status=` assertions
+threaded into three existing `test_run_automatic_contextual_pipeline.py`
+tests (including one exercising the `"no-hint"` default directly, via
+`SourceDisambiguationTests`'s own argv, which never passes
+`--dependency-hint`). Full local suite: same pre-existing baseline (2
+failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user to
+re-run `contextual-tower-evaluation.yml` once more, on this actually-
+current commit -- `dep_status_counts` will, for the first time, show
+the real split behind `root-lemma-mismatch:no-governing-start`.

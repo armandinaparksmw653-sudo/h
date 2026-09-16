@@ -22,6 +22,7 @@ from score_contextual_detection import (  # noqa: E402
     predict,
     row_all_decline_reasons,
     row_decline_reason,
+    row_dep_status,
     row_llm_decline_reason,
     row_tree_source,
     score,
@@ -901,6 +902,69 @@ class RowLlmDeclineReasonTests(unittest.TestCase):
         self.assertEqual(row_llm_decline_reason(row), "unrecognized")
 
 
+class RowDepStatusTests(unittest.TestCase):
+    """Mirrors RowLlmDeclineReasonTests exactly, for the "dep_status"
+    field -- the piece that was missing until now to make root-lemma-
+    mismatch:no-governing-start's own real cause visible in a report.
+    """
+
+    def test_reads_the_top_level_field_for_a_successful_row(self) -> None:
+        row = {
+            "id": "a", "status": "ok", "fiber": ["Q1"], "dep_status": "direct-argument",
+        }
+        self.assertEqual(row_dep_status(row), "direct-argument")
+
+    def test_reads_the_top_level_field_when_no_hint_was_passed(self) -> None:
+        row = {"id": "a", "status": "ok", "fiber": ["Q1"], "dep_status": "no-hint"}
+        self.assertEqual(row_dep_status(row), "no-hint")
+
+    def test_falls_back_to_parsing_the_failure_json_for_exit4(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "y",
+                    "tree_source": "gf-parser",
+                    "decline_reason": "no-ud-words",
+                    "dep_status": "no-governing-verb:target-deprel-conj",
+                }
+            ),
+        }
+        self.assertEqual(row_dep_status(row), "no-governing-verb:target-deprel-conj")
+
+    def test_falls_back_to_parsing_the_failure_json_for_exit3_and_exit7(self) -> None:
+        for exit_code, status in ((3, "gf-parse-failed"), (7, "gf-parse-empty")):
+            with self.subTest(exit_code=exit_code):
+                row = {
+                    "id": "a",
+                    "status": "failed",
+                    "exit_code": exit_code,
+                    "failure": json.dumps(
+                        {
+                            "status": status,
+                            "tree_source": "gf-parser",
+                            "decline_reason": "no-ud-words",
+                            "dep_status": "parse-error",
+                        }
+                    ),
+                }
+                self.assertEqual(row_dep_status(row), "parse-error")
+
+    def test_exit1_and_exit2_are_not_applicable(self) -> None:
+        for exit_code in (1, 2):
+            with self.subTest(exit_code=exit_code):
+                row = {"id": "a", "status": "failed", "exit_code": exit_code}
+                self.assertEqual(row_dep_status(row), "not-applicable")
+
+    def test_an_unexpected_shape_is_unrecognized_not_a_crash(self) -> None:
+        row = {"id": "a", "status": "failed", "exit_code": 99}
+        self.assertEqual(row_dep_status(row), "unrecognized")
+
+
 class FingerprintFailureTextTests(unittest.TestCase):
     def test_same_text_gives_same_fingerprint(self) -> None:
         a = fingerprint_failure_text("metonymy: Prelude.head: empty list")
@@ -1350,6 +1414,47 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(
             report["llm_decline_reason_counts"],
             {"": 1, "not-applicable": 1, "not-attempted": 1, "query-exception": 1},
+        )
+
+    def test_dep_status_counts_aggregate_across_every_outcome(self) -> None:
+        direct_argument = ok_row("a", ["Q1"])
+        direct_argument["dep_status"] = "direct-argument"
+        no_hint = ok_row("b", [])
+        no_hint["dep_status"] = "no-hint"
+        exit1_row = failed_row("c", exit_code=1)
+        exit4_row = {
+            "id": "d",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "y",
+                    "tree_source": "gf-parser",
+                    "decline_reason": "root-lemma-mismatch:no-governing-start",
+                    "dep_status": "no-governing-verb:target-deprel-conj",
+                }
+            ),
+            "fiber": [],
+            "stages": [],
+        }
+        inference = [direct_argument, no_hint, exit1_row, exit4_row]
+        gold = [
+            {"id": "a", "gold_label": "metonymic", "gold_bridge_family": "x"},
+            {"id": "b", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "c", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "d", "gold_label": "literal", "gold_bridge_family": None},
+        ]
+        report = score(inference, gold)
+        self.assertEqual(
+            report["dep_status_counts"],
+            {
+                "direct-argument": 1,
+                "no-governing-verb:target-deprel-conj": 1,
+                "no-hint": 1,
+                "not-applicable": 1,
+            },
         )
 
     def test_repeated_unrecognized_failure_text_groups_into_one_fingerprint(

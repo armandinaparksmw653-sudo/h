@@ -148,6 +148,15 @@ def run_one(
             # when it never ran at all (Stanza already succeeded, or no
             # --llm-proposer-model was configured).
             result["llm_decline_reason"] = line.split("=", 1)[1]
+        elif line.startswith("dep-status="):
+            # annotate_dependency_hints.py's own dep_status
+            # ("direct-argument"/"copula-argument"/"nested-modifier"/
+            # "no-governing-verb:<reason>"/"parse-error"/"no-hint") --
+            # determines whether resolve_action got a real governing_start
+            # at all (root-lemma-mismatch:no-governing-start's own root
+            # cause), printed alongside tree-source/decline-reason for
+            # the same reason.
+            result["dep_status"] = line.split("=", 1)[1]
         elif line.startswith("graph_sha256="):
             result["graph_sha256"] = line.split("=", 1)[1]
         elif line.startswith("contract="):

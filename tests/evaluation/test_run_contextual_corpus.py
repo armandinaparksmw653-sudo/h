@@ -119,6 +119,43 @@ class RunOneTreeSourceTests(unittest.TestCase):
             )
         self.assertEqual(result["decline_reason"], "")
 
+    def test_records_dep_status(self) -> None:
+        stdout = (
+            "gf-tree=Pred (OpenPN \"Waterloo\") (Compl Announce (OpenPN \"Henry\"))\n"
+            "tree-source=stanza\n"
+            "decline-reason=\n"
+            "dep-status=direct-argument\n"
+            "stage=0 constraint=graph-related\n"
+            "  survivors=[Q1]\n"
+        )
+        with patch("subprocess.run", return_value=completed(stdout)):
+            result = run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+            )
+        self.assertEqual(result["dep_status"], "direct-argument")
+
+    def test_no_dep_status_line_means_no_field_at_all(self) -> None:
+        stdout = (
+            "gf-tree=DummyTree\n"
+            "tree-source=gf-parser\n"
+            "decline-reason=no-ud-words\n"
+            "stage=0 constraint=graph-related\n"
+            "  survivors=[Q1]\n"
+        )
+        with patch("subprocess.run", return_value=completed(stdout)):
+            result = run_contextual_corpus.run_one(
+                Path("build/metonymy"),
+                Path("data/wikidata-openalex-snapshot"),
+                "full",
+                {"id": "a", "sentence": "Waterloo announces Henry", "source": "Waterloo", "family": "x"},
+                None,
+            )
+        self.assertNotIn("dep_status", result)
+
     def test_records_all_decline_reasons(self) -> None:
         stdout = (
             "gf-tree=DummyTree\n"

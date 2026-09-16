@@ -357,6 +357,44 @@ def row_llm_decline_reason(inference_row: dict) -> str:
     return "unrecognized"
 
 
+def row_dep_status(inference_row: dict) -> str:
+    """annotate_dependency_hints.py's own dep_status
+    ("direct-argument"/"copula-argument"/"nested-modifier"/
+    "no-governing-verb:<reason>"/"parse-error"/"no-hint") for this row,
+    across every outcome -- mirrors row_llm_decline_reason exactly, just
+    for the "dep_status" field.
+
+    This was the missing piece that made root-lemma-mismatch:no-
+    governing-start's own real cause invisible in every prior corpus
+    evaluation report -- dep_status was always computed by
+    annotate_dependency_hints.py, but never itself surfaced anywhere
+    run_automatic_contextual_pipeline.py reports, only consumed
+    internally by resolve_action. score() aggregates this into a
+    "dep_status_counts" report field, which is what a real corpus run
+    needs to say which of _no_governing_verb's own four suffixes
+    actually dominates.
+
+    "no-hint" means no --dependency-hint was passed to this row's
+    pipeline invocation at all (a genuinely distinct case from any
+    status classify_word itself can produce); "not-applicable" for exit
+    1/2 (tree-building was never attempted, so dep_status was never even
+    read); "unrecognized" if a row that should have the field doesn't.
+    """
+    if "dep_status" in inference_row:
+        return inference_row["dep_status"]
+    exit_code = inference_row.get("exit_code")
+    if exit_code in _EXIT_CODES_BEFORE_TREE_BUILDING:
+        return "not-applicable"
+    if exit_code in (3, 4, 7):
+        try:
+            return json.loads(inference_row.get("failure", "")).get(
+                "dep_status", "unrecognized"
+            )
+        except (json.JSONDecodeError, TypeError):
+            return "unrecognized"
+    return "unrecognized"
+
+
 def exit4_reason_bucket(failure_text: str) -> str:
     """Bucket an exit-4 (semantic-composition-failed) row by which of
     compile_gf_constraints's own fixed ValueError messages it raised.
@@ -662,6 +700,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     tree_source_counts: Counter[str] = Counter()
     decline_reason_counts: Counter[str] = Counter()
     llm_decline_reason_counts: Counter[str] = Counter()
+    dep_status_counts: Counter[str] = Counter()
     # How many *independent* blockers a sentence actually carries at
     # once (0 = already builds, 1 = decline_reason_counts's own first-
     # blocker view already captures it fully, 2+ = the compounding
@@ -680,6 +719,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         tree_source_counts[row_tree_source(inference_row)] += 1
         decline_reason_counts[row_decline_reason(inference_row)] += 1
         llm_decline_reason_counts[row_llm_decline_reason(inference_row)] += 1
+        dep_status_counts[row_dep_status(inference_row)] += 1
         all_reasons = row_all_decline_reasons(inference_row)
         blockers_per_sentence_histogram[len(all_reasons)] += 1
         for first, second in itertools.combinations(sorted(set(all_reasons)), 2):
@@ -746,6 +786,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "exit7_signal_counts": dict(sorted(exit7_signal_counts.items())),
         "exit4_tree_source_counts": dict(sorted(exit4_tree_source_counts.items())),
         "tree_source_counts": dict(sorted(tree_source_counts.items())),
+        "dep_status_counts": dict(sorted(dep_status_counts.items())),
         "decline_reason_counts": dict(sorted(decline_reason_counts.items())),
         "llm_decline_reason_counts": dict(sorted(llm_decline_reason_counts.items())),
         # JSON object keys are always strings -- len(...) counts are

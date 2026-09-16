@@ -278,6 +278,10 @@ class SourceDisambiguationTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("survivors=[Q145]", printed)
+        # No --dependency-hint flag at all in this class's own argv --
+        # dep_status must default to "no-hint", distinct from any status
+        # annotate_dependency_hints.py's classify_word itself produces.
+        self.assertIn("dep-status=no-hint", printed)
 
     def test_zero_surviving_candidates_is_a_literal_prediction_not_a_failure(
         self,
@@ -534,6 +538,10 @@ class StanzaTreeFirstTests(unittest.TestCase):
         # alongside decline_reason -- an already-successful build has no
         # blockers to enumerate at all.
         self.assertIn("all-decline-reasons=\n", printed)
+        # The fixture's own hint carries dep_status="direct-argument" --
+        # surfaced unconditionally, the same way tree_source/decline_reason
+        # already are.
+        self.assertIn("dep-status=direct-argument", printed)
         engine_calls = [call for call in calls if call[0] != "python3"]
         self.assertTrue(any(call[1] == "linearize" for call in engine_calls))
         self.assertFalse(any(call[1] == "parse" for call in engine_calls))
@@ -722,6 +730,10 @@ class StanzaTreeFirstTests(unittest.TestCase):
         # No --llm-proposer-model was passed -- the LLM tier must never
         # even be attempted, let alone call out to query_ollama.
         self.assertIn("llm-decline-reason=not-attempted", printed)
+        # dep_status is read straight off the hint dict, independent of
+        # whether ud_words itself was present -- this fixture's own hint
+        # (see _run_main_with_hint) still carries "direct-argument".
+        self.assertIn("dep-status=direct-argument", printed)
 
 
 class LlmProposerTierTests(unittest.TestCase):

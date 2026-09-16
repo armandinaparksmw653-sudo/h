@@ -303,6 +303,16 @@ def main() -> None:
     dependency_hint_data = (
         json.loads(args.dependency_hint) if args.dependency_hint else None
     )
+    # annotate_dependency_hints.py's own dep_status ("direct-argument",
+    # "copula-argument", "nested-modifier", "no-governing-verb:<reason>",
+    # "parse-error") -- reported here for the same reason tree_source/
+    # decline_reason already are: it determines whether resolve_action
+    # got a real governing_start at all (root-lemma-mismatch:no-
+    # governing-start's own root cause), but was never itself visible in
+    # any evaluation report until now. "no-hint" when --dependency-hint
+    # wasn't passed at all (dependency_hint_data is None) -- a real,
+    # distinct case from any status classify_word itself can produce.
+    dep_status = (dependency_hint_data or {}).get("dep_status") or "no-hint"
     stanza_built_tree = None
     # "" once a Stanza-built tree is actually trusted (or never even
     # tried to build one is a different story -- see below); otherwise a
@@ -466,6 +476,7 @@ def main() -> None:
                         "decline_reason": decline_reason,
                         "all_decline_reasons": all_decline_reasons,
                         "llm_decline_reason": llm_decline_reason,
+                        "dep_status": dep_status,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -496,6 +507,7 @@ def main() -> None:
                     "decline_reason": decline_reason,
                     "all_decline_reasons": all_decline_reasons,
                     "llm_decline_reason": llm_decline_reason,
+                    "dep_status": dep_status,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -568,6 +580,7 @@ def main() -> None:
                     # ran at all (Stanza already succeeded, or
                     # --llm-proposer-model wasn't given).
                     "llm_decline_reason": llm_decline_reason,
+                    "dep_status": dep_status,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -581,12 +594,13 @@ def main() -> None:
     # does for "gf-tree="/"graph_sha256="/etc. Exit 1/2 never reach this
     # line at all (tree-building isn't attempted before them); exit
     # 3/4/7 carry their own "tree_source"/"decline_reason"/
-    # "llm_decline_reason" in their JSON payload instead, since they
-    # never reach these lines either.
+    # "llm_decline_reason"/"dep_status" in their JSON payload instead,
+    # since they never reach these lines either.
     print("tree-source=" + tree_source, flush=True)
     print("decline-reason=" + decline_reason, flush=True)
     print("all-decline-reasons=" + ",".join(all_decline_reasons), flush=True)
     print("llm-decline-reason=" + llm_decline_reason, flush=True)
+    print("dep-status=" + dep_status, flush=True)
     encoded_constraints = ";;".join(
         encode_constraint(item) for item in proposal["constraints"]
     )
