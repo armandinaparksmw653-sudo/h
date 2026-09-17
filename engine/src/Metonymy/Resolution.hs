@@ -64,6 +64,19 @@ contractTarget kb requirement allowed maxDepth target =
   | Just proofs <- [proveRequirement kb target requirement]
   , reversePath <- incomingPaths kb allowed maxDepth target
   , let source = pathSource reversePath
+    -- Same reasoning as expandFiber's own filter just above: at
+    -- maxDepth >= 2, incomingPaths's reverse walk can legitimately land
+    -- back on `target` itself as the path's own source whenever the
+    -- relation set has a forward/inverse pair over the same property
+    -- (confirmed as a real, not just theoretical, occurrence -- a real
+    -- CI run of the "reject-contract-*" silver fixtures, which this
+    -- module's own maxDepth is shared with via data/contextual-
+    -- language-rules.json's "max_bridge_depth", started spuriously
+    -- *accepting* contractions this fixture's own gold data expects
+    -- rejected, immediately after max_bridge_depth was raised to 2).
+    -- `target` contracting into itself is the same tautology
+    -- expandFiber already rules out, just in the reverse direction.
+  , source /= target
   ]
 
 verifyCertificate :: KnowledgeBase -> Certificate -> Bool

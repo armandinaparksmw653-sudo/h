@@ -3282,3 +3282,51 @@ value the failure output itself names -- read from the actual CI
 output, never guessed. Once green, ask the user for the real
 `contextual-tower-evaluation.yml` run this whole depth experiment has
 been building toward.
+
+## The `expandFiber` fix cleared that failure -- and immediately found the same bug's twin
+
+The next `ci.yml` run confirmed the `expandFiber` fix worked --
+`test_verbnet_only_action_builds_checked_layers` passed. But the run
+failed differently: `contextual-corpus-test` (the `Makefile` target
+running `evaluation/contextual-multidomain/silver-inputs.jsonl` through
+`run_contextual_corpus.py` *without* `--allow-failures`) reported
+`instances=69 failures=2`.
+
+That fixture (`silver-inputs.jsonl`, small and checked into the repo,
+safe to read directly -- not licensed real-corpus text) is dominated by
+a `"location-for-institution"` family: 15 place sources ("Stavropol
+signed the agreement", ..., the same "Waterloo" entity from the earlier
+bug), several paired with a `"direction":"contract"` counterpart, a few
+of those marked `"expected_status":"rejected"` -- deliberate safety
+tests confirming a specific institution must *not* validate as a
+metonymic contraction of a given place (e.g. "IFFHS signed the
+agreement" from source "Bonn" must be rejected). `max_bridge_depth`
+feeds *both* directions identically via `data/contextual-language-
+rules.json`, and `contractTarget`'s own `incomingPaths` walk has the
+exact same missing check `expandFiber` just got fixed for -- just
+reversed: at `maxDepth >= 2`, the reverse walk can land back on
+`target` itself as the path's own `source`, via the same P131 forward/
+inverse pair mechanism. A `reject-contract-*` scenario spuriously
+finding `target` as its own valid `source` (a self-referencing
+contraction) would flip it from correctly-rejected to incorrectly-
+accepted -- exactly matching `run_one`'s own `rejected_by_safety`/
+`successful` logic for an `expected_status: rejected` row, and exactly
+accounting for "failures" (real engine-level failures, not scoring
+misses) appearing at all in a target that only checks pipeline success.
+
+Fixed the same way, in the same function pair: `contractTarget` now
+filters `source /= target` alongside its existing proof/path
+qualifiers, with a comment citing this exact real CI failure as the
+evidence (not a preemptive guess) -- the earlier round had deliberately
+scoped the fix to `expandFiber` alone per the user's own explicit
+choice; this round's real CI failure confirmed the twin function needed
+the identical treatment, not merely a hypothetical risk. No local
+Haskell toolchain exists to compile-check either change directly.
+
+**Next step**: push, watch `ci.yml` -- if `contextual-corpus-test`
+still fails, examine which specific silver-fixture id(s) via whatever
+detail the failure surfaces (this Makefile target has no
+`--allow-failures`/artifact upload, so the exact failing id isn't
+directly visible in the log today; may need a follow-up round adding
+one). Once green, ask the user for the real
+`contextual-tower-evaluation.yml` run.
