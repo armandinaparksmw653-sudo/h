@@ -3068,3 +3068,51 @@ next step would be a small, targeted manual/semi-automatic supplement
 verified against local `gf.exe`) -- not a full from-scratch annotation
 of ~100 sentences, since the large majority already has a real,
 automatically-built tree today.
+
+## A real bug in `tree_available`, found before trusting its first number
+
+The real run's own `tree_available_instances` (68/150 WiMCor,
+116/150 ConMeC) turned out to be inflated, caught by re-reading
+`run_automatic_contextual_pipeline.py` before drawing any conclusion
+from the numbers rather than after. `tree_source` is computed **once**,
+right before the pipeline decides whether to even attempt the legacy
+`engine parse` fallback -- so it is unconditionally `"gf-parser"` for
+exit 3 (`gf-parse-failed`, GF's own parser errored) and exit 7
+(`gf-parse-empty`, GF's own parser found zero trees) too, even though
+the entire reason those two exit codes exist is that **no tree was
+produced at all**. `row_tree_source` alone cannot tell "gf-parser
+really built a tree" apart from "gf-parser was about to be tried and
+immediately failed" -- and the previous round's `tree_available` filter
+relied on `row_tree_source` alone, so it silently counted every exit-7
+row (44/150 WiMCor, a huge share) as if a real tree existed. (Reaching
+exit 3/7 requires both the Stanza and LLM tiers to have already
+declined, which is exactly why `tree_source` is always `"gf-parser"` --
+never `"stanza"`/`"llm"` -- for both; neither of those two sources' own
+counts was affected.)
+
+Fixed with a new `row_tree_really_built(inference_row) -> bool`
+(`scripts/evaluation/score_contextual_detection.py`), which additionally
+excludes exit codes 3 and 7 (`_EXIT_CODES_WITHOUT_A_REAL_TREE = {1, 2,
+3, 7}`) before trusting `row_tree_source`'s value -- `score()`'s own
+`tree_available` gating now calls this instead of checking
+`row_tree_source(...) in _TREE_BUILT_SOURCES` directly. Tests: a new
+`RowTreeReallyBuiltTests` class (6 cases, including the two that
+actually caught the bug -- exit 3/7 with an explicit `"gf-parser"`
+`tree_source` label must both read `False`) plus a correction to the
+existing `tree_available` integration test's own fixture (it had used
+`failed_row`'s default `exit_code=3` for what was meant to simulate a
+real, tree-available failure -- an easy mistake to make now that exit 3
+specifically carries this meaning, exactly the kind of thing this fix
+exists to catch). Full local suite: same pre-existing baseline (2
+failures/13 errors/8 skipped), no regressions.
+
+The previous round's real numbers should not be trusted as-is; the
+genuine `tree_available_instances` (and the precision/recall built on
+it) can only come from a fresh run against this fix.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user for
+one more real `contextual-tower-evaluation.yml` run -- this time
+`tree_available_instances`/`tree_available_precision`/`tree_available_
+recall`/`tree_available_f1` will reflect only rows where a tree
+genuinely reached the tower, giving the real number the paper's formal-
+verification claim needs.

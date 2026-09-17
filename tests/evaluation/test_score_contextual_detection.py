@@ -24,6 +24,7 @@ from score_contextual_detection import (  # noqa: E402
     row_decline_reason,
     row_dep_status,
     row_llm_decline_reason,
+    row_tree_really_built,
     row_tree_source,
     score,
 )
@@ -1132,7 +1133,12 @@ class ScoreTests(unittest.TestCase):
         tp_no_tree["tree_source"] = "not-applicable"
         tn_tree_available = ok_row("c", [])
         tn_tree_available["tree_source"] = "gf-parser"
-        fn_tree_available = failed_row("d")
+        # exit_code=4 (semantic-composition-failed), not failed_row's own
+        # default of 3 -- a real tree DID reach compile_gf_constraints
+        # here, unlike exit 3/7 (see row_tree_really_built's own comment
+        # for why those two exit codes must NOT count as tree-available
+        # despite also carrying a "gf-parser" tree_source label).
+        fn_tree_available = failed_row("d", exit_code=4)
         fn_tree_available["tree_source"] = "llm"
         inference = [tp_tree_available, tp_no_tree, tn_tree_available, fn_tree_available]
         gold = [
@@ -1179,6 +1185,7 @@ class ScoreTests(unittest.TestCase):
                 "false_negative": 0,
             },
         )
+
 
     def test_perfect_score_has_no_undefined_precision_or_recall(self) -> None:
         inference = [ok_row("a", ["Q1"]), ok_row("b", [])]
@@ -1539,6 +1546,71 @@ class ScoreTests(unittest.TestCase):
             len({entry["sha256_prefix"] for entry in report["unrecognized_fingerprints"]}),
             2,
         )
+
+
+class RowTreeReallyBuiltTests(unittest.TestCase):
+    """run_automatic_contextual_pipeline.py's own "tree_source" variable
+    is set (to "gf-parser", unconditionally) *before* it decides whether
+    to even attempt the legacy engine-parse fallback -- so exit 3
+    ("gf-parse-failed") and exit 7 ("gf-parse-empty") both still carry a
+    "gf-parser" tree_source in their JSON payload despite no tree ever
+    having been produced. row_tree_source alone can't tell this apart
+    from a real gf-parser success; row_tree_really_built can.
+    """
+
+    def test_a_real_success_with_a_tree_is_true(self) -> None:
+        row = ok_row("a", ["Q1"])
+        row["tree_source"] = "gf-parser"
+        self.assertTrue(row_tree_really_built(row))
+
+    def test_exit4_with_a_tree_is_true(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 4,
+            "failure": json.dumps(
+                {
+                    "status": "semantic-composition-failed",
+                    "gf_tree": "x",
+                    "detail": "y",
+                    "tree_source": "gf-parser",
+                }
+            ),
+        }
+        self.assertTrue(row_tree_really_built(row))
+
+    def test_exit3_despite_a_gf_parser_tree_source_label_is_false(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 3,
+            "failure": json.dumps(
+                {"status": "gf-parse-failed", "tree_source": "gf-parser"}
+            ),
+        }
+        self.assertFalse(row_tree_really_built(row))
+
+    def test_exit7_despite_a_gf_parser_tree_source_label_is_false(self) -> None:
+        row = {
+            "id": "a",
+            "status": "failed",
+            "exit_code": 7,
+            "failure": json.dumps(
+                {"status": "gf-parse-empty", "tree_source": "gf-parser"}
+            ),
+        }
+        self.assertFalse(row_tree_really_built(row))
+
+    def test_exit1_and_exit2_are_false(self) -> None:
+        for exit_code in (1, 2):
+            with self.subTest(exit_code=exit_code):
+                row = {"id": "a", "status": "failed", "exit_code": exit_code}
+                self.assertFalse(row_tree_really_built(row))
+
+    def test_not_applicable_tree_source_is_false(self) -> None:
+        row = ok_row("a", ["Q1"])
+        row["tree_source"] = "not-applicable"
+        self.assertFalse(row_tree_really_built(row))
 
 
 if __name__ == "__main__":

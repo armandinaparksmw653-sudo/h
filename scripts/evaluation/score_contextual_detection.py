@@ -234,6 +234,24 @@ def exit4_tree_source(failure_text: str) -> str:
 # these, not merely missing.
 _EXIT_CODES_BEFORE_TREE_BUILDING = {1, 2}
 
+# exit codes where run_automatic_contextual_pipeline.py's own
+# "tree_source" variable is set to a real value ("gf-parser", always --
+# see below) despite there being *no actual tree*: it computes
+# tree_source once, unconditionally, right before deciding whether to
+# fall back to the legacy `engine parse` on raw text at all -- so exit 3
+# ("gf-parse-failed", GF's own parser errored) and exit 7 ("gf-parse-
+# empty", GF's own parser found zero trees) both still carry
+# tree_source="gf-parser" in their JSON payload, even though the whole
+# reason they exited there is that no tree was ever produced. (Reaching
+# either of these two exit codes at all requires both the Stanza and LLM
+# tiers to have already declined, which is exactly why tree_source is
+# always "gf-parser" -- never "stanza"/"llm" -- for both; neither of
+# those two sources' own counts is affected by this.) row_tree_source
+# alone cannot tell "gf-parser really built a tree" apart from "gf-
+# parser was about to be tried and immediately failed" -- see
+# row_tree_really_built, which can.
+_EXIT_CODES_WITHOUT_A_REAL_TREE = {1, 2, 3, 7}
+
 
 def row_tree_source(inference_row: dict) -> str:
     """Which of the three tree sources ("stanza"/"llm"/"gf-parser")
@@ -263,6 +281,24 @@ def row_tree_source(inference_row: dict) -> str:
     if exit_code in (3, 4, 7):
         return exit4_tree_source(inference_row.get("failure", ""))
     return "unrecognized"
+
+
+_TREE_BUILT_SOURCES = {"stanza", "llm", "gf-parser"}
+
+
+def row_tree_really_built(inference_row: dict) -> bool:
+    """True only if a real GF tree actually reached compile_gf_constraints
+    for this row -- unlike checking ``row_tree_source(...) in
+    _TREE_BUILT_SOURCES`` alone, this correctly excludes exit 3 ("gf-
+    parse-failed") and exit 7 ("gf-parse-empty"): see
+    _EXIT_CODES_WITHOUT_A_REAL_TREE's own comment for why row_tree_source
+    still (misleadingly) reports "gf-parser" for both of those, even
+    though the whole reason they exited there is that no tree was ever
+    produced.
+    """
+    if inference_row.get("exit_code") in _EXIT_CODES_WITHOUT_A_REAL_TREE:
+        return False
+    return row_tree_source(inference_row) in _TREE_BUILT_SOURCES
 
 
 def row_decline_reason(inference_row: dict) -> str:
@@ -686,9 +722,6 @@ def fingerprint_failure_text(failure_text: str) -> dict:
     }
 
 
-_TREE_BUILT_SOURCES = {"stanza", "llm", "gf-parser"}
-
-
 def _precision_recall_f1(
     true_positive: int, false_positive: int, true_negative: int, false_negative: int
 ) -> tuple[float | None, float | None, float | None]:
@@ -713,17 +746,20 @@ def _precision_recall_f1(
 def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     inference_by_id = {row["id"]: row for row in inference_rows}
     true_positive = false_positive = true_negative = false_negative = 0
-    # The same four counts, but restricted to rows where row_tree_source
-    # names an actual tree that reached compile_gf_constraints ("stanza"/
-    # "llm"/"gf-parser") -- i.e., where the contextual tower's own
-    # Agda-checked layered filtering genuinely ran at all, regardless of
-    # which of the three untrusted proposers supplied the tree (the tower
-    # itself is provably agnostic to tree provenance -- see docs/
-    # contextual-tower.md). "not-applicable" rows (resolve_action itself
-    # declined before tree-building was ever attempted) never exercise
-    # the formal core at all, so folding them into the same precision/
-    # recall as tree-available rows conflates "the tower is wrong" with
-    # "the tower never ran" -- two very different claims for a paper.
+    # The same four counts, but restricted to rows row_tree_really_built
+    # confirms actually reached compile_gf_constraints with a real tree
+    # -- i.e., where the contextual tower's own Agda-checked layered
+    # filtering genuinely ran at all, regardless of which of the three
+    # untrusted proposers supplied the tree (the tower itself is provably
+    # agnostic to tree provenance -- see docs/contextual-tower.md).
+    # "not-applicable" rows (resolve_action itself declined before tree-
+    # building was ever attempted), and exit 3/7 rows (tree-building was
+    # attempted but produced nothing -- see row_tree_really_built's own
+    # comment for why row_tree_source alone would wrongly count these as
+    # "gf-parser"), never exercise the formal core at all, so folding
+    # them into the same precision/recall as tree-available rows
+    # conflates "the tower is wrong" with "the tower never ran" -- two
+    # very different claims for a paper.
     tree_available_true_positive = tree_available_false_positive = 0
     tree_available_true_negative = tree_available_false_negative = 0
     missing = 0
@@ -763,7 +799,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
             co_occurring_blocker_pairs[f"{first} + {second}"] += 1
         predicted = predict(inference_row)
         actual = gold["gold_label"]
-        tree_available = row_tree_source(inference_row) in _TREE_BUILT_SOURCES
+        tree_available = row_tree_really_built(inference_row)
         if predicted == "metonymic" and actual == "metonymic":
             true_positive += 1
             if tree_available:
