@@ -1116,6 +1116,56 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(report["recall"], 0.5)
         self.assertEqual(report["f1"], 0.5)
 
+    def test_tree_available_metric_is_restricted_to_rows_with_a_built_tree(
+        self,
+    ) -> None:
+        # Same confusion-matrix shape as the plain "every row" test above,
+        # but this checks the *separate*, tree_source-gated metric: "a"
+        # and "b" are both true positives overall, but only "a" (tree_
+        # source="stanza") counts toward tree_available_* -- "b" (tree_
+        # source="not-applicable", resolve_action declined before tree-
+        # building was ever attempted) never exercised the tower at all,
+        # so it must not inflate this restricted metric.
+        tp_tree_available = ok_row("a", ["Q1"])
+        tp_tree_available["tree_source"] = "stanza"
+        tp_no_tree = ok_row("b", ["Q1"])
+        tp_no_tree["tree_source"] = "not-applicable"
+        tn_tree_available = ok_row("c", [])
+        tn_tree_available["tree_source"] = "gf-parser"
+        fn_tree_available = failed_row("d")
+        fn_tree_available["tree_source"] = "llm"
+        inference = [tp_tree_available, tp_no_tree, tn_tree_available, fn_tree_available]
+        gold = [
+            {"id": "a", "gold_label": "metonymic", "gold_bridge_family": "x"},
+            {"id": "b", "gold_label": "metonymic", "gold_bridge_family": "x"},
+            {"id": "c", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "d", "gold_label": "metonymic", "gold_bridge_family": "x"},
+        ]
+        report = score(inference, gold)
+        # The overall metric still counts every row, unaffected.
+        self.assertEqual(
+            report["confusion"],
+            {
+                "true_positive": 2,
+                "false_positive": 0,
+                "true_negative": 1,
+                "false_negative": 1,
+            },
+        )
+        self.assertEqual(report["tree_available_instances"], 3)
+        self.assertEqual(
+            report["tree_available_confusion"],
+            {
+                "true_positive": 1,
+                "false_positive": 0,
+                "true_negative": 1,
+                "false_negative": 1,
+            },
+        )
+        self.assertEqual(report["tree_available_precision"], 1.0)
+        self.assertEqual(report["tree_available_recall"], 0.5)
+        self.assertAlmostEqual(report["tree_available_f1"], 2 / 3)
+
     def test_missing_inference_row_is_counted_not_silently_dropped(self) -> None:
         gold = [{"id": "missing", "gold_label": "metonymic", "gold_bridge_family": "x"}]
         report = score([], gold)

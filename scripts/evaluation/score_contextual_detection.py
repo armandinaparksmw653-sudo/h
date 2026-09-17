@@ -686,9 +686,46 @@ def fingerprint_failure_text(failure_text: str) -> dict:
     }
 
 
+_TREE_BUILT_SOURCES = {"stanza", "llm", "gf-parser"}
+
+
+def _precision_recall_f1(
+    true_positive: int, false_positive: int, true_negative: int, false_negative: int
+) -> tuple[float | None, float | None, float | None]:
+    precision = (
+        true_positive / (true_positive + false_positive)
+        if (true_positive + false_positive)
+        else None
+    )
+    recall = (
+        true_positive / (true_positive + false_negative)
+        if (true_positive + false_negative)
+        else None
+    )
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if precision is not None and recall is not None and (precision + recall)
+        else None
+    )
+    return precision, recall, f1
+
+
 def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     inference_by_id = {row["id"]: row for row in inference_rows}
     true_positive = false_positive = true_negative = false_negative = 0
+    # The same four counts, but restricted to rows where row_tree_source
+    # names an actual tree that reached compile_gf_constraints ("stanza"/
+    # "llm"/"gf-parser") -- i.e., where the contextual tower's own
+    # Agda-checked layered filtering genuinely ran at all, regardless of
+    # which of the three untrusted proposers supplied the tree (the tower
+    # itself is provably agnostic to tree provenance -- see docs/
+    # contextual-tower.md). "not-applicable" rows (resolve_action itself
+    # declined before tree-building was ever attempted) never exercise
+    # the formal core at all, so folding them into the same precision/
+    # recall as tree-available rows conflates "the tower is wrong" with
+    # "the tower never ran" -- two very different claims for a paper.
+    tree_available_true_positive = tree_available_false_positive = 0
+    tree_available_true_negative = tree_available_false_negative = 0
     missing = 0
     literal_prediction_reasons: Counter[str] = Counter()
     unrecognized_fingerprints: Counter[tuple[str, int]] = Counter()
@@ -726,14 +763,23 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
             co_occurring_blocker_pairs[f"{first} + {second}"] += 1
         predicted = predict(inference_row)
         actual = gold["gold_label"]
+        tree_available = row_tree_source(inference_row) in _TREE_BUILT_SOURCES
         if predicted == "metonymic" and actual == "metonymic":
             true_positive += 1
+            if tree_available:
+                tree_available_true_positive += 1
         elif predicted == "metonymic" and actual == "literal":
             false_positive += 1
+            if tree_available:
+                tree_available_false_positive += 1
         elif predicted == "literal" and actual == "literal":
             true_negative += 1
+            if tree_available:
+                tree_available_true_negative += 1
         else:
             false_negative += 1
+            if tree_available:
+                tree_available_false_negative += 1
         if predicted == "literal":
             reason = literal_reason(inference_row)
             literal_prediction_reasons[reason] += 1
@@ -754,20 +800,18 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
                     exit4_tree_source(inference_row.get("failure", ""))
                 ] += 1
 
-    precision = (
-        true_positive / (true_positive + false_positive)
-        if (true_positive + false_positive)
-        else None
+    precision, recall, f1 = _precision_recall_f1(
+        true_positive, false_positive, true_negative, false_negative
     )
-    recall = (
-        true_positive / (true_positive + false_negative)
-        if (true_positive + false_negative)
-        else None
-    )
-    f1 = (
-        2 * precision * recall / (precision + recall)
-        if precision is not None and recall is not None and (precision + recall)
-        else None
+    (
+        tree_available_precision,
+        tree_available_recall,
+        tree_available_f1,
+    ) = _precision_recall_f1(
+        tree_available_true_positive,
+        tree_available_false_positive,
+        tree_available_true_negative,
+        tree_available_false_negative,
     )
     return {
         "instances": len(gold_rows),
@@ -781,6 +825,29 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "precision": precision,
         "recall": recall,
         "f1": f1,
+        # The same detection metric, restricted to rows where a real
+        # tree actually reached the contextual tower (row_tree_source in
+        # {"stanza","llm","gf-parser"}) -- the number that answers "how
+        # well does the formally-verified tower itself detect metonymy
+        # on real corpus sentences", decoupled from "what fraction of
+        # arbitrary real text our frontend can turn into a tree at all"
+        # (that second, separate question is exactly what tree_source_
+        # counts/decline_reason_counts/dep_status_counts below measure).
+        "tree_available_instances": (
+            tree_available_true_positive
+            + tree_available_false_positive
+            + tree_available_true_negative
+            + tree_available_false_negative
+        ),
+        "tree_available_confusion": {
+            "true_positive": tree_available_true_positive,
+            "false_positive": tree_available_false_positive,
+            "true_negative": tree_available_true_negative,
+            "false_negative": tree_available_false_negative,
+        },
+        "tree_available_precision": tree_available_precision,
+        "tree_available_recall": tree_available_recall,
+        "tree_available_f1": tree_available_f1,
         "literal_prediction_reasons": dict(sorted(literal_prediction_reasons.items())),
         "exit7_rows_seen": exit7_rows_seen,
         "exit7_signal_counts": dict(sorted(exit7_signal_counts.items())),

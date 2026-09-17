@@ -2979,3 +2979,92 @@ should reveal, simultaneously, which UPOS actually dominates
 decisively -- which UD deprel actually dominates `leftover-words`/
 `embedded-leftover-words`, the single largest bucket that has stayed
 completely opaque since the very start of this diagnostic effort.
+
+## `leftover-words` finally decoded, and a strategic pivot
+
+The real, sub-bucketed run gave decisive numbers. **`common-noun-
+determiner-or-adjective-count:zero-determiners` is now unambiguously
+the single largest decline_reason** (11/11 WiMCor, 23/24 ConMeC of that
+whole bucket) -- a bare common noun with no article at all ("programmes",
+"counties"), which `_np_from_common_noun` has never supported (it
+requires exactly one determiner). **`leftover-words`/`embedded-
+leftover-words` turned out to be dominated by `case`** (9+3=12 WiMCor,
+10+3=13 ConMeC) -- confirmed to be the module's own already-documented,
+deliberate limitation (a verb-level oblique PP, "announces X **in
+Y**", has no VP-level attachment point in the grammar; attaching it to
+the object anyway would silently reinterpret which constituent it
+modifies -- see this module's own docstring), not a new bug. The rest
+(`aux`, `cc`, `flat`, `mark`, `compound:prt`, `discourse`, `vocative`)
+are each 1-3 occurrences -- a long tail, not a second dominant cause.
+`tree_source_counts` still showed zero real `"stanza"` successes in
+either corpus.
+
+The user asked, stepping back, whether continuing to chase individual
+`build_gf_tree_from_dependencies.py` buckets was still the right use of
+effort for the paper's actual goal (formally verifying the contextual
+tower against real corpus data), or whether a different verification
+strategy made more sense. Talking it through surfaced a fact this
+session's Stanza-tier focus had obscured: **`tree_source_counts` had
+been showing real, substantial success the whole time -- just not via
+Stanza.** The legacy tier (`engine parse` on raw text, using GF's own
+native PMCFG parser against `grammar/MetonymyEng.gf`'s hand-written
+concrete syntax -- an entirely different mechanism from the UD-based
+tree-builder, sharing only the same output abstract syntax) already
+produces a real tree for 60/150 WiMCor and 113/150 ConMeC rows today,
+plus a further 8/150 and 3/150 via the LLM tier -- 68/150 (45%) and
+116/150 (77%) of each corpus already reaches the contextual tower with
+a genuine tree, fully automatically, regardless of how much (or little)
+the Stanza tier itself contributes.
+
+This matters because the tower's own machinery -- constraint
+derivation, the layered `ContextConstraint` filtering, Agda-checked
+`runtimeCheck` at each stage, context/candidate expansion -- is
+**architecturally provably agnostic to tree provenance**: every one of
+these steps consumes only `trees[0]`'s text and the constraints derived
+from it, with no branch anywhere on which of the three untrusted
+proposers produced it (confirmed by re-reading `run_automatic_
+contextual_pipeline.py`'s own call sites). So the paper's core formal
+claim -- "the tower correctly separates metonymic from literal readings
+on real corpus data" -- does not require the automatic *frontend* to
+reach 100% coverage; it only requires measuring the tower's own
+precision/recall restricted to the subset of real sentences that
+already get a tree by any means, decoupling that from the separate,
+harder, honestly-still-limited question of open-domain frontend
+coverage.
+
+**New report field**: `score_contextual_detection.py`'s `score()` now
+computes a second confusion matrix restricted to rows where
+`row_tree_source(...)` is `"stanza"`/`"llm"`/`"gf-parser"` (a real tree
+actually reached `compile_gf_constraints`, whatever its source) --
+`tree_available_instances`/`tree_available_confusion`/
+`tree_available_precision`/`tree_available_recall`/`tree_available_f1`,
+alongside the existing (whole-corpus, frontend-limited) `precision`/
+`recall`/`f1`. New `_precision_recall_f1` helper factors out the shared
+computation (used for both matrices, no behavior change to the existing
+top-level metric). No corpus text is newly exposed anywhere --
+`tower-inference.jsonl` (the only place raw failure text and lexicalized
+trees ever appear) is still never uploaded as a CI artifact, per the
+workflow's own existing privacy policy; this is purely a new aggregate
+number computed and reported the same way every other Counter in this
+function already is.
+
+Tests: new `ScoreTests.test_tree_available_metric_is_restricted_to_
+rows_with_a_built_tree`, confirming a true positive with no tree
+(`tree_source="not-applicable"`) does not inflate the restricted metric
+while an identical true positive with a real tree does. Full local
+suite: same pre-existing baseline (2 failures/13 errors/8 skipped), no
+regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user for
+one more real `contextual-tower-evaluation.yml` run -- `tree_available_
+precision`/`recall`/`f1` will, for the first time, give a real number
+for "how well does the formally-verified tower itself detect metonymy
+on real corpus sentences that actually reach it", independent of the
+still-limited automatic frontend coverage. If that subset turns out
+too small or skewed (e.g. almost entirely literal, or dominated by one
+bridge family) to be a convincing publication result on its own, the
+next step would be a small, targeted manual/semi-automatic supplement
+(using `enumerate_gf_tree_blockers`'s own diagnostics as a triage aid,
+verified against local `gf.exe`) -- not a full from-scratch annotation
+of ~100 sentences, since the large majority already has a real,
+automatically-built tree today.
