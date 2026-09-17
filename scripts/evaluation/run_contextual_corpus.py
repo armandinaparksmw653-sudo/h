@@ -206,6 +206,21 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--allow-failures", action="store_true")
     parser.add_argument(
+        "--print-failures",
+        action="store_true",
+        help=(
+            "print each failing row's id and failure text to stdout. "
+            "Opt-in and off by default: this prints the row's own raw "
+            "subprocess output, which can include sentence text -- only "
+            "safe for datasets that are not license-restricted (e.g. "
+            "this project's own checked-in evaluation/contextual-"
+            "multidomain/*.jsonl fixtures, used by the Makefile's own "
+            "contextual-corpus-test target). Never pass this for a real "
+            "WiMCor/ConMeC corpus run -- contextual-tower-evaluation.yml "
+            "never does."
+        ),
+    )
+    parser.add_argument(
         "--ablation",
         choices=[
             "full",
@@ -254,6 +269,10 @@ def main() -> None:
     )
     failures = sum(row["status"] != "ok" for row in results)
     print(f"instances={len(results)} failures={failures}")
+    if failures and args.print_failures:
+        for row in results:
+            if row["status"] != "ok":
+                print(f"failure id={row['id']}: {row.get('failure', '')}")
     if failures and not args.allow_failures:
         raise SystemExit(1)
 

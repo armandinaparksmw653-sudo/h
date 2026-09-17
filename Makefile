@@ -134,6 +134,7 @@ contextual-corpus-test: engine
 		--dataset evaluation/contextual-multidomain/silver-inputs.jsonl \
 		--engine build/metonymy \
 		--snapshot data/wikidata-openalex-snapshot \
+		--print-failures \
 		--output build/evaluation/contextual-silver-inference.jsonl
 	python3 scripts/evaluation/score_qid_fibers.py \
 		--inference build/evaluation/contextual-silver-inference.jsonl \
@@ -143,6 +144,7 @@ contextual-corpus-test: engine
 		--dataset evaluation/contextual-multidomain/audited-inputs.jsonl \
 		--engine build/metonymy \
 		--snapshot data/wikidata-openalex-snapshot \
+		--print-failures \
 		--output build/evaluation/contextual-audited-inference.jsonl
 	python3 scripts/evaluation/score_qid_fibers.py \
 		--inference build/evaluation/contextual-audited-inference.jsonl \
