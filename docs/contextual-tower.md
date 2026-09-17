@@ -3230,3 +3230,55 @@ real, if likely modest, added computational cost for the engine's own
 `outgoingPaths`/`incomingPaths` search (branching-factor-to-the-depth),
 worth keeping an eye on run time even though nothing here suggests it
 would be prohibitive at depth 2.
+
+## The `max_bridge_depth` experiment immediately found a real bug: the source can bridge to itself
+
+`ci.yml` failed on the very first push of the depth-2 change --
+`test_verbnet_only_action_builds_checked_layers`
+(`tests/evaluation/test_qid_fiber.py`, exercising the real curated
+`data/wikidata-openalex-snapshot`) showed stage 0's own `survivors=`
+line had grown a fourth entry: `Q639408` -- Waterloo, the query's own
+source entity, now appearing as one of its own "bridge candidates".
+
+Read (not assumed) directly from `engine/src/Metonymy/Resolution.hs`:
+`outgoingPaths`'s cycle guard only stops a path from revisiting a node
+it has already passed *through* (`current \`Set.member\` visited`) --
+it never checks whether a path's own *final target* lands back on the
+original source. At `maxDepth=1` this can never surface (a single hop
+from X can't return to X without a literal self-loop edge, essentially
+never present in real data); at `maxDepth=2` it becomes commonplace
+wherever the relation set contains a forward/inverse pair over the same
+underlying property -- exactly what `data/wikidata-runtime-rules.json`
+has for Wikidata P131 (`LocatedIn` forward, `InstitutionOf` inverse),
+confirmed as the real cause here (Waterloo → some region (`LocatedIn`)
+→ back to Waterloo (`InstitutionOf`) is a genuine two-hop round trip in
+the real snapshot). This is a real correctness gap this session's
+narrow depth-1 default had been silently hiding the entire time, not
+something introduced by the experiment -- raising the depth just
+happened to be what finally surfaced it.
+
+The source referring to itself is never a genuine metonymic bridge --
+that is exactly the literal reading, already handled by the pipeline's
+own separate direct-argument path, not something `expandFiber` should
+ever offer as a candidate "fine meaning." Fixed with a one-line filter
+in `expandFiber` (`target /= fiberSource query`), with a comment
+explaining the exact mechanism and citing the real corpus run that
+surfaced it. Confirmed the existing Haskell unit tests are unaffected
+by reading them directly: both `engine/test/Main.hs` call sites for
+`contextualFiber` hardcode `maxDepth=1` (unrelated to
+`data/contextual-language-rules.json`'s own value, which only feeds the
+Python-side CLI path), so the new filter can never trigger for them
+either way. No local Haskell toolchain exists on this machine to
+compile-check the change directly -- verification is necessarily via
+the next real `ci.yml` run, same as every other Haskell change this
+session has needed.
+
+**Next step**: push, watch `ci.yml` closely -- if
+`test_verbnet_only_action_builds_checked_layers` still fails, it means
+depth 2 surfaces a *different*, non-self-referencing new candidate too
+(a real, separate finding, not a second bug), and that test's own
+golden `preferred=`/`survivors=` strings need updating to the real
+value the failure output itself names -- read from the actual CI
+output, never guessed. Once green, ask the user for the real
+`contextual-tower-evaluation.yml` run this whole depth experiment has
+been building toward.

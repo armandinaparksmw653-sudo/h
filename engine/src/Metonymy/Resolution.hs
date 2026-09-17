@@ -9,6 +9,20 @@ import qualified Data.Set as Set
 import Metonymy.Ontology
 import Metonymy.Types
 
+-- | Every entity reachable from the query's own source via the allowed
+-- relations (up to fiberMaxDepth hops) that also satisfies the query's
+-- requirement. A path's own target can legitimately equal the source
+-- again once maxDepth >= 2: outgoingPaths's cycle guard only stops a
+-- path from revisiting a node it has already passed *through*, not from
+-- landing back on the source itself as a final target (a real
+-- possibility whenever the relation set contains a forward/inverse pair
+-- over the same underlying property, e.g. LocatedIn/InstitutionOf over
+-- Wikidata P131 -- confirmed by a real corpus run, not assumed: raising
+-- max_bridge_depth from 1 to 2 surfaced this immediately in production
+-- data). The source referring to itself is never a genuine metonymic
+-- bridge (that is exactly the literal reading, already handled
+-- elsewhere), so it is filtered out here -- the one place every caller
+-- (contextualFiber's own initial stage, roundTripHolds) shares.
 expandFiber :: KnowledgeBase -> FiberQuery -> [FineMeaning]
 expandFiber kb query =
   [ FineMeaning
@@ -18,6 +32,7 @@ expandFiber kb query =
       }
   | path <- outgoingPaths kb query
   , let target = pathTarget path
+  , target /= fiberSource query
   , Just proofs <- [proveRequirement kb target (fiberRequirement query)]
   ]
 
