@@ -22,7 +22,7 @@
     "ResearchProgramme": ["Conducts", "About"],
     "Agreement": ["AffiliatedWith", "About"]
   },
-  "max_bridge_depth": 1,
+  "max_bridge_depth": 2,
   "relation_lexicalizations": {
     "author": "Authored",
     "belong": "MemberOf",

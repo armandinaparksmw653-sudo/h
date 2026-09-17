@@ -3176,3 +3176,57 @@ will also give the corrected `tree_available_*` numbers) --
 `ok:empty-fiber` false negatives, or whether it is a long, spread-out
 tail -- either way, the first real, measured answer to "why does the
 tower say literal even when it got a real tree to work with".
+
+## `empty_fiber_reason_counts`'s real answer: 100% "graph-related", and a concrete, testable hypothesis
+
+The real (corrected) run gave a decisive, surprising answer:
+**`empty_fiber_reason_counts` was `{"graph-related": 17}` for WiMCor and
+`{"graph-related": 41}` for ConMeC -- 100% in both corpora.** Not one
+single `ok:empty-fiber` row was eliminated by a lexical/semantic
+`Requirement` (a `HasSort` check derived from the sentence's own words)
+-- ruling out the "WordNet `lexical_sorts` coverage gap" hypothesis this
+session had been carrying since much earlier rounds. `"graph-related"`
+is `engine/app/Main.hs`'s own fallback string for a stage whose
+`stageConstraint` is `Nothing` -- and `engine/src/Metonymy/Contextual.hs`'s
+`contextualFiber` shows there is exactly one such stage: **stage 0, the
+very first**, computed by `expandFiber` walking every path from the
+source entity via the configured bridge relations, up to `maxDepth`
+hops, keeping anything satisfying the near-trivial starting requirement
+`HasSort Entity`. If stage 0 alone comes back empty, no lexical
+constraint from the sentence is ever even applied -- the tower never
+gets the chance to use the very thing this whole session's frontend
+work has been building.
+
+Read further (not guessed): `scripts/propose_contextual_scenario.py`
+sets `max_depth = language_rules.get("max_bridge_depth", 1)`, and
+`data/contextual-language-rules.json` had it hardcoded to **exactly
+1** -- only entities *directly* connected to the source via one of 14
+specific Wikidata properties (`data/wikidata-runtime-rules.json`: P131/
+P159/P17/P276/P749/P361/P355/P463/P527/P101/P921/P176/P50/P137) counted
+at all. Many real metonymic bridges plausibly need two hops (place →
+organization located there → a specific role/output of that
+organization, etc.) that this configuration could never reach even in
+principle, regardless of how good the frontend's tree-building or the
+knowledge base's lexical coverage ever gets.
+
+**Bumped `max_bridge_depth` from 1 to 2** in
+`data/contextual-language-rules.json` -- a single, reversible data value
+(no code, grammar, or Haskell logic changed; confirmed no test anywhere
+depends on the specific value 1). A real, direct experiment following
+from what was just measured, not a guess: if the dominant cause really
+is depth, `empty_fiber_reason_counts`'s "graph-related" share should
+drop measurably on the next real run; if it stays at (or near) 100%
+even at depth 2, that would instead point at the 14-relation whitelist
+or the live snapshot's own edge coverage as the real bottleneck --
+either way, decisive, not another guess. Full local suite: same
+pre-existing baseline (2 failures/13 errors/8 skipped) confirmed
+unaffected.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user for
+one more real `contextual-tower-evaluation.yml` run -- watch
+`empty_fiber_reason_counts` (did "graph-related" drop?), `tree_available_
+recall` (did it move at all?), and note that deeper graph traversal is a
+real, if likely modest, added computational cost for the engine's own
+`outgoingPaths`/`incomingPaths` search (branching-factor-to-the-depth),
+worth keeping an eye on run time even though nothing here suggests it
+would be prohibitive at depth 2.
