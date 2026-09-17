@@ -2857,3 +2857,51 @@ separate question -- whether to build real `"conj"`-coordination
 handling into `classify_word` -- is a bigger design decision left for
 its own round, per the user's own explicit choice to do the narrow, safe
 fix first.
+
+## Confirmed, then closed: `target-deprel-conj`
+
+The (this time verified-current, via the run's own `head_sha`) real run
+confirmed the subtype fix cleanly: WiMCor's `no-governing-verb:target-
+deprel-nmod:unmarked` (5) moved to `literal_prediction_reasons`'s
+`nested-modifier-unsupported:nmod:unmarked` exactly; ConMeC's `nmod:desc`
+did the same, and `obl:agent`/`obl:unmarked` correctly resolved into the
+oblique branch -- some straight to a precise `no-governing-verb:no-case-
+word` (they have no preposition word at all), confirming the fix works
+exactly as designed rather than just moving the label around. Both
+corpora still showed zero real `"stanza"` tree_source successes.
+`target-deprel-conj` held steady at 27 (WiMCor)/2 (ConMeC) -- a
+deterministic property of the UD parse, not sampling noise -- now ~82%
+of WiMCor's remaining `no-governing-verb`.
+
+Implemented directly on the user's "давай": a target whose own UD
+deprel is `"conj"` is a coordinated conjunct ("Napoleon and **Waterloo**
+announced a treaty") -- UD's own coordination semantics mean it shares
+its first conjunct's syntactic role, so `classify_word` now walks the
+`"conj"` chain to the true first conjunct (new `_first_conjunct`,
+mirroring `build_gf_tree_from_dependencies.py`'s own
+`_shared_subject_from_conjunct` -- for "A, B, and C", UD may attach
+every later conjunct directly to A, or chain them one to the next;
+either shape resolves to A) and recurses `classify_word` on it,
+propagating *whatever* that word's own classification turns out to be
+(`direct-argument`, `nested-modifier`, even another `no-governing-verb`
+case) rather than only handling the clause-argument case. Recursion
+terminates by construction (`_first_conjunct`'s own loop only stops on
+a non-`"conj"` deprel, so the recursive call can never re-enter this
+branch). A dangling `"conj"` chain (malformed UD graph, not expected in
+practice) degrades to a new, distinct `no-governing-verb:conj-chain-
+broken` rather than crashing.
+
+Tests: 4 new `ClassifyWordTests` -- a coordinated subject, a chained
+three-way coordinated object (exercising the multi-hop walk), a
+coordinated *nested modifier* (confirming the recursion propagates a
+non-direct-argument classification correctly, not just the common
+case), and the defensive broken-chain case. Full local suite: same
+pre-existing baseline (2 failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user to
+re-run `contextual-tower-evaluation.yml` -- expect WiMCor's own
+`no-governing-verb:target-deprel-conj` (27) to convert substantially
+into real `direct-argument` rows, which should (for the first time in
+many rounds) move `root-lemma-mismatch:no-governing-start` and, more
+importantly, finally test whether any of these newly-`direct-argument`
+rows produce a real `tree_source="stanza"` success.

@@ -64,19 +64,27 @@ specific nested-modifier shape actually dominates instead of one
 undifferentiated count.
 
 ``"no-governing-verb"`` (see ``classify_word``/``_no_governing_verb``)
-always carries one of two closed-vocabulary ``:<reason>`` suffixes for
-the same reason: ``:head-upos-<UPOS>`` (or ``:no-head``) when the
+always carries one of a closed-vocabulary set of ``:<reason>`` suffixes
+for the same reason: ``:head-upos-<UPOS>`` (or ``:no-head``) when the
 target's own deprel *was* one of the checked clause-argument relations
 but its UD head wasn't a usable governor, or ``:no-case-word`` (an
 oblique with a verbal head but no preposition attached at all), or
+``:conj-chain-broken`` (a dangling "conj" chain, defensive only), or
 ``:target-deprel-<deprel>`` when the target's own deprel isn't in any
-checked relation set to begin with (e.g. ``"conj"``, ``"xcomp"``). Added
-after a real corpus run found this status the dominant cause behind
+checked relation set to begin with (e.g. ``"xcomp"``, ``"ccomp"``,
+``"advcl"`` -- a coordinated target, deprel ``"conj"``, is instead
+classified against whichever role its first conjunct shares with it;
+see ``classify_word``'s own ``"conj"`` branch). Added after a real
+corpus run found this status the dominant cause behind
 ``build_gf_tree_decline_reason``'s own ``root-lemma-mismatch:no-
 governing-start`` -- ``resolve_action`` falls back to its own
 (unreliable) positional heuristic whenever ``dep_status`` isn't
 ``"direct-argument"``/``"copula-argument"``, and undifferentiated
-``"no-governing-verb"`` was by far the largest such case.
+``"no-governing-verb"`` was by far the largest such case; a follow-up
+round found ``:target-deprel-conj`` alone was ~82% of what remained in
+WiMCor after fixing the ``nmod:*``/``obl:*`` subtype gap, which is what
+prompted resolving coordinated targets properly instead of leaving them
+in the catch-all.
 
 ``voice`` is ``"passive"`` only for a passive subject (UD ``nsubj:pass``,
 correctly reported as ``hole_role="Object"`` -- it is semantically the
@@ -210,6 +218,27 @@ def _no_governing_verb(head: Any) -> ClassifyResult:
     """
     suffix = "no-head" if head is None else f"head-upos-{head.upos}"
     return (f"no-governing-verb:{suffix}", "", "", None, None, "active", "")
+
+
+def _first_conjunct(by_id: dict[int, Any], word: Any) -> Any | None:
+    """Walk a UD "conj" chain up to the true first conjunct -- for
+    "A, B, and C", UD may attach B and C both directly as "conj" of A,
+    or chain C as "conj" of B; either shape resolves to A here (the
+    first word whose own deprel is NOT itself "conj"). Mirrors
+    build_gf_tree_from_dependencies.py's own _shared_subject_from_conjunct
+    exactly, just for classify_word's different purpose below (classifying
+    the *target* itself when it is a coordinated conjunct, not borrowing a
+    governing verb's subject for tree-building). Returns None on a
+    dangling "head" reference (defensive only -- a well-formed UD graph
+    always terminates this walk).
+    """
+    current = word
+    while current.deprel == "conj":
+        head = by_id.get(current.head) if current.head else None
+        if head is None:
+            return None
+        current = head
+    return current
 
 
 def classify_word(sentence: Any, word: Any) -> ClassifyResult:
@@ -355,11 +384,30 @@ def classify_word(sentence: Any, word: Any) -> ClassifyResult:
         # argument" thing this branch already declines for.
         return ("nested-modifier", "", "", None, None, "active", word.deprel)
 
+    if word.deprel == "conj":
+        # Target itself is a coordinated conjunct ("Napoleon and
+        # Waterloo announced a treaty", target="Waterloo") -- UD's own
+        # "conj" relation means coordinated elements share their first
+        # conjunct's syntactic role, so classify against that shared
+        # role (whatever it turns out to be -- direct-argument, nested-
+        # modifier, another "no-governing-verb" case, ...) instead of
+        # falling through to the undifferentiated catch-all below. A
+        # real corpus run found this the single dominant cause of
+        # "no-governing-verb" (27/33 in WiMCor, ~82% of what remained
+        # after the nmod:*/obl:* subtype fix). Recursing into
+        # classify_word on the resolved first conjunct can never loop
+        # (that word's own deprel is, by _first_conjunct's own
+        # construction, never itself "conj").
+        first_conjunct = _first_conjunct(by_id, word)
+        if first_conjunct is None:
+            return ("no-governing-verb:conj-chain-broken", "", "", None, None, "active", "")
+        return classify_word(sentence, first_conjunct)
+
     # The target's own deprel isn't in any checked vocabulary at all
-    # (e.g. "conj", "xcomp", "ccomp", "advcl", "parataxis") -- unlike the
-    # four branches above, the head's own UPOS was never even examined
-    # here, so the *target's* deprel is the discriminating fact, not the
-    # head's.
+    # (e.g. "xcomp", "ccomp", "advcl", "parataxis") -- unlike the four
+    # clause-argument branches above, the head's own UPOS was never even
+    # examined here, so the *target's* deprel is the discriminating
+    # fact, not the head's.
     return (f"no-governing-verb:target-deprel-{word.deprel}", "", "", None, None, "active", "")
 
 

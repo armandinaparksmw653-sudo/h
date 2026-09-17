@@ -167,6 +167,77 @@ class ClassifyWordTests(unittest.TestCase):
             ("no-governing-verb:target-deprel-advmod", "", "", None, None, "active", ""),
         )
 
+    def test_a_coordinated_subject_shares_the_first_conjuncts_role(self) -> None:
+        # "Napoleon and Waterloo announced a treaty" -- target="Waterloo"
+        # (deprel="conj", head=Napoleon) shares Napoleon's own "nsubj"
+        # role, since UD coordination means both conjuncts fill the same
+        # syntactic slot. A real corpus run found this ("target-deprel-
+        # conj") the single dominant cause of "no-governing-verb"
+        # (27/33 in WiMCor, ~82% of what remained after the nmod:*/
+        # obl:* subtype fix).
+        words = [
+            FakeWord(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 3, 0, 8),
+            FakeWord(2, "Waterloo", "Waterloo", "PROPN", "conj", 1, 13, 21),
+            FakeWord(3, "announced", "announce", "VERB", "root", 0, 22, 31),
+            FakeWord(4, "treaty", "treaty", "NOUN", "obj", 3, 34, 40),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[1]),
+            ("direct-argument", "Subject", "announce", 22, 31, "active", ""),
+        )
+
+    def test_a_chained_three_way_coordinated_object_walks_to_the_true_first_conjunct(
+        self,
+    ) -> None:
+        # "Napoleon praised Tolstoy, Waterloo, and Henry" -- target=
+        # "Henry" chains through "Waterloo" (itself a "conj") to reach
+        # "Tolstoy" (the real first conjunct, deprel="obj") -- UD may
+        # attach every later conjunct directly to the first, or chain
+        # them one to the next; this exercises the chained shape.
+        words = [
+            FakeWord(1, "Napoleon", "Napoleon", "PROPN", "nsubj", 2, 0, 8),
+            FakeWord(2, "praised", "praise", "VERB", "root", 0, 9, 16),
+            FakeWord(3, "Tolstoy", "Tolstoy", "PROPN", "obj", 2, 17, 24),
+            FakeWord(4, "Waterloo", "Waterloo", "PROPN", "conj", 3, 26, 34),
+            FakeWord(5, "Henry", "Henry", "PROPN", "conj", 4, 36, 41),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[4]),
+            ("direct-argument", "Object", "praise", 9, 16, "active", ""),
+        )
+
+    def test_a_coordinated_nested_modifier_still_resolves_through_the_conj_chain(
+        self,
+    ) -> None:
+        # Coordination isn't only ever a clause argument -- a conjunct
+        # of a nested modifier must still correctly decline as
+        # "nested-modifier" (propagating whatever the first conjunct's
+        # own classification turns out to be, not just direct-argument).
+        words = [
+            FakeWord(1, "Anna", "Anna", "PROPN", "nsubj", 2, 0, 4),
+            FakeWord(2, "reads", "read", "VERB", "root", 0, 5, 10),
+            FakeWord(3, "Tolstoy", "Tolstoy", "PROPN", "nmod:poss", 5, 11, 18),
+            FakeWord(4, "Turgenev", "Turgenev", "PROPN", "conj", 3, 20, 28),
+            FakeWord(5, "books", "book", "NOUN", "obj", 2, 29, 34),
+        ]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[3]),
+            ("nested-modifier", "", "", None, None, "active", "nmod:poss"),
+        )
+
+    def test_a_broken_conj_chain_is_reported_distinctly(self) -> None:
+        # Defensive only -- a well-formed UD graph never has a "conj"
+        # word whose own head id doesn't exist.
+        words = [FakeWord(1, "Waterloo", "Waterloo", "PROPN", "conj", 99, 0, 8)]
+        sentence = FakeSentence(words)
+        self.assertEqual(
+            classify_word(sentence, words[0]),
+            ("no-governing-verb:conj-chain-broken", "", "", None, None, "active", ""),
+        )
+
     def test_passive_subject_is_the_object_hole_not_the_subject_hole(self) -> None:
         # "Waterloo was captured by Napoleon"
         #  0        11  15       26 29
