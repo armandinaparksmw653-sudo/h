@@ -699,6 +699,48 @@ def literal_reason(inference_row: dict) -> str:
     return f"failed:exit{exit_code}"
 
 
+def empty_fiber_reason(inference_row: dict) -> str:
+    """For an "ok:empty-fiber" row (a real tree built, the tower ran to
+    completion, but the final fiber came back empty), the safe, closed-
+    vocabulary reason why -- the *first* stage (in narrowing order)
+    whose own "survivors" list is already empty, naming that stage's own
+    "constraint" string (run_contextual_corpus.py's line-scan already
+    captures this onto ``inference_row["stages"][i]["constraint"]``).
+
+    Once a stage's survivors reach zero, every later stage only narrows
+    further, so the first empty stage is exactly the elimination point
+    -- the same "first blocker" principle used throughout this module.
+
+    Confirmed safe to aggregate by reading the engine's own renderConstraint
+    directly (engine/app/Main.hs), not assumed: it prints
+    ``show(ConstraintPayload) <> "@" <> anchorLemma(...)`` -- a
+    ConstraintPayload is Requires/RequiresRelation/RequiresSome/Prefers/
+    PrefersRelation/PrefersSome wrapping only a Requirement (composed of
+    Sort, a 46-member closed enum), a Relation (a 19-member closed enum),
+    or an EntityId (a public, stable Wikidata QID, already printed
+    throughout this project's own "survivors="/"obstruction=" lines) --
+    and a single anchor lemma (the same safety class already established
+    for governing_lemma elsewhere). The full sentence-text-carrying
+    LexicalAnchor (surface/start/end) is never rendered, only its own
+    ``anchorLemma`` field, extracted explicitly -- confirmed by reading
+    engine/src/Metonymy/Contextual.hs's LexicalAnchor record directly.
+
+    "no-constraints-derived" when the row has no stages at all (zero
+    constraints were ever derived from the tree -- a structurally
+    different, earlier cause than any one stage's own filter). Falls
+    back to "unrecognized" if every stage somehow shows non-empty
+    survivors despite an empty final fiber (shouldn't happen in
+    practice, degrading gracefully rather than crashing the scorer).
+    """
+    stages = inference_row.get("stages") or []
+    if not stages:
+        return "no-constraints-derived"
+    for stage in stages:
+        if not stage.get("survivors"):
+            return stage.get("constraint") or "unrecognized"
+    return "unrecognized"
+
+
 def fingerprint_failure_text(failure_text: str) -> dict:
     """A safe, content-free fingerprint of a failure text: a short hash
     prefix and a character length, never the text itself.
@@ -764,6 +806,15 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
     tree_available_true_negative = tree_available_false_negative = 0
     missing = 0
     literal_prediction_reasons: Counter[str] = Counter()
+    # Sub-bucket of literal_prediction_reasons's own "ok:empty-fiber" --
+    # which stage's own constraint eliminated the last survivor, for the
+    # rows where a real tree built and the tower ran to completion but
+    # still ended up predicting "literal". A real corpus run found this
+    # the single largest cause of false negatives once a tree exists at
+    # all (56/150 ConMeC in one round), and it had no diagnosis at all
+    # until now -- see empty_fiber_reason's own docstring for why this is
+    # safe to aggregate.
+    empty_fiber_reason_counts: Counter[str] = Counter()
     unrecognized_fingerprints: Counter[tuple[str, int]] = Counter()
     exit7_signal_counts: Counter[str] = Counter(
         {"has_comma": 0, "has_digit": 0, "has_apostrophe": 0}
@@ -819,6 +870,8 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         if predicted == "literal":
             reason = literal_reason(inference_row)
             literal_prediction_reasons[reason] += 1
+            if reason == "ok:empty-fiber":
+                empty_fiber_reason_counts[empty_fiber_reason(inference_row)] += 1
             if reason == "failed:exit1:unrecognized":
                 fingerprint = fingerprint_failure_text(inference_row.get("failure", ""))
                 unrecognized_fingerprints[
@@ -885,6 +938,7 @@ def score(inference_rows: list[dict], gold_rows: list[dict]) -> dict:
         "tree_available_recall": tree_available_recall,
         "tree_available_f1": tree_available_f1,
         "literal_prediction_reasons": dict(sorted(literal_prediction_reasons.items())),
+        "empty_fiber_reason_counts": dict(sorted(empty_fiber_reason_counts.items())),
         "exit7_rows_seen": exit7_rows_seen,
         "exit7_signal_counts": dict(sorted(exit7_signal_counts.items())),
         "exit4_tree_source_counts": dict(sorted(exit4_tree_source_counts.items())),

@@ -3116,3 +3116,63 @@ one more real `contextual-tower-evaluation.yml` run -- this time
 recall`/`tree_available_f1` will reflect only rows where a tree
 genuinely reached the tower, giving the real number the paper's formal-
 verification claim needs.
+
+## Diagnosing `ok:empty-fiber`: which layer actually kills real, tree-available sentences
+
+With the two true/false-positive counts (guaranteed unaffected by the
+`tree_available` bug, since a positive prediction structurally requires
+a real tree and a non-empty final fiber either way) already in hand from
+the last real run, the picture was: WiMCor 1 correct / 3 wrong among
+rows where the tower reached a positive verdict at all; ConMeC 0 correct
+/ 2 wrong. Small samples, but `ok:empty-fiber` (`literal_reason`'s own
+bucket for "a real tree built, the tower ran to completion, but the
+final fiber came back empty") had shown up as large as 56/150 in one
+ConMeC round -- by far the single biggest source of false negatives
+among tree-available rows, with zero diagnosis of *why* until now.
+
+**New `empty_fiber_reason(inference_row)`**
+(`scripts/evaluation/score_contextual_detection.py`): for an
+`ok:empty-fiber` row, names the *first* stage (in narrowing order)
+whose own `"survivors"` list is already empty -- once a stage's
+survivors reach zero every later stage can only narrow further, so the
+first empty one is exactly the elimination point, the same "first
+blocker" principle this whole diagnostic effort has used throughout.
+`"no-constraints-derived"` for the (structurally earlier, different)
+case where the row has zero stages at all -- the tree produced no
+derivable constraints whatsoever, not that some specific constraint
+filtered everyone out.
+
+Confirmed safe to aggregate by reading the engine's own rendering
+directly, not assumed: `engine/app/Main.hs`'s `renderConstraint` prints
+`show(ConstraintPayload) <> "@" <> anchorLemma(...)` -- never the full
+`LexicalAnchor` record (`engine/src/Metonymy/Contextual.hs`), which
+*does* carry the sentence's own `anchorSurface`/`anchorStart`/
+`anchorEnd` but is deliberately never shown as a whole, only its own
+`anchorLemma` field extracted explicitly. `ConstraintPayload`
+(`Requires`/`RequiresRelation`/`RequiresSome`/`Prefers`/
+`PrefersRelation`/`PrefersSome`) only ever wraps a `Requirement`
+(composed of `Sort`, a 46-member closed enum), a `Relation` (a
+19-member closed enum), or an `EntityId` (a public, stable Wikidata
+QID, already printed throughout this project's own
+`survivors=`/`obstruction=` lines) -- confirmed by reading
+`engine/src/Metonymy/Types.hs` directly. No Haskell changes were needed
+at all: the engine already prints this safely on every stage line;
+`run_contextual_corpus.py`'s existing line-scan already captures it
+onto each row's own `stages[i]["constraint"]`.
+
+New report field: `empty_fiber_reason_counts`, aggregated the same way
+as every other Counter in `score()`. Tests: `EmptyFiberReasonTests` (4
+cases, including the two structurally distinct "no stages at all" vs
+"a specific stage's own constraint" causes) plus one new `ScoreTests`
+integration case. Full local suite: same pre-existing baseline (2
+failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user for
+one more real `contextual-tower-evaluation.yml` run (the same one that
+will also give the corrected `tree_available_*` numbers) --
+`empty_fiber_reason_counts` should finally reveal whether one dominant
+`Requirement`/`Sort` (a knowledge-base coverage gap) or one dominant
+`Relation` (an entity-linking/bridging gap) accounts for most of the
+`ok:empty-fiber` false negatives, or whether it is a long, spread-out
+tail -- either way, the first real, measured answer to "why does the
+tower say literal even when it got a real tree to work with".

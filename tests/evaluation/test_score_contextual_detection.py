@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "evaluation"))
 import json  # noqa: E402
 
 from score_contextual_detection import (  # noqa: E402
+    empty_fiber_reason,
     exit1_suffixed_token,
     exit4_reason_bucket,
     exit4_suffixed_token,
@@ -1089,6 +1090,40 @@ class Exit7GfSentenceSignalsTests(unittest.TestCase):
         self.assertIsNone(exit7_gf_sentence_signals("not valid json"))
 
 
+class EmptyFiberReasonTests(unittest.TestCase):
+    def test_names_the_first_stage_whose_survivors_are_already_empty(self) -> None:
+        row = {
+            "status": "ok",
+            "fiber": [],
+            "stages": [
+                {"index": 0, "constraint": "Requires (HasSort Human)@announce", "survivors": ["Q1"]},
+                {"index": 1, "constraint": "Requires (HasSort Writer)@announce", "survivors": []},
+                {"index": 2, "constraint": "Requires (HasSort Agent)@announce", "survivors": []},
+            ],
+        }
+        self.assertEqual(
+            empty_fiber_reason(row), "Requires (HasSort Writer)@announce"
+        )
+
+    def test_no_stages_at_all_is_no_constraints_derived(self) -> None:
+        row = {"status": "ok", "fiber": [], "stages": []}
+        self.assertEqual(empty_fiber_reason(row), "no-constraints-derived")
+
+    def test_missing_stages_key_is_no_constraints_derived(self) -> None:
+        row = {"status": "ok", "fiber": []}
+        self.assertEqual(empty_fiber_reason(row), "no-constraints-derived")
+
+    def test_every_stage_non_empty_is_unrecognized_not_a_crash(self) -> None:
+        # Defensive only -- shouldn't happen in practice (an empty final
+        # fiber with every recorded stage showing survivors).
+        row = {
+            "status": "ok",
+            "fiber": [],
+            "stages": [{"index": 0, "constraint": "Requires (HasSort Human)@x", "survivors": ["Q1"]}],
+        }
+        self.assertEqual(empty_fiber_reason(row), "unrecognized")
+
+
 class ScoreTests(unittest.TestCase):
     def test_true_positive_true_negative_false_positive_false_negative(self) -> None:
         inference = [
@@ -1333,6 +1368,39 @@ class ScoreTests(unittest.TestCase):
         report = score(inference, gold)
         self.assertEqual(
             report["exit4_tree_source_counts"], {"gf-parser": 2, "stanza": 1}
+        )
+
+    def test_empty_fiber_reason_counts_aggregate_across_ok_empty_fiber_rows(
+        self,
+    ) -> None:
+        def empty_fiber_row(id_: str, stages: list[dict]) -> dict:
+            row = ok_row(id_, [])
+            row["stages"] = stages
+            return row
+
+        inference = [
+            empty_fiber_row(
+                "a",
+                [{"index": 0, "constraint": "Requires (HasSort Human)@x", "survivors": []}],
+            ),
+            empty_fiber_row(
+                "b",
+                [{"index": 0, "constraint": "Requires (HasSort Human)@x", "survivors": []}],
+            ),
+            empty_fiber_row("c", []),
+            # A non-empty-fiber row (true positive) must not contribute.
+            ok_row("d", ["Q1"]),
+        ]
+        gold = [
+            {"id": "a", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "b", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "c", "gold_label": "literal", "gold_bridge_family": None},
+            {"id": "d", "gold_label": "metonymic", "gold_bridge_family": "x"},
+        ]
+        report = score(inference, gold)
+        self.assertEqual(
+            report["empty_fiber_reason_counts"],
+            {"Requires (HasSort Human)@x": 2, "no-constraints-derived": 1},
         )
 
     def test_tree_source_counts_aggregate_across_every_outcome_not_just_exit4(
