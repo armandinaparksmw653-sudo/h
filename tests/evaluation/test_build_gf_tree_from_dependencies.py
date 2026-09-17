@@ -869,7 +869,7 @@ class GoverningStartTests(unittest.TestCase):
         functions = {**GF_FUNCTIONS, "fall": "CTX_fall"}
         self.assertEqual(
             build_gf_tree_decline_reason(words, "fall", functions, governing_start=28),
-            "object-count",
+            "object-count:zero",
         )
 
     def test_a_reported_speech_wrapper_with_a_transitive_local_clause_succeeds(self) -> None:
@@ -1031,7 +1031,7 @@ class GoverningStartTests(unittest.TestCase):
             build_gf_tree_decline_reason(
                 words, "announce", GF_FUNCTIONS, governing_start=33
             ),
-            "embedded-leftover-words",
+            "embedded-leftover-words:advmod",
         )
 
     def test_target_is_the_object_of_an_implicit_subject_relative_clause(self) -> None:
@@ -1124,7 +1124,7 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "county", GF_FUNCTIONS),
-            "root-not-verb",
+            "root-not-verb:NOUN",
         )
 
     def test_root_lemma_mismatch(self) -> None:
@@ -1195,7 +1195,7 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
-            "object-count",
+            "object-count:zero",
         )
 
     def test_np_unsupported_upos(self) -> None:
@@ -1209,7 +1209,7 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
-            "np-unsupported-upos",
+            "np-unsupported-upos:NUM",
         )
 
     def test_pronoun_unrecognized(self) -> None:
@@ -1245,7 +1245,7 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
-            "common-noun-determiner-or-adjective-count",
+            "common-noun-determiner-or-adjective-count:zero-determiners",
         )
 
     def test_common_noun_unrecognized_determiner(self) -> None:
@@ -1257,7 +1257,7 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
-            "common-noun-unrecognized-determiner",
+            "common-noun-unrecognized-determiner:every",
         )
 
     def test_passive_aux_count(self) -> None:
@@ -1360,7 +1360,7 @@ class BuildGfTreeDeclineReasonTests(unittest.TestCase):
         ]
         self.assertEqual(
             build_gf_tree_decline_reason(words, "announce", GF_FUNCTIONS),
-            "leftover-words",
+            "leftover-words:case",
         )
 
 
@@ -1732,11 +1732,14 @@ class EnumerateAllBlockersTests(unittest.TestCase):
         functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
         self.assertEqual(
             build_gf_tree_decline_reason(words, "capture", functions),
-            "common-noun-determiner-or-adjective-count",
+            "common-noun-determiner-or-adjective-count:multiple-adjectives",
         )
         self.assertEqual(
             enumerate_gf_tree_blockers(words, "capture", functions),
-            ["common-noun-determiner-or-adjective-count", "nmod-preposition-unrecognized"],
+            [
+                "common-noun-determiner-or-adjective-count:multiple-adjectives",
+                "nmod-preposition-unrecognized",
+            ],
         )
 
     def test_subject_count_multiplicity_is_ablated(self) -> None:
@@ -1768,7 +1771,8 @@ class EnumerateAllBlockersTests(unittest.TestCase):
         ]
         functions = {**GF_FUNCTIONS, "capture": "CTX_capture"}
         self.assertEqual(
-            enumerate_gf_tree_blockers(words, "capture", functions), ["object-count"]
+            enumerate_gf_tree_blockers(words, "capture", functions),
+            ["object-count:multiple"],
         )
 
     def test_passive_agent_count_multiplicity_is_ablated(self) -> None:
@@ -1810,7 +1814,7 @@ class EnumerateAllBlockersTests(unittest.TestCase):
         ]
         self.assertEqual(
             enumerate_gf_tree_blockers(words, "announce", GF_FUNCTIONS),
-            ["common-noun-unrecognized-determiner"],
+            ["common-noun-unrecognized-determiner:every"],
         )
 
     def test_proper_noun_chain_too_long_is_truncated(self) -> None:

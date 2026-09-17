@@ -230,12 +230,19 @@ def _np_from_common_noun(
 ) -> str:
     determiners = _children_with_deprel(words, noun["id"], "det")
     adjectives = _children_with_deprel(words, noun["id"], "amod")
-    if len(determiners) != 1 or len(adjectives) > 1:
-        # No determiner at all, or more than one of either -- not
-        # confident enough to guess a shape (OpenIndefCN/OpenDefCN/
-        # OpenAdjIndefCN/OpenAdjDefCN each take exactly one determiner-
-        # implied article and at most one adjective).
-        raise _Bail("common-noun-determiner-or-adjective-count")
+    # Not confident enough to guess a shape (OpenIndefCN/OpenDefCN/
+    # OpenAdjIndefCN/OpenAdjDefCN each take exactly one determiner-
+    # implied article and at most one adjective) -- suffixed by which of
+    # the three distinct causes fired (a real corpus run found this the
+    # second-largest decline_reason bucket, with no way to tell whether
+    # a bare noun with no article at all, 2+ determiners, or 2+
+    # adjectives actually dominated).
+    if len(determiners) == 0:
+        raise _Bail("common-noun-determiner-or-adjective-count:zero-determiners")
+    if len(determiners) > 1:
+        raise _Bail("common-noun-determiner-or-adjective-count:multiple-determiners")
+    if len(adjectives) > 1:
+        raise _Bail("common-noun-determiner-or-adjective-count:multiple-adjectives")
     determiner = determiners[0]
     det_lemma = determiner["lemma"].casefold()
     if det_lemma in _DEFINITE_DETERMINERS:
@@ -243,7 +250,11 @@ def _np_from_common_noun(
     elif det_lemma in _INDEFINITE_DETERMINERS:
         is_definite = False
     else:
-        raise _Bail("common-noun-unrecognized-determiner")
+        # The determiner's own lemma -- a small closed vocabulary of
+        # English function words (this/that/some/every/...), the same
+        # safety class as governing_lemma elsewhere -- names exactly
+        # which determiner to add support for next.
+        raise _Bail(f"common-noun-unrecognized-determiner:{det_lemma}")
     accounted.add(determiner["id"])
     accounted.add(noun["id"])
     noun_text = _quote(noun["text"])
@@ -285,8 +296,9 @@ def _np_base(
     if head["upos"] == "NOUN":
         return _np_from_common_noun(words, head, accounted)
     # Anything else this module doesn't build an NP from at all -- NUM,
-    # ADJ used substantively, a bare DET, etc.
-    raise _Bail("np-unsupported-upos")
+    # ADJ used substantively, a bare DET, etc. -- suffixed by the head's
+    # own UPOS to say which.
+    raise _Bail(f"np-unsupported-upos:{head['upos']}")
 
 
 def _np(
@@ -355,11 +367,13 @@ def _object_np(
     objects = _children_with_deprel(words, verb_id, "obj") + _children_with_deprel(
         words, verb_id, "iobj"
     )
-    if len(objects) != 1:
+    if len(objects) == 0:
         # grammar/Metonymy.gf has no intransitive VP (Compl/PassCompl
         # both require an object NP) -- an object-less clause is out of
         # scope for the whole grammar today, not just this module.
-        raise _Bail("object-count")
+        raise _Bail("object-count:zero")
+    if len(objects) > 1:
+        raise _Bail("object-count:multiple")
     return _np(words, objects[0], accounted, gf_function_by_lemma)
 
 
@@ -559,6 +573,23 @@ def _subtree_ids(words: list[dict[str, Any]], root_id: int) -> set[int]:
                 ids.add(child["id"])
                 frontier.append(child["id"])
     return ids
+
+
+def _leftover_reason(words: list[dict[str, Any]], leftover: set[int], prefix: str) -> str:
+    """Suffixes ``prefix`` ("leftover-words"/"embedded-leftover-words")
+    with the UD deprel of the earliest-starting (by start_char) leftover
+    word -- not a full audit of everything left over, just enough to
+    tell which kind of unaccounted content actually dominates real
+    corpus data before guessing a fix, the same "first blocker"
+    principle every other multi-cause _Bail site in this module already
+    follows. Real UD deprels only (a small, closed vocabulary), never
+    sentence text.
+    """
+    earliest = min(
+        (word for word in words if word["id"] in leftover),
+        key=lambda word: word["start_char"],
+    )
+    return f"{prefix}:{earliest['deprel']}"
 
 
 def _implicit_subject_relative_clause_np(
@@ -888,9 +919,9 @@ def _build_gf_tree_inner(
                 word["id"] for word in words if word["deprel"] != "punct"
             } - accounted
             if leftover:
-                raise _Bail("leftover-words")
+                raise _Bail(_leftover_reason(words, leftover, "leftover-words"))
             return _strip_outer_parens(tree)
-        raise _Bail("root-not-verb")
+        raise _Bail(f"root-not-verb:{root['upos']}")
 
     if governing_start is not None:
         governing_word = _word_by_governing_start(words, governing_start)
@@ -948,7 +979,7 @@ def _build_gf_tree_inner(
                 if word["id"] in subtree_ids and word["deprel"] != "punct"
             } - accounted
             if leftover:
-                raise _Bail("embedded-leftover-words")
+                raise _Bail(_leftover_reason(words, leftover, "embedded-leftover-words"))
             return _strip_outer_parens(tree)
 
     accounted: set[int] = set()
@@ -992,7 +1023,7 @@ def _build_gf_tree_inner(
         )
     leftover = {word["id"] for word in words if word["deprel"] != "punct"} - accounted
     if leftover:
-        raise _Bail("leftover-words")
+        raise _Bail(_leftover_reason(words, leftover, "leftover-words"))
     return _strip_outer_parens(tree)
 
 

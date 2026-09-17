@@ -2905,3 +2905,77 @@ into real `direct-argument` rows, which should (for the first time in
 many rounds) move `root-lemma-mismatch:no-governing-start` and, more
 importantly, finally test whether any of these newly-`direct-argument`
 rows produce a real `tree_source="stanza"` success.
+
+## The `conj` fix confirmed, and the bottleneck moves inside the tree-builder itself
+
+The real run confirmed the `conj`-coordination fix cleanly:
+`no-governing-verb:target-deprel-conj` is gone from `dep_status_counts`
+in both corpora, `root-lemma-mismatch:no-governing-start` collapsed
+further (WiMCor 30→7, ConMeC 17→12 across the whole chain of
+`annotate_dependency_hints.py` fixes), and WiMCor's own
+`nested-modifier-unsupported:nmod` grew (45→61) -- a real, correct side
+effect: some `conj`-coordinated targets turned out to be coordinated
+*nested modifiers*, not clause arguments, and now honestly decline via
+the already-safe path instead of risking a wrong positional guess.
+
+But `tree_source_counts` still showed **zero** real `"stanza"`
+successes in either corpus, and `blockers_per_sentence_histogram`'s own
+"0" bucket was found to exactly equal `not-applicable` in both -- not
+one sentence that actually reaches `build_gf_tree_from_dependencies.py`
+builds cleanly. The bottleneck had fully moved from
+`annotate_dependency_hints.py` (now well-diagnosed and substantially
+fixed) into the tree-builder's own `decline_reason_counts`: `leftover-
+words` (16/27), `common-noun-determiner-or-adjective-count` (11/24),
+`object-count` (5/7), `root-not-verb` (6/6) -- all still single,
+undifferentiated reason codes.
+
+Per the user's request to "globally" work through the remaining
+blockers rather than one CI round per bucket, this round applied the
+exact same proven technique (suffix with closed-vocabulary UD
+information -- deprel/UPOS/lemma -- before guessing a fix) to every one
+of those buckets at once, all purely diagnostic (no change to which
+sentences succeed or decline, only to the string naming why):
+
+- `common-noun-determiner-or-adjective-count` split into
+  `:zero-determiners` / `:multiple-determiners` / `:multiple-adjectives`
+  (previously one undifferentiated code covering three structurally
+  different causes).
+- `common-noun-unrecognized-determiner` now carries the determiner's
+  own lemma (`:every`, `:this`, ...) -- a small closed vocabulary of
+  English function words, the same safety class as `governing_lemma`
+  elsewhere.
+- `np-unsupported-upos` now carries the head word's own UPOS
+  (`:NUM`, `:ADJ`, ...).
+- `object-count` split into `:zero` / `:multiple`.
+- `root-not-verb` now carries the root word's own UPOS.
+- `leftover-words`/`embedded-leftover-words` -- the largest, most
+  opaque bucket, previously deferred as needing a deeper refactor to
+  expose `_build_gf_tree_inner`'s internal `accounted` set -- turned
+  out to need no such refactor: each of the three raise sites already
+  computes its own local `leftover` set right before bailing. New
+  `_leftover_reason(words, leftover, prefix)` picks the UD deprel of
+  the *earliest-starting* leftover word (the same "first blocker"
+  principle used everywhere else in this module, not a full audit) and
+  suffixes with it.
+
+Confirmed safe without touching `enumerate_gf_tree_blockers` at all:
+its own `_GROUP_ABLATIONS` dispatch already keys off `bail.reason.
+split(":", 1)[0]` (the prefix only), so every one of these newly-
+suffixed reasons still routes to exactly the same ablation (or stays
+correctly terminal) as before -- confirmed by re-running the full
+`EnumerateAllBlockersTests` suite unmodified in logic, only in expected
+literal reason strings.
+
+Tests: ~10 existing `test_build_gf_tree_from_dependencies.py` assertions
+updated to the new suffixed values (each traced by hand against its
+own fixture, not guessed). Full local suite: same pre-existing baseline
+(2 failures/13 errors/8 skipped), no regressions.
+
+**Next step**: commit, push, wait for `ci.yml`, then ask the user for
+one more real `contextual-tower-evaluation.yml` run -- this one round
+should reveal, simultaneously, which UPOS actually dominates
+`root-not-verb`/`np-unsupported-upos`, the real 0-vs-2+ split for
+`object-count`/`common-noun-determiner-or-adjective-count`, and --
+decisively -- which UD deprel actually dominates `leftover-words`/
+`embedded-leftover-words`, the single largest bucket that has stayed
+completely opaque since the very start of this diagnostic effort.
