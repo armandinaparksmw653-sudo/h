@@ -1,2 +1,9 @@
 {"id": "wimcor-decode:pomona", "gold_families": ["location-for-institution"], "gold_qids": ["Q7227384"]}
 {"id": "wimcor-decode:leicester", "gold_families": ["location-for-institution"], "gold_qids": ["Q1333399"]}
+{"id": "wimcor-decode:elon", "gold_families": ["location-for-institution"], "gold_qids": ["Q4568893"]}
+{"id": "wimcor-decode:amherst", "gold_families": ["location-for-institution"], "gold_qids": ["Q49165"]}
+{"id": "wimcor-decode:tartu", "gold_families": ["location-for-institution"], "gold_qids": ["Q204181"]}
+{"id": "wimcor-decode:stirling", "gold_families": ["location-for-institution"], "gold_qids": ["Q963530"]}
+{"id": "wimcor-decode:valparaiso", "gold_families": ["location-for-institution"], "gold_qids": ["Q186047"]}
+{"id": "wimcor-decode:haifa", "gold_families": ["location-for-institution"], "gold_qids": ["Q591115"]}
+{"id": "wimcor-decode:princeton", "gold_families": ["location-for-institution"], "gold_qids": ["Q21578"]}
