@@ -146,7 +146,16 @@ finishContraction snapshot relations maxDepth context target stages = do
       | otherwise ->
           Left ("explicit-target-missing-at-stage-" <> show (head indexes))
   if not (generic || uniqueEntity)
-    then Left "unsafe-contextual-contraction-non-singleton-fiber"
+    then
+      -- finalTargets are public, stable Wikidata QIDs -- the same safety
+      -- class already printed unconditionally throughout this project
+      -- (survivors=/obstruction=/etc), never sentence text -- included
+      -- here so a real corpus/fixture run can actually see *which*
+      -- entities made the fiber ambiguous instead of only knowing that
+      -- it was (a real diagnostic gap found investigating the
+      -- max_bridge_depth experiment: this reason string alone gave no
+      -- way to tell a genuine new ambiguity from a bug).
+      Left ("unsafe-contextual-contraction-non-singleton-fiber:" <> show finalTargets)
     else Right ()
   if not reverseBridge
     then Left "no-reverse-bridge-to-source"

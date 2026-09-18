@@ -1123,8 +1123,9 @@ main = do
         1
         waterlooContext
         (EntityId "Q1049470") of
-    Left "unsafe-contextual-contraction-non-singleton-fiber" ->
-      assert "ambiguous Waterloo contraction is rejected" True
+    Left message
+      | "unsafe-contextual-contraction-non-singleton-fiber" `isPrefixOf` message ->
+          assert "ambiguous Waterloo contraction is rejected" True
     other -> do
       putStrLn ("FAIL: expected unsafe Waterloo contraction, got " <> show other)
       exitFailure
