@@ -547,12 +547,21 @@ def tokenize_gf(tree: str) -> list[str]:
 
 # GF constructor names this grammar itself defines (grammar/Metonymy.gf's
 # `fun` declarations), never sentence text -- unlike ARITIES, these
-# genuinely take zero arguments (HePN/ShePN/ItPN/TheyPN), so their
-# absence from ARITIES (which only lists arity>=1 constructors, relying
-# on ARITIES.get(token, 0) for everything else) is expected, not a sign
-# of a missing entry the way any other unrecognized constructor-shaped
-# token is.
-_KNOWN_ZERO_ARITY_CONSTRUCTORS = {"HePN", "ShePN", "ItPN", "TheyPN"}
+# genuinely take zero arguments (HePN/ShePN/ItPN/TheyPN, and
+# IPN/WePN/YouPN added alongside them for first/second-person pronouns),
+# so their absence from ARITIES (which only lists arity>=1 constructors,
+# relying on ARITIES.get(token, 0) for everything else) is expected, not
+# a sign of a missing entry the way any other unrecognized
+# constructor-shaped token is.
+_KNOWN_ZERO_ARITY_CONSTRUCTORS = {
+    "HePN",
+    "ShePN",
+    "ItPN",
+    "TheyPN",
+    "IPN",
+    "WePN",
+    "YouPN",
+}
 
 
 def _unrecognized_constructors(tokens: list[str]) -> list[str]:

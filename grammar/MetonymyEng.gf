@@ -235,6 +235,10 @@ concrete MetonymyEng of Metonymy =
     ItPN = mkNP it_Pron ;
     TheyPN = mkNP they_Pron ;
 
+    IPN = mkNP i_Pron ;
+    WePN = mkNP we_Pron ;
+    YouPN = mkNP youSg_Pron ;
+
     Anna = mkNP (mkPN "Anna") ;
     Alice = mkNP (mkPN "Alice") ;
     Bob = mkNP (mkPN "Bob") ;

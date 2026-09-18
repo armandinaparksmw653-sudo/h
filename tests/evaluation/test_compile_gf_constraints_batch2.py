@@ -186,7 +186,7 @@ class CompileGfConstraintsParenNPTests(unittest.TestCase):
 
 class CompileGfConstraintsPronounTests(unittest.TestCase):
     def test_pronoun_subjects_walk_safely(self) -> None:
-        for constructor in ("HePN", "ShePN", "ItPN", "TheyPN"):
+        for constructor in ("HePN", "ShePN", "ItPN", "TheyPN", "IPN", "WePN", "YouPN"):
             with self.subTest(constructor=constructor):
                 proposal = base_proposal("He captured a general")
                 proposal["role"] = "SubjectHole"

@@ -123,6 +123,48 @@ abstract Metonymy = {
     ItPN : NP ;
     TheyPN : NP ;
 
+    -- First/second-person pronoun subjects/objects ("I heard...", "we
+    -- signed...", "you attended..."), the same closed-vocabulary RGL
+    -- Pron idiom as HePN/ShePN/ItPN/TheyPN above -- i_Pron/we_Pron/
+    -- youSg_Pron are RGL Structural constants with correct built-in
+    -- person/number agreement (confirmed against a real 2026-09-18
+    -- corpus-curation round: an earlier hand-rolled `OpenPN "I"`
+    -- attempt linearized as the ungrammatical "I hears", because OpenPN
+    -- is hardcoded to third-person-singular agreement regardless of the
+    -- literal string it's given -- Pron-based NPs don't have that bug).
+    -- YouPN covers singular "you" only (youSg_Pron); plural "you" is
+    -- indistinguishable from singular in English surface form and rare
+    -- as a metonymy target, so not covered separately.
+    IPN : NP ;
+    WePN : NP ;
+    YouPN : NP ;
+
+    -- Bare (determiner-less) common noun NP -- deliberately NOT added.
+    -- A real 2026-09-18 corpus-curation round found this would close the
+    -- single largest remaining un-representable structural pattern
+    -- (~21% of otherwise in-scope real WiMCor/ConMeC sentences: "cars",
+    -- "chocolate", bare mass/generic nouns) -- but a first attempt
+    -- (`BareSingularCN`/`BarePluralCN : String -> NP`, splicing the noun
+    -- in with no fixed anchor word at all, unlike OpenIndefCN/OpenDefCN/
+    -- EveryCN which always prepend "a"/"the"/"every") was confirmed via
+    -- local `gf.exe -run` against this project's own
+    -- test_gf_parse_diagnostic_matrix.py regression sentences to blow up
+    -- GF's raw-text parse ambiguity combinatorially (e.g. "Waterloo
+    -- announces a general in Hitchin of Hertfordshire" went from a
+    -- handful of derivations to 96, and two previously-clean parses
+    -- broke outright: "The parser failed at token 7/6"). This only
+    -- risks the legacy gf-parser tier's *recall* (a wrong first
+    -- candidate degrades to abstain/exit4, same as any other malformed
+    -- proposer output) -- Agda's runtimeCheck re-verifies every
+    -- candidate regardless of source, so this can never turn into an
+    -- incorrect accepted detection -- but the legacy tier is currently
+    -- the *dominant* source of real successes in contextual-tower-
+    -- evaluation.yml runs, so degrading it isn't free either. Reverted
+    -- pending a design that doesn't add an unanchored String NP to the
+    -- shared parse-and-linearize PGF (e.g. only reachable from the
+    -- Stanza/hand-built tree-construction path, which never calls GF's
+    -- own parser at all) -- see docs/contextual-tower.md.
+
     Anna : NP ;
     Alice : NP ;
     Bob : NP ;

@@ -3378,3 +3378,181 @@ that failure and update the checked-in summary JSON to match, the same
 this round. Once fully green, ask the user for the real
 `contextual-tower-evaluation.yml` run this entire investigation has
 been building toward.
+
+## Real recall stays 0.0 even with the depth-2 fix; the real bottleneck is upstream of tree-building
+
+The `max_bridge_depth=2` round above landed and went fully green (commit
+`0e2821a`, `ci.yml` run `35295328187`). The real
+`contextual-tower-evaluation.yml` run that motivated the whole
+investigation (150/150 sample, both Haskell self-reference fixes
+applied) then came back: **recall=0.0, precision=0.0, TP=0 on both
+WiMCor and ConMeC** -- unchanged from before this depth experiment.
+`tree_source_counts` contains no `"stanza"` key at all in either
+corpus -- every tree that did get built came from the legacy
+`gf-parser` tier or the LLM tier, never the Stanza-UD tree-builder that
+several seasons' worth of rounds (nmod-modifier NP, passive, copula,
+relative-clause enumeration, embedded-clause dispatch) targeted.
+
+The real, decisive cause is visible in `literal_prediction_reasons`:
+`failed:exit1:nested-modifier-unsupported:nmod` alone is 61/150 (41%)
+in WiMCor. The metonymic target is structurally a modifier of an NP
+("the museum *in Kent*"), not a governing verb's subject/object at
+all -- `resolve_action` rejects these *before* `build_gf_tree` is ever
+called (the long-documented, deliberately-deferred gap: "requires
+widening `engine/src/Metonymy/Elaborator.hs` (`PositiveGFTree`)").
+`blockers_per_sentence_histogram` did resolve an old open question
+though: most sentences that reach the tree-builder now carry 0 or 1
+blocker, not 2+ -- the season's granular sub-bucketing work did
+eliminate compounding where it existed; the remaining gap is
+architectural (nested-modifier targets), not a pile-up of small fixable
+issues.
+
+## Local toolchain unlock: Stanza now runs on this machine, closing the CI round-trip gap
+
+A `python -c "import stanza"` check (previously known to fail here with
+a PyTorch DLL error) succeeded outright on 2026-09-18, and a full
+`stanza.Pipeline('en', processors='tokenize,mwt,pos,lemma,depparse',
+package="ewt")` (after a one-time `stanza.download('en', package="ewt",
+...)`, ~1 minute, no auth needed) produces correct UD output locally.
+Combined with the already-known local `gf.exe`/pinned `gf-rgl` install
+(see the "local GF toolchain" reference), essentially the entire
+frontend -- UD parse, dependency-hint classification, GF tree
+construction, tree well-formedness -- is now iterable in minutes
+locally, not 1-2 hour `contextual-tower-evaluation.yml` CI rounds. Only
+the Haskell engine build and Agda `runtimeCheck` still require CI (no
+local GHC/Agda toolchain).
+
+Caveat found while using this: `scripts/annotate_dependency_hints.py`'s
+own `build_pipeline()` requests the pinned `package="ewt"` model
+specifically (not the generic `"default"`/`"combined"` package a bare
+`stanza.download('en')` fetches) -- download it explicitly
+(`stanza.download('en', package="ewt", processors="tokenize,mwt,pos,
+lemma,depparse")`) before running the script, and do so once,
+sequentially, before launching parallel annotation jobs: two concurrent
+first-time downloads race on writing the same cached model file and one
+of them fails with `PermissionError: os.replace(...)`.
+
+## Hand-curated real-sentence pilot: 22 examples, real yield is very low even in-scope
+
+Given real corpus recall stuck at 0.0 despite the whole season's
+Stanza-frontend investment, explored a different verification path for
+the paper: hand-curate and verify a small set of real WiMCor/ConMeC
+sentences end to end (UD role -> GF tree, verified via local `gf.exe`
+linearize) instead of relying on the automatic frontend's current
+coverage. User-approved scope: only in-scope cases (target is a real
+Subject/Object, not a nested-modifier), published with attribution
+(WiMCor CC BY-SA 3.0, ConMeC Apache-2.0 both permit quotation).
+
+Locally downloaded both corpora (network access confirmed available
+from this environment), ran `annotate_dependency_hints.py` (real local
+Stanza) over a seeded 3000-sentence sample from each corpus (WiMCor took
+84 minutes, ConMeC 28 minutes -- WiMCor's Wikipedia-style sentences are
+longer/more complex on average), then ran `build_gf_tree` locally
+against every `dep_status="direct-argument"` row whose governing lemma
+is in the known action vocabulary:
+
+```
+WiMCor: 1180/3000 direct-argument, 171 with a known lemma, only  4 build cleanly
+ConMeC: 2250/3000 direct-argument, 1875 with a known lemma, only 9 build cleanly (1 dropped for a number-agreement defect)
+```
+
+**~0.2% yield even restricted to structurally in-scope, lexicon-known
+sentences.** Inspecting real near-miss candidates by hand (not
+guessing) found the dominant declines are genuine, unrepresentable
+grammar gaps, not automation shortcuts a human curator could route
+around: bare mass/plural common nouns with zero determiner (largest
+single bucket, ~21% of the in-scope pool -- see the `BareCN` attempt
+below), first/second-person pronouns ("I"/"we"/"you" -- see the
+`IPN`/`WePN`/`YouPn` fix below), and complex embedded-clause/gerund
+coordination on the subject (`subject-count:advcl`/`xcomp` -- real
+examples inspected turned out to be gerund coordination like "filling
+and emptying the fuel tank," not simple "A and B did X," so not a quick
+win).
+
+Hand-extended the pool to 22 total (13 auto-built + 9 hand-written,
+reusing only already-existing grammar constructors -- `EveryCN`,
+`PassCompl0`, and the same String-splicing idiom `OpenPN`/`OpenIndefCN`
+already use, e.g. folding a UD `compound` child directly into the noun
+literal: `EveryCN "milk carton" "milk cartons"` linearizes correctly as
+"every milk carton" since GF's String category has no problem holding
+multiple words when constructed directly rather than parsed from raw
+text). Every one of the 22 trees was verified via local `gf.exe -run`
+linearize, not just eyeballed. Gold-label balance in the resulting 22
+is skewed (16 literal / 6 metonymic) -- traced to the hand-curation
+step specifically, not the corpus: the 13 auto-built examples alone are
+6 metonymic / 7 literal (a healthy, representative split), but the 9
+hand-added ones were picked by "which near-miss is easiest to fix" with
+no gold-label filter at all, and happened to land on 9/9 literal by
+chance. Not yet wired into an evaluation harness or pushed -- exists
+only in this local investigation as of this writing
+(`build/local-curation/pilot-curated.jsonl`, gitignored).
+
+## `IPN`/`WePN`/`YouPN` landed; `BareSingularCN`/`BarePluralCN` attempted and reverted -- a real parse-ambiguity finding, not a formal-correctness risk
+
+Motivated directly by the pilot above, attempted two grammar extensions
+in the same round: first/second-person pronouns, and bare
+(determiner-less) common-noun NPs for the ~21%-of-in-scope
+`zero-determiners` bucket.
+
+**`IPN`/`WePN`/`YouPN` : NP** -- landed. Exact same idiom as the
+existing `HePN`/`ShePN`/`ItPN`/`TheyPN` (RGL's closed `Pron` vocabulary
+-- `i_Pron`/`we_Pron`/`youSg_Pron`, confirmed present in the pinned
+`gf-rgl` commit -- through `mkNP`'s already-open `Pron -> NP` overload).
+Verified locally: `Pred IPN (Compl VN_Hear (OpenIndefCN "owl" "owl"))`
+linearizes as "I hear a owl" -- correct person/number agreement. An
+earlier same-session attempt to represent "I" via a hand-rolled
+`OpenPN "I"` instead produced the ungrammatical "I **hears**", because
+`OpenPN` is hardcoded to third-person-singular agreement regardless of
+the literal string given to it -- confirming this needed the real
+`Pron`-based construction, not a workaround. Re-ran the full existing
+`test_gf_parse_diagnostic_matrix.py` sentence battery locally (`gf.exe
+-run`, comparing parse-derivation counts before/after) with only this
+addition: zero regressions, no sentence's derivation count changed
+(expected -- a 0-argument constant can only match its own fixed word,
+never spuriously match an unrelated token). `_KNOWN_ZERO_ARITY_CONSTRUCTORS`
+in `contextual_rule_compiler.py` extended to match, and
+`CompileGfConstraintsPronounTests.test_pronoun_subjects_walk_safely`
+now covers all seven pronoun constructors instead of four.
+
+**`BareSingularCN`/`BarePluralCN` : String -> NP** -- attempted, then
+reverted. Unlike `OpenIndefCN`/`OpenDefCN`/`EveryCN` (which always
+splice in a fixed anchor word -- "a"/"the"/"every"), a truly bare NP has
+*no* fixed word at all: `lin NP {s = \_ => noun.s; a = R.agrP3 R.Pl}`.
+Confirmed locally via `gf.exe -run` against real sentences that this
+creates severe combinatorial parse ambiguity for GF's raw-text parser:
+"Waterloo announces a general in Hitchin of Hertfordshire" went from a
+handful of derivations to 96, and re-running the full
+`test_gf_parse_diagnostic_matrix.py` battery showed two
+previously-clean sentences now failing outright ("Because Napoleon
+announces...", "On 18 May 2010, Waterloo announces..." -- both later
+confirmed to be a *different*, pre-existing artifact of testing via bare
+`gf.exe -run` instead of through the engine's own `spaceBeforeCommas`/
+`spaceAroundParens` preprocessing, not a real regression from this
+change; re-tested with a manually inserted space before each comma and
+both parsed cleanly again, 16 and 4 derivations respectively).
+
+The combinatorial-ambiguity finding itself is real and specific to
+`BareSingularCN`/`BarePluralCN`, though, confirmed independently of that
+comma artifact. Worth stating precisely what kind of risk this is and
+isn't, since it came up directly in conversation: this can **never**
+turn into an incorrect *accepted* metonymy detection -- Agda's
+`runtimeCheck` independently re-verifies every candidate tree regardless
+of which (possibly wrong) derivation the untrusted GF-parser proposer
+picked first, exactly the same trust boundary that already protects
+every other tier (Stanza/LLM/legacy) from a bad candidate. The entire
+cost of this ambiguity is on **recall**: a wrong first-choice derivation
+degrades to the same `abstain`/`exit4` outcome as any other malformed
+proposer output, never to a wrong-but-accepted result. That said, the
+legacy `gf-parser` tier is *currently the dominant source of real
+successes* in `contextual-tower-evaluation.yml` runs (64/150 and
+105/150 in the most recent real run), so a recall-only regression there
+isn't free either, and 96-way ambiguity for a single sentence is a large
+effect to accept without measuring it for real. Reverted pending a
+design that doesn't add an unanchored `String`-based NP to the same
+shared PGF that `engine parse` searches -- e.g. reachable only from the
+Stanza/hand-built tree-*construction* path (which never calls GF's own
+parser at all, so can't be affected by this class of ambiguity), not
+from raw-text parsing. `grammar/Metonymy.gf` keeps a dated comment
+recording exactly this reasoning at the point where the two functions
+would go, so a future attempt starts from the measured finding instead
+of re-discovering it.
