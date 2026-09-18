@@ -20,6 +20,19 @@ Leicester's location is the city of Leicester) -- verified directly against
 the live Wikidata API before building this fixture (see
 `docs/contextual-tower.md`).
 
+`wikidata-snapshot/aliases.jsonl` is pruned to exactly one alias entry each
+for the literal strings "Pomona" and "Leicester" (the city QID). The first
+CI run found the raw materialized snapshot carried other real Wikidata
+entities sharing that surface text too -- a train station (Pomona North,
+Q7227377), a football club (Leicester City F.C., Q19481), a historical
+parliamentary constituency (Q60576080), a near-duplicate administrative-unit
+entity for the same city (City of Leicester, Q21683242), and even the gold
+answer itself (Pomona College's own label includes "Pomona" as an alias,
+Q7227384) -- and the engine correctly refused to guess among them
+(`"status": "source-disambiguation-ambiguous"`), rather than silently picking
+one. Removing the extra entries is curation of which real alias is *active*
+for this small fixture, not fabrication of a link that doesn't exist.
+
 **Important methodological note, learned from an earlier mistake in this same
 investigation**: the *source* QID here is deliberately the literal place, not
 the institution -- linking "Pomona" straight to Pomona College would make the
