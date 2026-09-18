@@ -1,0 +1,110 @@
+name: pilot-decode-evaluation
+
+# Manual only: runs the small, checked-in metonymy-*decoding* pilot
+# fixture (evaluation/pilot-decode-wimcor/, two real WiMCor sentences
+# each with an explicit correct-answer QID) through the real formal
+# contextual tower, scored with the same exact-QID-in-fiber tool
+# (score_qid_fibers.py) the checked-in silver/audited fixtures use.
+# Answers a specific question: given a real sentence with an attested
+# metonymic reading, does the tower's graph search actually recover the
+# *specific* real-world entity being referred to (not just "yes it's
+# metonymic somehow"), and does Agda accept that derivation? See
+# evaluation/pilot-decode-wimcor/README.md for the two examples and why
+# each source QID is deliberately the literal place, never the answer
+# itself.
+#
+# Never downloads WiMCor/ConMeC at runtime and never scans the live
+# Wikidata API -- the fixture and its ~215KB snapshot are both small,
+# already checked in, and safe (two real sentences reproduced under
+# WiMCor's CC BY-SA 3.0 terms, not a bulk corpus dump).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      AGDA_RTS: +RTS -M6G -RTS
+      STANZA_MODEL_DIR: /home/runner/.cache/metonymy/stanza/models
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache Cubical and GF RGL
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/metonymy/cubical-v0.5
+            ~/.cache/metonymy/gf-rgl-20260403
+            ~/.cache/metonymy/gf-rgl-lib
+          key: metonymy-${{ runner.os }}-132a2a3-e825d92-gf312
+
+      - name: Cache Stanza package and models
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/metonymy/stanza
+          key: stanza-${{ runner.os }}-${{ hashFiles('toolchain.lock.json') }}
+
+      - name: Install pinned system toolchain
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends agda-bin cabal-install curl ghc git make ripgrep
+          curl -L \
+            "https://github.com/GrammaticalFramework/gf-core/releases/download/release-3.12/gf-3.12-ubuntu-24.04.deb" \
+            -o /tmp/gf.deb
+          echo "17aa5452b713f1e00a0755a1bad998a926acbffb96eefde2c3800ca72536b4d8  /tmp/gf.deb" \
+            | sha256sum -c -
+          sudo apt-get install -y /tmp/gf.deb
+
+      - name: Build and verify (same as ci.yml)
+        run: ./scripts/reproduce.sh
+
+      - name: Install dependency-frontend toolchain (Stanza)
+        run: ./scripts/bootstrap_dependency_frontend.sh
+
+      - name: Run the contextual tower on the decode pilot fixture
+        run: |
+          python3 scripts/evaluation/run_contextual_corpus.py \
+            --dataset evaluation/pilot-decode-wimcor/pilot-inputs.jsonl \
+            --engine build/metonymy \
+            --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
+            --workers 2 \
+            --allow-failures \
+            --print-failures \
+            --output build/evaluation/pilot-decode.tower-inference.jsonl
+
+      - name: Score exact-QID decoding accuracy
+        run: |
+          python3 scripts/evaluation/score_qid_fibers.py \
+            --inference build/evaluation/pilot-decode.tower-inference.jsonl \
+            --gold evaluation/pilot-decode-wimcor/pilot-gold.jsonl \
+            --output build/evaluation/pilot-decode.tower-report.json
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Metonymy-decoding pilot (2 real WiMCor sentences)"
+            echo "See evaluation/pilot-decode-wimcor/README.md for what each row tests."
+            echo '```json'
+            python3 -m json.tool "build/evaluation/pilot-decode.tower-report.json"
+            echo '```'
+            echo '### Per-row inference (safe -- only 2 hand-picked, already-published sentences)'
+            echo '```json'
+            cat build/evaluation/pilot-decode.tower-inference.jsonl
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full inference (safe -- fixture is 2 rows, already public)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-decode-evaluation-results
+          path: |
+            build/evaluation/pilot-decode.tower-inference.jsonl
+            build/evaluation/pilot-decode.tower-report.json
+          retention-days: 30
