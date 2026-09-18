@@ -3330,3 +3330,51 @@ detail the failure surfaces (this Makefile target has no
 directly visible in the log today; may need a follow-up round adding
 one). Once green, ask the user for the real
 `contextual-tower-evaluation.yml` run.
+
+## Ambiguity confirmed real, not a bug -- the fixture updated to match
+
+`--print-failures` (new, opt-in, only ever wired into the Makefile's
+own safe, checked-in fixture runs -- `contextual-tower-evaluation.yml`
+never passes it) named the exact two ids:
+`contract-sign-generic-q159`/`contract-sign-commercial-q159` ("VAZ
+signed [the/the commercial] agreement" contracting from source
+"Russia"), both rejected with `unsafe-contextual-contraction-non-
+singleton-fiber`. The new QID-carrying error message (this round's own
+addition to `finishContraction`) named the actual ambiguous fiber:
+`[Q5281,Q2309,Q6686]` for the generic case. Looked up directly in
+`data/wikidata-openalex-snapshot/aliases.jsonl`: Q2309 is VAZ itself
+(the expected answer), but **Q5281 is Yandex and Q6686 is Renault** --
+two entirely different, real companies, both now reachable from Russia
+within 2 hops (Yandex plausibly as another `InstitutionOf`-linked
+Russian company; Renault plausibly via VAZ's own real-world corporate
+affiliation, a genuine second hop). This is not a bug: at
+`max_bridge_depth=1` only VAZ was reachable at all; at 2, the search
+correctly finds several real institutions and -- just as correctly --
+refuses to silently pick one, exactly the safety property this whole
+mechanism exists to enforce.
+
+Updated the fixture to match this new, real, and correct behavior
+rather than treating it as something to route around:
+`evaluation/contextual-multidomain/silver-inputs.jsonl` now marks both
+ids `"expected_status": "rejected"` (matching how every other
+genuinely-ambiguous `reject-contract-*` id in the same file is already
+marked); `silver-gold.jsonl`'s own `gold_qids` for both changed from
+`["Q159"]` to `[]`, matching the same already-established convention
+every other `reject-contract-*` id already uses (an empty `gold_qids`
+list is scored as a true negative when the fiber is empty, not a missed
+positive -- confirmed by reading `score_qid_fibers.py`'s own scoring
+loop directly).
+
+**Next step**: push, watch `ci.yml` -- `contextual-corpus-test`'s first
+script (`run_contextual_corpus.py`) should now accept both ids as
+correctly-rejected, but the *next* two steps
+(`score_qid_fibers.py`/`assert_json_equal.py`, comparing against
+checked-in `silver-summary.json`/`audited-summary.json`) never even ran
+while step one kept failing -- if either of those now mismatches
+(the real aggregate numbers shifted along with everything else this
+depth experiment has touched), read the exact new values directly from
+that failure and update the checked-in summary JSON to match, the same
+"read the real value, never guess" discipline as every other step of
+this round. Once fully green, ask the user for the real
+`contextual-tower-evaluation.yml` run this entire investigation has
+been building toward.

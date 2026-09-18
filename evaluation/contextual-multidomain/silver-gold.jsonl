@@ -12,9 +12,9 @@
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"sign-commercial-q15180"}
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"sign-political-q15180"}
 {"gold_families":["location-for-institution"],"gold_qids":["Q2309"],"id":"sign-generic-q159"}
-{"gold_families":["location-for-institution"],"gold_qids":["Q159"],"id":"contract-sign-generic-q159"}
+{"gold_families":["location-for-institution"],"gold_qids":[],"id":"contract-sign-generic-q159"}
 {"gold_families":["location-for-institution"],"gold_qids":["Q2309"],"id":"sign-commercial-q159"}
-{"gold_families":["location-for-institution"],"gold_qids":["Q159"],"id":"contract-sign-commercial-q159"}
+{"gold_families":["location-for-institution"],"gold_qids":[],"id":"contract-sign-commercial-q159"}
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"sign-political-q159"}
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"sign-generic-q2184"}
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"sign-commercial-q2184"}

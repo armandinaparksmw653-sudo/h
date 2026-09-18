@@ -12,9 +12,9 @@
 {"direction":"expand","family":"location-for-institution","id":"sign-commercial-q15180","sentence":"CCCP signed the commercial agreement","source":"CCCP"}
 {"direction":"expand","family":"location-for-institution","id":"sign-political-q15180","sentence":"CCCP signed the political agreement","source":"CCCP"}
 {"direction":"expand","family":"location-for-institution","id":"sign-generic-q159","sentence":"Russia signed the agreement","source":"Russia"}
-{"contract_target":"VAZ","direction":"contract","family":"location-for-institution","id":"contract-sign-generic-q159","sentence":"VAZ signed the agreement","source":"Russia"}
+{"contract_target":"VAZ","direction":"contract","expected_status":"rejected","family":"location-for-institution","id":"contract-sign-generic-q159","sentence":"VAZ signed the agreement","source":"Russia"}
 {"direction":"expand","family":"location-for-institution","id":"sign-commercial-q159","sentence":"Russia signed the commercial agreement","source":"Russia"}
-{"contract_target":"VAZ","direction":"contract","family":"location-for-institution","id":"contract-sign-commercial-q159","sentence":"VAZ signed the commercial agreement","source":"Russia"}
+{"contract_target":"VAZ","direction":"contract","expected_status":"rejected","family":"location-for-institution","id":"contract-sign-commercial-q159","sentence":"VAZ signed the commercial agreement","source":"Russia"}
 {"direction":"expand","family":"location-for-institution","id":"sign-political-q159","sentence":"Russia signed the political agreement","source":"Russia"}
 {"direction":"expand","family":"location-for-institution","id":"sign-generic-q2184","sentence":"RSFSR signed the agreement","source":"RSFSR"}
 {"direction":"expand","family":"location-for-institution","id":"sign-commercial-q2184","sentence":"RSFSR signed the commercial agreement","source":"RSFSR"}
