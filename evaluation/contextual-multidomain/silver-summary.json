@@ -4,17 +4,17 @@
     "numerator": 0
   },
   "contraction_safety": {
-    "unique-contextual-fiber": 12
+    "unique-contextual-fiber": 10
   },
   "coverage": {
     "denominator": 69,
     "numerator": 69
   },
   "eliminations_per_constraint": {
-    "Requires (AnyOf [HasSort Government,HasSort PoliticalOrganization])@sign political agreement": 19,
-    "Requires (HasSort Agent)@sign": 27,
+    "Requires (AnyOf [HasSort Government,HasSort PoliticalOrganization])@sign political agreement": 23,
+    "Requires (HasSort Agent)@sign": 29,
     "Requires (HasSort Agent)@sign agreement": 0,
-    "Requires (HasSort BusinessOrganization)@sign commercial agreement": 8,
+    "Requires (HasSort BusinessOrganization)@sign commercial agreement": 10,
     "Requires (HasSort Readable)@read": 0,
     "graph-related": 0
   },
@@ -23,7 +23,7 @@
     "numerator": 35
   },
   "empty_gold_exact_rate": {
-    "denominator": 35,
+    "denominator": 37,
     "numerator": 35
   },
   "exact_match_by_direction": {
@@ -33,7 +33,7 @@
     },
     "expand": {
       "denominator": 49,
-      "numerator": 49
+      "numerator": 44
     }
   },
   "family_micro_recall": {
@@ -42,40 +42,40 @@
   },
   "fiber_cardinality_histogram": {
     "0": 35,
-    "1": 26,
+    "1": 24,
     "2": 6,
-    "3": 2
+    "3": 4
   },
   "fiber_exact_match_rate": {
     "denominator": 69,
-    "numerator": 69
+    "numerator": 64
   },
   "formal_stage_verification_rate": {
-    "denominator": 218,
-    "numerator": 218
+    "denominator": 211,
+    "numerator": 211
   },
   "gold_fully_contained_rate": {
     "denominator": 69,
     "numerator": 69
   },
   "gold_in_fiber_hit_rate": {
-    "denominator": 34,
-    "numerator": 34
+    "denominator": 32,
+    "numerator": 32
   },
   "gold_qid_micro_recall": {
-    "denominator": 44,
-    "numerator": 44
+    "denominator": 42,
+    "numerator": 42
   },
   "gold_without_fiber_hit": [],
   "instances": 69,
   "layer_count_histogram": {
-    "0": 8,
+    "0": 10,
     "2": 2,
-    "3": 22,
-    "4": 37
+    "3": 21,
+    "4": 36
   },
   "obstruction_distribution": {
-    "MissingRequirement": 47
+    "MissingRequirement": 59
   },
   "preference_match_rate": {
     "denominator": 0,
