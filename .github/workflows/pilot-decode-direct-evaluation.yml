@@ -1,0 +1,103 @@
+name: pilot-decode-direct-evaluation
+
+# Manual only: unlike pilot-decode-evaluation.yml (which goes through the
+# full automatic frontend -- Stanza dependency parsing, GF tree
+# construction, legacy GF-parser fallback -- exactly like a real corpus
+# run), this workflow bypasses all of that and drives the Haskell
+# engine's own `contextual-fiber` CLI command directly against a
+# hand-built scenario TSV (evaluation/pilot-decode-wimcor/pilot-scenarios.tsv,
+# the same low-level format Metonymy.ContextSpec reads for the checked-in
+# silver/audited fixtures).
+#
+# Why this exists: running pilot-decode-evaluation.yml on 9 examples
+# showed that the automatic frontend often falls back to the unreliable
+# legacy GF-parser (or fails outright) on real, syntactically complex
+# WiMCor sentences, and in one case (Amherst) that fallback produced a
+# structurally nonsensical GF tree that still happened to surface the
+# correct answer -- a coincidence, not evidence the system reasoned
+# correctly. That conflates two genuinely separate questions: (1) can
+# the frontend turn a real sentence into a well-typed representation at
+# all (a large, separately-documented, still-open problem -- see
+# docs/contextual-tower.md's "real corpus recall stays 0.0" findings),
+# and (2) given a TRUSTED, hand-verified representation, does the
+# formal machinery (constraint-filtered graph search, Agda-checked
+# runtimeCheck) correctly resolve the metonymy. This workflow isolates
+# question (2) only, using the exact real VerbNet-derived constraint
+# for each example (computed via contextual_rule_compiler.resolve_action
+# locally, not invented) so there is nothing left to be unreliable about
+# except the formal machinery itself.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      AGDA_RTS: +RTS -M6G -RTS
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache Cubical and GF RGL
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/metonymy/cubical-v0.5
+            ~/.cache/metonymy/gf-rgl-20260403
+            ~/.cache/metonymy/gf-rgl-lib
+          key: metonymy-${{ runner.os }}-132a2a3-e825d92-gf312
+
+      - name: Install pinned system toolchain
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends agda-bin cabal-install curl ghc git make ripgrep
+          curl -L \
+            "https://github.com/GrammaticalFramework/gf-core/releases/download/release-3.12/gf-3.12-ubuntu-24.04.deb" \
+            -o /tmp/gf.deb
+          echo "17aa5452b713f1e00a0755a1bad998a926acbffb96eefde2c3800ca72536b4d8  /tmp/gf.deb" \
+            | sha256sum -c -
+          sudo apt-get install -y /tmp/gf.deb
+
+      - name: Build and verify (same as ci.yml)
+        run: ./scripts/reproduce.sh
+
+      - name: Run contextual-fiber directly for each hand-verified scenario
+        run: |
+          {
+            echo "## Direct formal-layer test (bypasses the frontend entirely)"
+            echo "Scenario file: evaluation/pilot-decode-wimcor/pilot-scenarios.tsv"
+            echo
+            for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton; do
+              echo "### $scenario"
+              echo '```'
+              build/metonymy \
+                --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
+                --scenarios evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
+                contextual-fiber "$scenario" || echo "(FAILED -- see message above)"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Also save raw output as an artifact
+        run: |
+          mkdir -p build/evaluation
+          for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton; do
+            echo "=== $scenario ===" >> build/evaluation/pilot-decode-direct.txt
+            build/metonymy \
+              --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
+              --scenarios evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
+              contextual-fiber "$scenario" >> build/evaluation/pilot-decode-direct.txt 2>&1 || true
+          done
+
+      - name: Upload full output (safe -- QIDs and constraint labels only, no sentence text)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-decode-direct-results
+          path: build/evaluation/pilot-decode-direct.txt
+          retention-days: 30

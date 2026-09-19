@@ -93,3 +93,37 @@ context words in the sentence contributing their own constraints (as the
 already-checked-in `evaluation/contextual-multidomain/silver-inputs.jsonl`
 "commercial agreement" vs. "political agreement" pair demonstrates on
 synthetic data).
+
+**Result from the 9-example run through the full automatic frontend, and why
+`pilot-scenarios.tsv` exists**: running all 9 through `pilot-inputs.jsonl` (the
+full pipeline -- Stanza dependency parsing, then GF tree construction, then
+legacy-GF-parser fallback) found only 2 of 9 (Pomona, Leicester) built a tree
+via Stanza cleanly; 4 (Elon, Valparaiso, Haifa, Princeton) failed to build any
+tree at all on real WiMCor sentence complexity; and 3 (Amherst, Tartu,
+Stirling) fell back to the legacy GF-parser, which for Amherst produced a
+**structurally nonsensical** tree (`ModifyNP (OpenPN3 "Bix" "was" "born") ...`
+-- misparsing an unrelated clause as part of a proper-noun chain) that still
+happened to surface the correct answer in its fiber, purely because the
+target word remained a lexical anchor regardless of the surrounding
+nonsense. That is a coincidence, not evidence of correct reasoning, and it
+conflates two genuinely separate questions: can the frontend turn a real
+sentence into a well-typed representation at all (a large, separately
+documented, still-open problem), versus given a *trusted* representation,
+does the formal machinery correctly resolve the metonymy.
+
+`pilot-scenarios.tsv` isolates the second question only. It is a hand-built
+scenario file in the exact low-level TSV format `Metonymy.ContextSpec` reads
+directly (the same format the checked-in `evaluation/contextual-multidomain/`
+silver/audited fixtures ultimately compile down to) -- one row per example,
+with the *real* VerbNet-derived constraint for each (computed locally via
+`contextual_rule_compiler.resolve_action`, not invented: `attend`'s object
+role is `Prefers HasSort Entity` for 8 of the 9; `study`'s is a **hard**
+`Requires HasSort Readable` for Haifa specifically, VerbNet having matched a
+different sense of "study" than the institution-attendance one -- left as-is
+rather than hand-corrected, since that mismatch is itself a real, honest
+finding about selectional-preference granularity for polysemous verbs, not a
+bug to paper over). Run directly via `build/metonymy --snapshot
+wikidata-snapshot --scenarios pilot-scenarios.tsv contextual-fiber <name>`
+(`.github/workflows/pilot-decode-direct-evaluation.yml`) -- no Stanza, no GF
+parsing, no dependency-hint frontend at all, so nothing about the frontend's
+own reliability can contaminate the result.

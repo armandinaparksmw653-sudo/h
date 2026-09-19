@@ -1,0 +1,10 @@
+scenario	source_qid	action	role	max_depth	bridge_relations	constraints
+pomona	Q486868	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+leicester	Q83065	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+elon	Q2030224	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+amherst	Q49164	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+tartu	Q13972	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+stirling	Q182923	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+valparaiso	Q868888	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
+haifa	Q41621	study	ObjectHole	2	Authored	Verb|study|studied|0|10|requires|HasSort Readable|manual-decode-pilot-v1
+princeton	Q138518	attend	ObjectHole	2	LocatedIn,InstitutionOf,AffiliatedWith,MemberOf,Contains,Conducts,About,Produces,Authored,PossessedBy	Verb|attend|attended|0|10|prefers|HasSort Entity|manual-decode-pilot-v1
