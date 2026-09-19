@@ -127,3 +127,40 @@ wikidata-snapshot --scenarios pilot-scenarios.tsv contextual-fiber <name>`
 (`.github/workflows/pilot-decode-direct-evaluation.yml`) -- no Stanza, no GF
 parsing, no dependency-hint frontend at all, so nothing about the frontend's
 own reliability can contaminate the result.
+
+**Result from the 9-scenario direct run**: 8/9 had the gold QID in the final
+fiber, 0/9 narrowed to a single candidate (fiber sizes 15-289), and Haifa's
+empty fiber was explained (the `study` sense mismatch above). Every single
+stage on every scenario showed `agda-layer-check=true`. Investigated *why*
+none narrowed: `attend`'s own constraint, `Prefers HasSort Entity`, can never
+eliminate anything -- `Entity` is this project's universal top sort, so every
+candidate already satisfies it, and a `Prefers` constraint only annotates a
+`preferred` subset without shrinking `survivors` regardless (confirmed
+directly in the stage output: `preferred` was always identical to
+`survivors`). Real narrowing needs a **second**, genuinely selective
+constraint (a `Requires`, which does remove non-matching candidates from
+`survivors` -- this is exactly how the already-checked-in
+`evaluation/contextual-multidomain/silver-inputs.jsonl` "commercial agreement"
+vs. "political agreement" pair narrows on synthetic data) -- but these nine
+sentences are minimal ("He attended Pomona.") and carry no second piece of
+information near the target for the compiler to have derived one from.
+
+`amherst-with-degree-context`/`valparaiso-with-degree-context`/
+`haifa-with-degree-context` add exactly that, using real text already present
+in the corresponding full sentences, not fabricated: Amherst's full sentence
+says "graduated from Amherst **with a degree in mechanical engineering**",
+Valparaiso's says "received his **bachelor's degree**", Haifa's says
+"**obtaining a BA** in Political Science" -- in all three, the subject
+explicitly earned an academic degree *there*, which is real evidence the
+referent is specifically an institution that grants degrees (Wikidata class
+Q3918, "university" -- confirmed present in this snapshot's own `rules.json`
+type projections, `subsortRules` chains `University -> Organization ->
+Agent`). Each of these three scenarios keeps `attend`'s original weak
+constraint as stage 1 and adds a second, **hard** `Requires HasSort
+University` constraint as stage 2 (`requires`, not `prefers`, since only
+`requires` actually removes candidates) -- a real second layer, derived from
+real sentence content, the same "context accumulates as constraints, fiber
+narrows" mechanism this whole investigation set out to test. Haifa
+specifically uses `attend`'s constraint here instead of `study`'s, to isolate
+the effect of adding context from the separate, already-diagnosed
+wrong-verb-sense problem.

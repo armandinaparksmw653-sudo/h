@@ -72,8 +72,19 @@ jobs:
             echo "## Direct formal-layer test (bypasses the frontend entirely)"
             echo "Scenario file: evaluation/pilot-decode-wimcor/pilot-scenarios.tsv"
             echo
+            echo "### Baseline (single weak constraint: attend's Prefers HasSort Entity)"
             for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton; do
-              echo "### $scenario"
+              echo "#### $scenario"
+              echo '```'
+              build/metonymy \
+                --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
+                --scenarios evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
+                contextual-fiber "$scenario" || echo "(FAILED -- see message above)"
+              echo '```'
+            done
+            echo "### With a second, real constraint (a genuine 'degree' mention in the sentence -> Requires HasSort University)"
+            for scenario in amherst-with-degree-context valparaiso-with-degree-context haifa-with-degree-context; do
+              echo "#### $scenario"
               echo '```'
               build/metonymy \
                 --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
@@ -86,7 +97,7 @@ jobs:
       - name: Also save raw output as an artifact
         run: |
           mkdir -p build/evaluation
-          for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton; do
+          for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton amherst-with-degree-context valparaiso-with-degree-context haifa-with-degree-context; do
             echo "=== $scenario ===" >> build/evaluation/pilot-decode-direct.txt
             build/metonymy \
               --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
