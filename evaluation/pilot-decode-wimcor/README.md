@@ -164,3 +164,49 @@ narrows" mechanism this whole investigation set out to test. Haifa
 specifically uses `attend`'s constraint here instead of `study`'s, to isolate
 the effect of adding context from the separate, already-diagnosed
 wrong-verb-sense problem.
+
+**First run of the three degree-context scenarios found the constraint
+eliminated the correct answer itself, not just the wrong ones** -- a second
+genuine finding, diagnosed and fixed rather than papered over. `HasSort
+University` is derived by this project's `reachesType` (walking the
+snapshot's own `P279`/subclass-of claims from an entity's `P31` target up to
+Wikidata's `Q3918`, `engine/src/Metonymy/Snapshot.hs`). Checking each real
+institution's actual `P31` value against live Wikidata showed none of the
+three had `P31` pointing *directly* at `Q3918` -- Amherst College's is
+`Q1377182` ("liberal arts college"), Valparaiso University's is `Q902104`
+("private university"), University of Haifa's is `Q62078547` ("public
+research university") -- and the snapshot, materialized at depth 1 from only
+the 18 seed QIDs (each place + each gold institution), had captured **zero**
+`P279` claims anywhere: expanding one hop from a seed captures that seed's
+*own* class (`P31` target), but not that class's *own* superclass chain,
+since the class QIDs themselves were never separately seeded. Tracing the
+real chains directly against live Wikidata found:
+- **Valparaiso**: `Q902104` ("private university") --P279--> `Q3918`
+  ("university") directly -- a genuine, existing 2-hop chain.
+- **Haifa**: `Q62078547` --P279--> `Q875538`/`Q15936437` --P279--> `Q3918`
+  -- a genuine, existing 3-hop chain.
+- **Amherst**: `Q1377182` ("liberal arts college") --P279--> `Q189004`
+  ("college") --P279--> `{Q38723, Q2385804, Q123349660}`, none of which is
+  or further chains to `Q3918`. Amherst's *other* `P31` value, `Q23002054`
+  ("private not-for-profit educational institution"), also dead-ends without
+  reaching `Q3918`. **This is not a snapshot gap -- Wikidata's own class
+  graph genuinely does not link "liberal arts college" to "university" as a
+  subclass**, reflecting the real English-language distinction between US
+  "college" and "university" institution names, even though Amherst College
+  grants bona fide bachelor's degrees.
+
+All 20 real `P279` edges found while tracing these three chains (the full
+local closure, not just the ones that happen to reach `Q3918` -- adding only
+the successful edges would have been cherry-picking) were added to
+`wikidata-snapshot/claims.jsonl`, and `manifest.json`'s `graph_sha256`
+recomputed over the exact bytes Git will actually store (`core.autocrlf`
+normalizes this repository's checkout to CRLF on Windows but commits LF --
+recomputed and independently verified against the *staged* blob content, not
+the Windows working-tree bytes, to avoid the same class of mismatch this
+project's `graph_sha256` procedure is designed to catch). **Expected result
+after this fix**: Valparaiso's and Haifa's `Requires HasSort University`
+stage should now retain their correct gold QID (real second-layer narrowing,
+the demonstration this fixture set out to give); Amherst's should continue
+to eliminate its own correct answer -- not a bug, but an honest, Wikidata-
+ontology-level limit worth reporting as-is rather than hand-patched with a
+fabricated `P279` edge that doesn't exist in real Wikidata.
