@@ -988,11 +988,30 @@ def compile_gf_constraints(
     # FIRST Compl/PassCompl in the tree for the primary action; this is
     # only ever its coordinated sibling, never an unrelated Compl reached
     # through some other construction (e.g. a relative clause).
+    #
+    # Deliberately does NOT call lexical_head here (unlike the
+    # FrameArgument code above) -- lexical_head strips a ModifyNP wrapper
+    # to find the noun underneath, which would be unsafe for this
+    # relation specifically: a real WiMCor sentence ("He attended
+    # Gettysburg and received a Bachelor of Science degree AT the
+    # University of Maryland...") shows the object can carry its own
+    # location, explicitly naming a DIFFERENT institution than the
+    # metonymy target -- the degree is from Maryland, not Gettysburg.
+    # _noun_lemma only recognizes a BARE OpenIndefCN/OpenDefCN/
+    # OpenAdjDefCN/OpenAdjIndefCN node (never a ModifyNP-wrapped one), so
+    # skipping lexical_head means any object carrying its own modifier
+    # -- benign ("with a double major...") or institution-redirecting
+    # ("at the University of Maryland") alike -- safely declines to
+    # match rather than risk the latter. (The Gettysburg sentence itself
+    # is not buildable as a tree at all today regardless: "at the
+    # University of Maryland" attaches to the verb "received", not to
+    # "degree" -- a verb-level oblique PP, already documented in
+    # build_gf_tree_from_dependencies.py as having no attachment point
+    # in this grammar.)
     for extra_complement in coordinated_complements(root):
         if extra_complement is complement or len(extra_complement.arguments) != 2:
             continue
-        extra_head = lexical_head(extra_complement.arguments[1])
-        extra_lemma = _noun_lemma(extra_head)
+        extra_lemma = _noun_lemma(extra_complement.arguments[1])
         if not extra_lemma:
             continue
         trigger = _lookup_context_trigger(

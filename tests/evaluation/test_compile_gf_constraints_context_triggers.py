@@ -166,6 +166,36 @@ class ConjClauseObjectTests(unittest.TestCase):
         ]
         self.assertEqual(trigger_constraints, [])
 
+    def test_modified_object_never_matches_even_a_known_lemma(self) -> None:
+        # Real WiMCor finding: "He attended Gettysburg and received a
+        # Bachelor of Science degree AT the University of Maryland" --
+        # the degree is explicitly from a DIFFERENT institution. Verified
+        # via local gf.exe: linearizes to "Farina announces Valparaiso
+        # and reads a degree at University Maryland". lexical_head is
+        # deliberately NOT used for this relation (see the code comment)
+        # -- ANY modifier on the object, benign or institution-
+        # redirecting, must decline rather than risk misattribution.
+        proposal = base_proposal(
+            "Farina attended Valparaiso and received a degree at University Maryland"
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            'PredConjVP (OpenPN "Farina") '
+            '(Compl Announce (OpenPN "Valparaiso")) '
+            '(Compl Read (ModifyNP (OpenIndefCN "degree" "degrees") '
+            '(AtPP (OpenPN2 "University" "Maryland"))))',
+            LANGUAGE_RULES,
+            WORDNET_RULES,
+            {},
+            context_triggers=CONTEXT_TRIGGERS,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"].startswith("ContextTrigger:")
+        ]
+        self.assertEqual(trigger_constraints, [])
+
     def test_first_complement_is_never_treated_as_extra(self) -> None:
         # If the PRIMARY target's own object happens to be a trigger
         # lemma, it must still be handled only by the existing
