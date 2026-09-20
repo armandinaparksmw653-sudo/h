@@ -7,6 +7,13 @@
       "requirement": "HasSort University",
       "strength": "requires",
       "provenance": "manual-curated:v1 (verified against real WiMCor Valparaiso/Haifa 'degree'/'BA' mentions and live Wikidata P31/P279 checks, see evaluation/pilot-decode-wimcor/README.md)"
+    },
+    {
+      "construction": "ConjClauseObject",
+      "lemma": "doctorate",
+      "requirement": "HasSort University",
+      "strength": "prefers",
+      "provenance": "manual-curated:v1 (real WiMCor sentence, 'studied at Pisa and obtained his doctorate of law in 1719' -- structure verified via local Stanza/gf.exe; strength kept at prefers, not requires, because the specific institution near Pisa this sentence refers to has not yet been individually checked against live Wikidata P31/P279 the way degree->University was for Valparaiso/Haifa)"
     }
   ]
 }

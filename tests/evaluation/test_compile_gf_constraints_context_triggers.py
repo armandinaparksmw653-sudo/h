@@ -31,6 +31,7 @@ tests/evaluation/test_compile_gf_constraints_*.py file).
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -269,6 +270,106 @@ class ModifyNpObjectTests(unittest.TestCase):
             if c["origin"]["constructor"].startswith("ContextTrigger:")
         ]
         self.assertEqual(trigger_constraints, [])
+
+
+class RealDataFileCorpusExamplesTests(unittest.TestCase):
+    """Runs hand-built trees for real WiMCor sentences (not synthetic
+    fixtures) through compile_gf_constraints against the SHIPPED
+    data/contextual-context-triggers.json and data/wordnet-context-
+    rules.json -- confirms the actual dictionary works end to end, not
+    just a local test double. Each sentence's structure was verified via
+    local Stanza before being hand-built here; each tree was verified via
+    local gf.exe.
+
+    Corpus provenance (found via build/local-curation/wimcor-test.combined.jsonl,
+    not committed -- WiMCor CC BY-SA 3.0, see evaluation/pilot-decode-wimcor/README.md
+    for the licensing/attribution convention this project already follows):
+    "In 1697, he studied at Pisa and obtained his doctorate of law in 1719."
+    -- one of several real "attended/studied at X and
+    received/earned/obtained a <degree-like noun>" sentences found by
+    corpus search; several others (Gettysburg/Webster/Oklahoma City/Yale/
+    Deep Springs/Kingston) were REJECTED because the degree-like noun
+    names a DIFFERENT institution than the metonymy target ("received a
+    degree AT the University of Maryland", "earned his MBA FROM San Diego
+    State University", etc.) -- exactly the risk
+    test_modified_object_never_matches_even_a_known_lemma guards against.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_root = ROOT / "data"
+        cls.language_rules = json.loads(
+            (data_root / "contextual-language-rules.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        cls.wordnet_rules = json.loads(
+            (data_root / "wordnet-context-rules.json").read_text(encoding="utf-8")
+        )
+        cls.context_triggers = json.loads(
+            (data_root / "contextual-context-triggers.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def test_pisa_doctorate_is_derived_automatically(self) -> None:
+        sentence = (
+            "In 1697, he studied at Pisa and obtained his doctorate of "
+            "law in 1719."
+        )
+        action_start = sentence.index("studied at")
+        action_end = action_start + len("studied at")
+        proposal = {
+            "action": "study at",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:study_at"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "study at",
+                        "surface": "studied at",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:study_at",
+                }
+            ],
+        }
+        # The real "of law" nmod on "doctorate" is deliberately dropped
+        # (bare OpenIndefCN, same simplification the Valparaiso "with a
+        # double major..." example already relies on) -- it's benign
+        # (doesn't name a competing institution), unlike the rejected
+        # Gettysburg/Webster/etc. sentences above.
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "Pisa")) '
+            '(Compl Read (OpenIndefCN "doctorate" "doctorates"))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+        self.assertEqual(
+            trigger_constraints[0]["origin"]["surface"],
+            "studied at Pisa and obtained his doctorate",
+        )
 
 
 class NegativeUnrelatedClauseTests(unittest.TestCase):
