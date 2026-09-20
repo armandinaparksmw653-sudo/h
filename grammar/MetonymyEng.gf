@@ -6,6 +6,7 @@ concrete MetonymyEng of Metonymy =
     NP = NP ;
     VP = VP ;
     V2 = V2 ;
+    V3 = V3 ;
     PP = Adv ;
     CN = CN ;
 
@@ -30,6 +31,19 @@ concrete MetonymyEng of Metonymy =
     -- matching this file's own established defensive discipline (see
     -- the PassCompl/ModifyRelVP comments elsewhere in this file).
     PassCompl0 verb = VerbEng.PassV2 verb ;
+    -- Slash2V3 : V3 -> NP -> VPSlash ("give it (to her)") leaves the
+    -- recipient slot open; ExtendEng.PassVPSlash promotes exactly that
+    -- open slot to subject, giving "NP was awarded object" with no
+    -- agent -- the retained-object passive PassComplRetained's own
+    -- abstract-file comment explains this is needed for. Slash2V3/mkV3
+    -- are declared only once each in the pinned gf-rgl-src tree (checked
+    -- directly, not guessed) so no qualifier is required for them, but
+    -- PassVPSlash needs ExtendEng qualification for the same reason
+    -- PassAgentVPSlash above does: ExtraEng (already open, for
+    -- MkVPS/ConjVPS/PredVPS/BaseVPS) independently redeclares its own
+    -- PassVPSlash : VPSlash -> VP with the identical signature.
+    PassComplRetained verb object =
+      ExtendEng.PassVPSlash (Slash2V3 verb object) ;
     InPP np = SyntaxEng.mkAdv in_Prep np ;
     AboutPP np = SyntaxEng.mkAdv (mkPrep "about") np ;
     WithPP np = SyntaxEng.mkAdv (mkPrep "with") np ;
@@ -261,4 +275,6 @@ concrete MetonymyEng of Metonymy =
     Read = mkV2 "read" ;
     Drink = mkV2 "drink" ;
     Sign = mkV2 "sign" ;
+
+    Award = mkV3 "award" ;
 }

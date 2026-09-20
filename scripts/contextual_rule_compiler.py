@@ -33,6 +33,7 @@ ARITIES = {
     "Compl": 2,
     "PassCompl": 2,
     "PassCompl0": 1,
+    "PassComplRetained": 2,
     "InPP": 1,
     "AboutPP": 1,
     "WithPP": 1,
@@ -803,7 +804,8 @@ def compile_gf_constraints(
             found.extend(
                 vp
                 for vp in node.arguments[1:]
-                if isinstance(vp, GFNode) and vp.constructor in {"Compl", "PassCompl"}
+                if isinstance(vp, GFNode)
+                and vp.constructor in {"Compl", "PassCompl", "PassComplRetained"}
             )
         for argument in node.arguments:
             found.extend(coordinated_complements(argument))
@@ -832,7 +834,7 @@ def compile_gf_constraints(
     # FrameArgument capability constraint from it is equally valid
     # regardless of whether that argument is textually the object or the
     # agent.
-    complement = first_node(root, {"Compl", "PassCompl"})
+    complement = first_node(root, {"Compl", "PassCompl", "PassComplRetained"})
     if complement and len(complement.arguments) == 2:
         object_node = complement.arguments[1]
         head = lexical_head(object_node)

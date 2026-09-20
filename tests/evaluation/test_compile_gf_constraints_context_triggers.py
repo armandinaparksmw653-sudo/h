@@ -39,7 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from contextual_rule_compiler import compile_gf_constraints  # noqa: E402
+from contextual_rule_compiler import ARITIES, compile_gf_constraints  # noqa: E402
 
 WORDNET_RULES = {
     "lexical_sorts": {
@@ -96,6 +96,11 @@ def base_proposal(sentence: str, action: str = "attend") -> dict:
             }
         ],
     }
+
+
+class PassComplRetainedArityTests(unittest.TestCase):
+    def test_pass_compl_retained_takes_a_verb_and_a_retained_object(self) -> None:
+        self.assertEqual(ARITIES["PassComplRetained"], 2)
 
 
 class ConjClauseObjectTests(unittest.TestCase):
@@ -422,6 +427,69 @@ class RealDataFileCorpusExamplesTests(unittest.TestCase):
         self.assertEqual(len(trigger_constraints), 1)
         self.assertEqual(
             trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
+    def test_ankara_retained_object_passive_is_derived_automatically(self) -> None:
+        # Real WiMCor sentence using PassComplRetained (grammar/Metonymy.gf),
+        # a new constructor added specifically because this shape --
+        # "X was awarded Y", a ditransitive retained-object passive with
+        # no agent -- could not be represented by Compl (needs active
+        # voice), PassCompl (whose NP is a "by"-agent, not this retained
+        # theme), or PassCompl0 (no further NP at all). Verified via
+        # local gf.exe: linearizes to "He announces Ankara and is
+        # awarded a degree", and the pre-existing OpenPN2 "a X" parse
+        # ambiguity this exposed on round-trip parsing was confirmed to
+        # already exist for ANY OpenIndefCN object before this change
+        # (tested directly: "Anna announces a degree" shows the same
+        # ambiguity) -- not something this addition introduced.
+        sentence = "He attended Ankara and was awarded a PhD degree in Pharmacy."
+        action_start = sentence.index("attended")
+        action_end = action_start + len("attended")
+        proposal = {
+            "action": "attend",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:attend"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "attend",
+                        "surface": "attended",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:attend",
+                }
+            ],
+        }
+        # "PhD" (compound) and "in Pharmacy" (nmod) on "degree" are
+        # dropped -- the same safe simplification as Pisa's "of law" and
+        # Valparaiso's "with a double major..."; neither names a
+        # competing institution.
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "Ankara")) '
+            '(PassComplRetained Award (OpenIndefCN "degree" "degrees"))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"requires": "HasSort University"}
         )
 
 

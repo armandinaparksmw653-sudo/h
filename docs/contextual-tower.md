@@ -3556,3 +3556,143 @@ from raw-text parsing. `grammar/Metonymy.gf` keeps a dated comment
 recording exactly this reasoning at the point where the two functions
 would go, so a future attempt starts from the measured finding instead
 of re-discovering it.
+
+## Automatic (lemma, tree-relation) -> constraint derivation, and its dictionary grown from real WiMCor sentences one at a time
+
+The `evaluation/pilot-decode-wimcor/` Valparaiso/Haifa narrowing result
+(both real sentences narrowed to their single correct QID once a
+second, real "degree"-derived constraint was added) was built by hand
+-- a human reading the sentence, spotting "degree", and hand-writing a
+low-level scenario TSV row, bypassing `compile_gf_constraints` and the
+GF tree entirely. The user asked for this to work automatically: every
+significant content word in a sentence should be able to narrow the
+fiber on its own, discovered from the GF tree's own structure, not from
+a person re-deriving it per example.
+
+`scripts/contextual_rule_compiler.py`'s `compile_gf_constraints` now
+supports a new, generalized mechanism, keyed on **(lemma, structural
+relation to the metonymy target)** -- deliberately not a bare
+word->requirement table. A flat lemma-only lookup was the first design
+proposed and was rejected during design review: the same word can
+appear elsewhere in a sentence referring to something else entirely
+("He interviewed the dean, who had a degree from Yale, about
+Valparaiso's admissions policy" -- "degree" there is about the dean and
+Yale, not Valparaiso), so the lookup has to be keyed on *how* the word
+attaches, the same discipline the pre-existing `context_templates`
+(`ModifyNP+InPP` etc.) already uses for entity-resolving modifiers.
+
+Two construction/relation types, both implemented as pure tree-shape
+checks over hand-built (never yet auto-produced, see below) GF tree
+text:
+- **`ConjClauseObject`**: the object of the OTHER VP in a
+  `PredConjVP`/`PredOrConjVP` coordination -- "shares the target's
+  subject" is guaranteed by that constructor's own shape (one NP
+  argument for both VPs), nothing extra to verify.
+- **`ModifyNPObject`**: a `ModifyNP`+preposition modifier whose object
+  is a common noun rather than the existing QID-resolving proper-noun
+  case.
+
+New `data/contextual-context-triggers.json` holds the actual
+`(lemma, construction) -> requirement` table, deliberately seeded only
+with entries individually found and verified against real corpus text,
+not invented at VerbNet-import scale ahead of time.
+
+**A real bug caught before it reached CI**: the first `ConjClauseObject`
+implementation searched the whole tree for any `Compl`/`PassCompl`,
+which matched one buried inside an unrelated `ModifyRelVP` relative
+clause in a negative test built specifically to probe this risk --
+fixed by restricting the search to direct VP children of
+`PredConjVP`/`PredOrConjVP` only.
+
+**A second real risk, found via real corpus search, not a hypothetical**:
+searching WiMCor for the "attended/studied at X and
+received/earned/obtained a `<noun>`" shape that produced the Valparaiso/
+Haifa examples turned up 14 real candidates -- most had to be rejected
+because the noun explicitly names a *different* institution than the
+metonymy target ("received a degree **at** the University of Maryland"
+for a Gettysburg mention, "earned his MBA **from** San Diego State
+University" for an Oklahoma City mention, similarly for Webster/Yale/
+Deep Springs/Kingston). The original `ConjClauseObject` code called
+`lexical_head` first, which strips a `ModifyNP` wrapper before checking
+the lemma -- meaning a future tree that represented "degree at the
+University of Maryland" as `ModifyNP(degree, AtPP(...))` would still
+have matched and wrongly attached `Requires HasSort University` to the
+wrong target. Fixed: the object must now be a completely bare
+`OpenIndefCN`/`OpenDefCN`/`OpenAdjDefCN`/`OpenAdjIndefCN` node, no
+wrapper at all -- any modifier, benign or institution-redirecting alike,
+safely declines.
+
+**Dictionary growth, one real sentence at a time** (all verified via
+local Stanza structure + local `gf.exe` tree validity, then run through
+the real, shipped `compile_gf_constraints`/`data/*.json`, not a test
+double):
+
+| lemma | construction | requirement | strength | real sentence |
+|---|---|---|---|---|
+| degree | ConjClauseObject | HasSort University | requires (individually Wikidata-verified for Valparaiso/Haifa) | "He attended Valparaiso ... and received his bachelor's degree ..." |
+| doctorate | ConjClauseObject | HasSort University | prefers | "In 1697, he studied at Pisa and obtained his doctorate of law in 1719." |
+| fraternity | ConjClauseObject | HasSort University | prefers | "He enrolled at UCLA and joined the Delta Sigma Phi fraternity." (a US fraternity is specifically a university/college social organization) |
+
+`strength: prefers` (not `requires`) is the honest default for every
+entry except `degree`: only `degree`'s implication has been individually
+checked against live Wikidata P31/P279 chains the way the Valparaiso/
+Haifa result required; the others are real, structurally-clean sentences
+but their specific implied institution hasn't been checked yet, so they
+stay at the safer, never-wrongly-eliminating strength.
+
+`ModifyNPObject` still has no real corpus example after a deliberate
+search (campus/faculty/professor/alumnus/scholarship/tuition/fellowship
+near attend/study/enroll, both WiMCor and ConMeC, zero matches) -- a
+real, not-yet-explained finding: a bare proper-noun metonymy target
+rarely takes an in-place PP modifier directly in this genre of
+biographical text; when a "with/at/from X" phrase appears near the
+target, in every real example found so far it attaches to the *verb*
+instead (an oblique adjunct, not an NP-internal modifier) -- see the
+`PassComplRetained` finding below, which is exactly this pattern.
+
+**A genuine grammar gap, closed with a new `V3` category**: "He
+attended Ankara and **was awarded** a PhD degree in Pharmacy" -- a
+retained-object passive (the recipient is promoted to subject, but the
+theme/object is *retained*, not dropped, and there is no "by"-agent).
+None of the three existing VP-building rules fit: `Compl` needs active
+voice; `PassCompl`'s NP argument is specifically a "by"-agent (a
+different semantic role, confirmed by its own doc comment); `PassCompl0`
+takes no further NP at all. The retained object is inherently a
+ditransitive phenomenon -- confirmed by reading the pinned `gf-rgl-src`'s
+actual abstract `Verb.gf`, not guessed: `Slash2V3 : V3 -> NP -> VPSlash`
+("give it (to her)") leaves exactly the recipient slot open, and
+`ExtendEng.PassVPSlash : VPSlash -> VP` promotes that open slot to
+subject -- composing the two gives "NP was awarded object" with no
+agent, exactly this construction. Added `cat V3` and
+`PassComplRetained : V3 -> NP -> VP` to `grammar/Metonymy.gf`, one
+lexicon entry `Award : V3` (`mkV3 "award"`, `ParadigmsEng`, already
+open), and `PassComplRetained verb object = ExtendEng.PassVPSlash
+(Slash2V3 verb object)` in `MetonymyEng.gf` (`ExtendEng` qualifier
+needed for the same reason `PassAgentVPSlash` already needs it: `ExtraEng`,
+already open for VP-coordination, independently redeclares its own
+`PassVPSlash` with an identical signature -- checked directly against
+the pinned source, not guessed a second time). Compiled and linearized
+locally (`He announces Ankara and is awarded a degree`) before being
+written into any test. The round-trip parse surfaced the pre-existing
+`OpenPN2 "a" "degree"`-style ambiguity that any `OpenIndefCN` object
+already carries (confirmed on an unrelated pre-existing sentence,
+"Anna announces a degree", with no `PassComplRetained` involved at all)
+-- not a new risk this addition introduced.
+
+`ConjClauseObject`'s tree-shape checks (both the primary-action
+`first_node` lookup and the coordinated-sibling search) now also
+recognize `PassComplRetained` alongside `Compl`/`PassCompl`. The
+existing `degree` trigger fires automatically on the hand-built Ankara
+tree with no new dictionary entry -- this round grew the *grammar*, not
+the dictionary.
+
+**Still true, unchanged from the mechanism's first round**: no automatic
+tree-builder (`scripts/build_gf_tree_from_dependencies.py`, "Coordination
+(UD conj/cc) is deferred") produces a `PredConjVP`/`PredOrConjVP` shape
+from a real UD parse today, so none of this fires on a real corpus run
+yet -- every example above is hand-built and gf.exe-verified, testing
+the consuming side (`compile_gf_constraints`) and now also the grammar,
+not the producing side. Teaching the tree-builder to actually emit these
+shapes from real UD `conj`/`cc` parses (reusing these already-verified,
+already-compiled grammar constructors -- zero further grammar risk) is
+the next, separate round.

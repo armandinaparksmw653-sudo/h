@@ -6,6 +6,7 @@ abstract Metonymy = {
     NP ;
     VP ;
     V2 ;
+    V3 ;
     PP ;
     CN ;
 
@@ -15,6 +16,20 @@ abstract Metonymy = {
     Compl : V2 -> NP -> VP ;
     PassCompl : V2 -> NP -> VP ;
     PassCompl0 : V2 -> VP ;
+    -- Retained-object passive ("he was awarded a doctorate") -- a real
+    -- WiMCor shape (evaluation/pilot-decode-wimcor's Ankara/degree
+    -- example: "He attended Ankara and was awarded a PhD degree")
+    -- distinct from both PassCompl (whose NP is a "by"-agent) and
+    -- PassCompl0 (no further NP at all). V2 cannot represent this: a V2
+    -- has exactly one argument, so passivizing it necessarily promotes
+    -- that argument to subject, leaving nothing to retain as object --
+    -- the retained object is inherently a ditransitive (V3) phenomenon,
+    -- confirmed against the pinned gf-rgl-src's own abstract Verb.gf
+    -- (Slash2V3 : V3 -> NP -> VPSlash, "give it (to her)" -- the missing
+    -- slot Slash2V3 leaves open is exactly the recipient/agent that
+    -- passivization then promotes to subject). See MetonymyEng.gf for
+    -- the concrete Slash2V3+PassVPSlash composition.
+    PassComplRetained : V3 -> NP -> VP ;
     InPP : NP -> PP ;
     AboutPP : NP -> PP ;
     WithPP : NP -> PP ;
@@ -183,4 +198,6 @@ abstract Metonymy = {
     Read : V2 ;
     Drink : V2 ;
     Sign : V2 ;
+
+    Award : V3 ;
 }
