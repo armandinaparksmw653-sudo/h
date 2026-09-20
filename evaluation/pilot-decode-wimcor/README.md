@@ -203,10 +203,25 @@ recomputed over the exact bytes Git will actually store (`core.autocrlf`
 normalizes this repository's checkout to CRLF on Windows but commits LF --
 recomputed and independently verified against the *staged* blob content, not
 the Windows working-tree bytes, to avoid the same class of mismatch this
-project's `graph_sha256` procedure is designed to catch). **Expected result
-after this fix**: Valparaiso's and Haifa's `Requires HasSort University`
-stage should now retain their correct gold QID (real second-layer narrowing,
-the demonstration this fixture set out to give); Amherst's should continue
-to eliminate its own correct answer -- not a bug, but an honest, Wikidata-
-ontology-level limit worth reporting as-is rather than hand-patched with a
-fabricated `P279` edge that doesn't exist in real Wikidata.
+project's `graph_sha256` procedure is designed to catch). **Confirmed by a real CI run after this fix** (`pilot-decode-direct-evaluation.yml`,
+`graph_sha256=adf50ed9...`): exactly as predicted.
+- **`valparaiso-with-degree-context`**: stage 2 narrows 58 survivors down to
+  `survivors=[Q186047]` -- the single, correct gold QID (Valparaiso
+  University), both stages `agda-layer-check=true`.
+- **`haifa-with-degree-context`**: stage 2 narrows roughly 400 survivors down
+  to `survivors=[Q591115]` -- the single, correct gold QID (University of
+  Haifa), both stages `agda-layer-check=true`.
+- **`amherst-with-degree-context`**: stage 2 still gives `survivors=[]`, with
+  `Q49165` (Amherst College) still listed under `obstruction=MissingRequirement`
+  -- confirmed, not a bug: a genuine Wikidata-ontology limit (see above), left
+  as an honest negative result rather than patched with a fabricated `P279`
+  edge.
+
+This is the first case in this whole investigation where two genuine
+constraints, both derived from real sentence content (the verb "attend" and
+a real "degree" mention), narrow the graph search on real Wikidata data down
+to a single, correct candidate -- fully Agda-verified at every step. Earlier
+attempts either failed to narrow at all (`Prefers HasSort Entity` alone) or
+narrowed incorrectly (the pre-fix snapshot gap above); this is the first
+clean demonstration of the "context accumulates as constraints, fiber
+narrows to the truth" mechanism this fixture was built to test.
