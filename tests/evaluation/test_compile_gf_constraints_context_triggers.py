@@ -71,6 +71,13 @@ CONTEXT_TRIGGERS = {
             "strength": "prefers",
             "provenance": "test:context-trigger:degree-modifier",
         },
+        {
+            "construction": "ConjClauseObject",
+            "lemma": "diploma",
+            "requirement": "HasSort University",
+            "strength": "prefers",
+            "provenance": "test:context-trigger:diploma-implies-university",
+        },
     ],
 }
 
@@ -190,6 +197,63 @@ class ConjClauseObjectTests(unittest.TestCase):
             '(Compl Announce (OpenPN "Valparaiso")) '
             '(Compl Read (ModifyNP (OpenIndefCN "degree" "degrees") '
             '(AtPP (OpenPN2 "University" "Maryland"))))',
+            LANGUAGE_RULES,
+            WORDNET_RULES,
+            {},
+            context_triggers=CONTEXT_TRIGGERS,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"].startswith("ContextTrigger:")
+        ]
+        self.assertEqual(trigger_constraints, [])
+
+    def test_compl_oblique_object_produces_a_trigger_constraint(self) -> None:
+        # ComplOblique (grammar/Metonymy.gf), added for a real WiMCor
+        # shape ("graduated WITH a diploma") that Compl cannot represent
+        # -- "diploma" is a verb-level oblique, not a direct object.
+        # Verified via local gf.exe: linearizes to "Farina announces
+        # Valparaiso and graduates with a diploma".
+        proposal = base_proposal(
+            "Farina attended Valparaiso and graduated with a diploma"
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            'PredConjVP (OpenPN "Farina") '
+            '(Compl Announce (OpenPN "Valparaiso")) '
+            '(ComplOblique Graduate (WithPP (OpenIndefCN "diploma" "diplomas")))',
+            LANGUAGE_RULES,
+            WORDNET_RULES,
+            {},
+            context_triggers=CONTEXT_TRIGGERS,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
+    def test_compl_oblique_modified_object_never_matches(self) -> None:
+        # Same safety guarantee as test_modified_object_never_matches_
+        # even_a_known_lemma, one level deeper (inside the PP): a
+        # "diploma FROM Harvard" must decline just as readily as a
+        # "degree AT the University of Maryland" does for Compl. Verified
+        # via local gf.exe: linearizes to "Farina announces Valparaiso
+        # and graduates with a diploma from Harvard".
+        proposal = base_proposal(
+            "Farina attended Valparaiso and graduated with a diploma from Harvard"
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            'PredConjVP (OpenPN "Farina") '
+            '(Compl Announce (OpenPN "Valparaiso")) '
+            '(ComplOblique Graduate (WithPP (ModifyNP '
+            '(OpenIndefCN "diploma" "diplomas") (FromPP (OpenPN "Harvard")))))',
             LANGUAGE_RULES,
             WORDNET_RULES,
             {},
@@ -490,6 +554,63 @@ class RealDataFileCorpusExamplesTests(unittest.TestCase):
         self.assertEqual(len(trigger_constraints), 1)
         self.assertEqual(
             trigger_constraints[0]["payload"], {"requires": "HasSort University"}
+        )
+
+    def test_berklee_diploma_is_derived_automatically(self) -> None:
+        # Real WiMCor sentence using ComplOblique (grammar/Metonymy.gf):
+        # "with a diploma" is a verb-level oblique of "graduated", not a
+        # direct object, which is exactly why Compl could not represent
+        # this shape before this addition.
+        sentence = (
+            "He later attended Berklee and graduated with a diploma in "
+            "arranging and composition in 1966."
+        )
+        action_start = sentence.index("attended")
+        action_end = action_start + len("attended")
+        proposal = {
+            "action": "attend",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:attend"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "attend",
+                        "surface": "attended",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:attend",
+                }
+            ],
+        }
+        # "in arranging and composition" (nmod on "diploma") is dropped --
+        # the same safe simplification as every other real example above;
+        # it names a field of study, not a competing institution.
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "Berklee")) '
+            '(ComplOblique Graduate (WithPP (OpenIndefCN "diploma" "diplomas")))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
         )
 
 

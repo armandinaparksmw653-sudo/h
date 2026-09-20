@@ -7,6 +7,7 @@ abstract Metonymy = {
     VP ;
     V2 ;
     V3 ;
+    V ;
     PP ;
     CN ;
 
@@ -30,6 +31,25 @@ abstract Metonymy = {
     -- passivization then promotes to subject). See MetonymyEng.gf for
     -- the concrete Slash2V3+PassVPSlash composition.
     PassComplRetained : V3 -> NP -> VP ;
+    -- Intransitive verb + a single fixed-preposition oblique adjunct
+    -- ("graduated WITH a diploma", "enrolled AS a doctoral student") --
+    -- a real, recurring WiMCor shape found searching for more
+    -- ConjClauseObject examples (Berklee/"graduated with a diploma",
+    -- Rochester/"graduated with a degree"), distinct from Compl (which
+    -- needs a *direct* object, not an oblique) and from the deliberately
+    -- NOT-attempted general "attach any PP to any VP" mechanism
+    -- documented above PassComplRetained (which risked silently
+    -- reinterpreting which constituent a PP modifies). This is narrower
+    -- and safe: V (this project's closed intransitive-verb lexicon, only
+    -- ever combined with one of the already-closed PP constructors
+    -- above) plus PP together form ONE new fixed VP shape, the same
+    -- "closed word/shape, no open-ended ambiguity" discipline already
+    -- used for the 14 PP constructors and BecauseS/IfS/etc. Confirmed
+    -- against the pinned gf-rgl-src's own Constructors.gf, not guessed:
+    -- `mkVP : V -> VP` ("sleep") composed with the separately-existing
+    -- `mkVP : VP -> Adv -> VP` ("sleep here") overload is exactly this
+    -- shape -- PP's own lincat is already Adv (see MetonymyEng.gf).
+    ComplOblique : V -> PP -> VP ;
     InPP : NP -> PP ;
     AboutPP : NP -> PP ;
     WithPP : NP -> PP ;
@@ -43,6 +63,7 @@ abstract Metonymy = {
     DuringPP : NP -> PP ;
     NearPP : NP -> PP ;
     OfPP : NP -> PP ;
+    AsPP : NP -> PP ;
     AndS : S -> S -> S ;
     OrS : S -> S -> S ;
     AndNP : NP -> NP -> NP ;
@@ -200,4 +221,8 @@ abstract Metonymy = {
     Sign : V2 ;
 
     Award : V3 ;
+
+    Graduate : V ;
+    Work : V ;
+    Enroll : V ;
 }

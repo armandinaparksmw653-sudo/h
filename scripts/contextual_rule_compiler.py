@@ -34,6 +34,7 @@ ARITIES = {
     "PassCompl": 2,
     "PassCompl0": 1,
     "PassComplRetained": 2,
+    "ComplOblique": 2,
     "InPP": 1,
     "AboutPP": 1,
     "WithPP": 1,
@@ -47,6 +48,7 @@ ARITIES = {
     "DuringPP": 1,
     "NearPP": 1,
     "OfPP": 1,
+    "AsPP": 1,
     "AndS": 2,
     "OrS": 2,
     "AndNP": 2,
@@ -805,7 +807,8 @@ def compile_gf_constraints(
                 vp
                 for vp in node.arguments[1:]
                 if isinstance(vp, GFNode)
-                and vp.constructor in {"Compl", "PassCompl", "PassComplRetained"}
+                and vp.constructor
+                in {"Compl", "PassCompl", "PassComplRetained", "ComplOblique"}
             )
         for argument in node.arguments:
             found.extend(coordinated_complements(argument))
@@ -834,7 +837,9 @@ def compile_gf_constraints(
     # FrameArgument capability constraint from it is equally valid
     # regardless of whether that argument is textually the object or the
     # agent.
-    complement = first_node(root, {"Compl", "PassCompl", "PassComplRetained"})
+    complement = first_node(
+        root, {"Compl", "PassCompl", "PassComplRetained", "ComplOblique"}
+    )
     if complement and len(complement.arguments) == 2:
         object_node = complement.arguments[1]
         head = lexical_head(object_node)
@@ -1010,10 +1015,30 @@ def compile_gf_constraints(
     # "degree" -- a verb-level oblique PP, already documented in
     # build_gf_tree_from_dependencies.py as having no attachment point
     # in this grammar.)
+    def coordinated_object_lemma(vp: GFNode) -> str | None:
+        """Compl/PassCompl/PassComplRetained's second argument is already
+        a bare NP -- _noun_lemma handles it directly. ComplOblique's
+        second argument is a PP (e.g. WithPP(OpenIndefCN ...)) wrapping
+        the NP one level deeper; still passed through the same bare
+        _noun_lemma check (no lexical_head), so a modifier on the PP's
+        own object -- benign or institution-redirecting -- still safely
+        declines, exactly the same guarantee as the Compl/PassCompl
+        case above."""
+        if (
+            vp.constructor in {"Compl", "PassCompl", "PassComplRetained"}
+            and len(vp.arguments) == 2
+        ):
+            return _noun_lemma(vp.arguments[1])
+        if vp.constructor == "ComplOblique" and len(vp.arguments) == 2:
+            pp = vp.arguments[1]
+            if isinstance(pp, GFNode) and len(pp.arguments) == 1:
+                return _noun_lemma(pp.arguments[0])
+        return None
+
     for extra_complement in coordinated_complements(root):
-        if extra_complement is complement or len(extra_complement.arguments) != 2:
+        if extra_complement is complement:
             continue
-        extra_lemma = _noun_lemma(extra_complement.arguments[1])
+        extra_lemma = coordinated_object_lemma(extra_complement)
         if not extra_lemma:
             continue
         trigger = _lookup_context_trigger(

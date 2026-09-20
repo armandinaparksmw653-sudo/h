@@ -7,6 +7,7 @@ concrete MetonymyEng of Metonymy =
     VP = VP ;
     V2 = V2 ;
     V3 = V3 ;
+    V = V ;
     PP = Adv ;
     CN = CN ;
 
@@ -44,6 +45,13 @@ concrete MetonymyEng of Metonymy =
     -- PassVPSlash : VPSlash -> VP with the identical signature.
     PassComplRetained verb object =
       ExtendEng.PassVPSlash (Slash2V3 verb object) ;
+    -- mkVP : V -> VP ("graduate") composed with the separate
+    -- mkVP : VP -> Adv -> VP ("graduate here") overload -- both reached
+    -- via the already-open SyntaxEng (Constructors.gf's `mkVP` overload
+    -- set), no new qualifier needed; grepped the whole pinned tree for a
+    -- second declaration of either specific overload signature first --
+    -- none found.
+    ComplOblique verb pp = mkVP (mkVP verb) pp ;
     InPP np = SyntaxEng.mkAdv in_Prep np ;
     AboutPP np = SyntaxEng.mkAdv (mkPrep "about") np ;
     WithPP np = SyntaxEng.mkAdv (mkPrep "with") np ;
@@ -57,6 +65,7 @@ concrete MetonymyEng of Metonymy =
     DuringPP np = SyntaxEng.mkAdv (mkPrep "during") np ;
     NearPP np = SyntaxEng.mkAdv (mkPrep "near") np ;
     OfPP np = SyntaxEng.mkAdv (mkPrep "of") np ;
+    AsPP np = SyntaxEng.mkAdv (mkPrep "as") np ;
     AndS s1 s2 = mkS and_Conj s1 s2 ;
     OrS s1 s2 = mkS or_Conj s1 s2 ;
     AndNP np1 np2 = mkNP and_Conj np1 np2 ;
@@ -277,4 +286,8 @@ concrete MetonymyEng of Metonymy =
     Sign = mkV2 "sign" ;
 
     Award = mkV3 "award" ;
+
+    Graduate = mkV "graduate" ;
+    Work = mkV "work" ;
+    Enroll = mkV "enroll" ;
 }
