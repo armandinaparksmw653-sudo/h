@@ -1,5 +1,6 @@
 concrete MetonymyEng of Metonymy =
-  open SyntaxEng, ExtendEng, VerbEng, ParadigmsEng, ExtraEng, (R=ResEng) in {
+  open SyntaxEng, ExtendEng, VerbEng, ParadigmsEng, ExtraEng, SentenceEng,
+       (R=ResEng) in {
 
   lincat
     S = S ;
@@ -52,6 +53,19 @@ concrete MetonymyEng of Metonymy =
     -- second declaration of either specific overload signature first --
     -- none found.
     ComplOblique verb pp = mkVP (mkVP verb) pp ;
+    -- "at" is the fixed, closed preposition for this construction (the
+    -- real examples found all use "attended"/"studied at" as the
+    -- target's own governing verb, both locative-"at" in meaning) --
+    -- SentenceEng.SlashVP/ExtendEng.PiedPipingRelSlash/VerbEng.
+    -- VPSlashPrep qualified defensively even though none showed a
+    -- conflict warning when SentenceEng was added to `open` (checked the
+    -- real compiler output directly, not assumed clean), matching this
+    -- file's own established discipline elsewhere.
+    ModifyRelAtVP target subj vp =
+      mkNP target
+        (mkRS
+          (ExtendEng.PiedPipingRelSlash SyntaxEng.which_RP
+            (SentenceEng.SlashVP subj (VerbEng.VPSlashPrep vp (mkPrep "at"))))) ;
     InPP np = SyntaxEng.mkAdv in_Prep np ;
     AboutPP np = SyntaxEng.mkAdv (mkPrep "about") np ;
     WithPP np = SyntaxEng.mkAdv (mkPrep "with") np ;

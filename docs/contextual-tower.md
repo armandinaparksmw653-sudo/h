@@ -3696,3 +3696,112 @@ not the producing side. Teaching the tree-builder to actually emit these
 shapes from real UD `conj`/`cc` parses (reusing these already-verified,
 already-compiled grammar constructors -- zero further grammar risk) is
 the next, separate round.
+
+## Two more real gaps closed (`ComplOblique`, `ModifyRelAtVP`); one real gap found and deliberately deferred (agentive retained-object passive); cross-sentence discourse ruled out entirely
+
+Asked to assess what further grammar extensions the trigger-dictionary
+mechanism above would need, then to implement as many as possible. Four
+candidates were on the table, found by continuing the same real-corpus
+search:
+
+**1. `ComplOblique : V -> PP -> VP` -- implemented.** The single most
+frequent blocker found while searching for more `ConjClauseObject`
+examples: "graduated **WITH** a diploma", "enrolled **AS** a doctoral
+student", "worked **AS** ship's surgeon" -- an intransitive verb plus
+exactly one oblique PP adjunct, which `Compl` cannot represent (it needs
+a direct object, not an oblique). Deliberately narrower than the general
+"attach any PP to any VP" mechanism this file already documents as *not*
+attempted (risked silently reinterpreting which constituent a PP
+modifies) -- `ComplOblique` is one new, closed VP shape (`V` + `PP`
+together, both from this project's own closed lexicon/preposition set),
+confirmed against the pinned `gf-rgl-src`'s own `Constructors.gf`:
+`mkVP : V -> VP` ("sleep") composed with the separate `mkVP : VP -> Adv
+-> VP` ("sleep here") overload is exactly this shape. Added `cat V`
+(this project had only `V2`/`V3` before), a new preposition `AsPP`, and
+lexicon entries `Graduate`/`Work`/`Enroll`. New dictionary entry:
+`diploma -> Prefers HasSort University`, from the real Berklee sentence
+("He later attended Berklee and graduated with a diploma..."). Python
+side: `coordinated_object_lemma` (renamed from an inline lambda,
+factored out so `RelativeClauseObject` below could reuse it) reads one
+level deeper for `ComplOblique` -- the PP's own NP argument -- while
+keeping the same no-`lexical_head` safety guarantee: a modifier on the
+PP's object, benign or institution-redirecting, still safely declines.
+
+**2. `ModifyRelAtVP : NP -> NP -> VP -> NP` -- implemented, the deepest
+RGL dig of this whole investigation.** Real shape: "He studied at
+Padgate Training College, **where** he was awarded a Certificate in
+Education." -- a second clause attached to the *target's own NP* via a
+relative pronoun, describing an event ("was awarded...") that happened
+there. Checked directly, not guessed: this pinned commit's RGL has no
+locative "where" relative pronoun at all (`Structural.gf`/
+`ExtraEngAbs.gf` declare only `which_who_RP`/`that_RP`/`which_RP`/
+`who_RP`) -- built instead from the real, grammatical alternative
+phrasing "at which", composing three abstract functions found by reading
+`Verb.gf`/`Sentence.gf`/`Extend.gf` directly: `VPSlashPrep : VP -> Prep
+-> VPSlash` ("live in (it)") opens a prepositional gap *on top of an
+already-complete VP* (so the embedded clause's own retained object, e.g.
+"a certificate", stays intact -- only the locative "at ___" is left
+open); `SlashVP : NP -> VPSlash -> ClSlash` ("(whom) he sees") supplies
+the embedded clause's own subject ("he"); `PiedPipingRelSlash : RP ->
+ClSlash -> RCl` ("with whom John lives") fronts the gap's preposition
+together with the relative pronoun. `SlashVP` needed a new `open
+SentenceEng` -- checked the real compiler output (not assumed clean)
+after adding it: no new conflict warnings beyond the same benign
+lincat-name-shadowing pattern every category in this grammar already
+shows. Verified locally: `Pred (OpenPN "He") (Compl Announce
+(ModifyRelAtVP (OpenPN "Padgate") (OpenPN "He") (PassComplRetained Award
+(OpenIndefCN "certificate" "certificates"))))` linearizes to "He
+announces Padgate , at which He is awarded a certificate".
+
+New relation type `RelativeClauseObject` in `compile_gf_constraints`:
+the trigger word is inside the VP embedded in a `ModifyRelAtVP` that
+modifies the *primary complement's own object* (the target NP itself) --
+distinct from `ConjClauseObject`'s coordinated-sibling relation. Reuses
+`coordinated_object_lemma` for the embedded VP, so the same safety
+guarantee applies one relation deeper: a "certificate **from**
+Cambridge" inside the relative clause declines just as readily as a
+"degree **at** the University of Maryland" does for the coordinated
+case. New dictionary entry: `certificate -> Prefers HasSort University`
+(the Padgate sentence -- noted honestly: the source surface "Padgate
+Training College" already contains "College", a milder version of the
+Yale/Harvard self-describing-name caveat from the mechanism's first
+round).
+
+**3. Agentive retained-object passive ("X was granted Y **by**
+TARGET") -- found, deliberately deferred, not implemented.** A real
+sentence surfaced ("In 2000, Fielding was granted his doctorate by
+Irvine") where the *metonymy target itself* would sit in the *agent*
+position of a ditransitive passive, not as an object anywhere in a
+coordinated or embedded clause. This is a fundamentally different
+problem from 1/2 above: it's not a new tree-shape for
+`compile_gf_constraints` to recognize, because the target's *hole role*
+itself would need a third value -- an "agent hole" -- alongside this
+project's existing `SubjectHole`/`ObjectHole` (`engine/src/Metonymy/
+Types.hs`'s `HoleRole`). That reaches into the Haskell type the whole
+formal core is built on, not just the Python/GF frontend layer,
+correctly out of scope for a grammar-extension round. Also: the one
+supporting example is unconfirmed as genuine metonymy (no wider check
+that "Irvine" there is really the ambiguous place-standing-for-
+institution this project's fixtures target, rather than e.g. a surname)
+-- low enough confidence, combined with the real architectural cost,
+that this was not worth pursuing without first finding a second,
+independently-verified example.
+
+**4. Cross-sentence discourse connections -- ruled out, not a grammar
+question at all.** One real candidate ("He went to St Andrew ... The
+very same day he defended seven theses on medicine and was awarded the
+doctorate") turned out to have the trigger word in a *different
+sentence* than the target mention. Every part of this pipeline
+(`gf_sentence`, `compile_gf_constraints`, the TSV scenario format) is
+scoped to one sentence by design; aggregating context across sentences
+would need genuinely new infrastructure, not a grammar or relation-type
+addition -- not attempted.
+
+Dictionary after this round (six entries total, `data/contextual-
+context-triggers.json`): `degree`/`doctorate`/`fraternity`/`diploma` via
+`ConjClauseObject`, `certificate` via `RelativeClauseObject`. Only
+`degree` is at `requires` strength (individually Wikidata-verified for
+Valparaiso/Haifa); every other entry stays at `prefers` -- real,
+structurally-clean sentences, but their specific implied institution
+hasn't been individually checked yet, so they can narrow a fiber but can
+never wrongly eliminate the correct answer on their own.

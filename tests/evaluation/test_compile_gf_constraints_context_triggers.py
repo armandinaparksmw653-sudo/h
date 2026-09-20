@@ -78,6 +78,13 @@ CONTEXT_TRIGGERS = {
             "strength": "prefers",
             "provenance": "test:context-trigger:diploma-implies-university",
         },
+        {
+            "construction": "RelativeClauseObject",
+            "lemma": "certificate",
+            "requirement": "HasSort University",
+            "strength": "prefers",
+            "provenance": "test:context-trigger:certificate-implies-university",
+        },
     ],
 }
 
@@ -291,6 +298,89 @@ class ConjClauseObjectTests(unittest.TestCase):
         # match), so the ConjClauseObject loop's only remaining candidate
         # is the second Compl's object ("Valparaiso", a bare proper noun
         # -- _noun_lemma resolves None for it, no trigger lookup at all).
+        self.assertEqual(trigger_constraints, [])
+
+
+class ModifyRelAtVpArityTests(unittest.TestCase):
+    def test_modify_rel_at_vp_takes_target_subject_and_embedded_vp(self) -> None:
+        self.assertEqual(ARITIES["ModifyRelAtVP"], 3)
+
+
+class RelativeClauseObjectTests(unittest.TestCase):
+    def test_embedded_vp_object_produces_a_trigger_constraint(self) -> None:
+        # "Padgate, at which he was awarded a certificate" -- ModifyRelAtVP
+        # (grammar/Metonymy.gf) modifies the TARGET's own NP directly
+        # (distinct from ConjClauseObject's coordinated-sibling relation).
+        # Verified via local gf.exe: linearizes to "He announces Padgate ,
+        # at which He is awarded a certificate".
+        proposal = base_proposal("He studied at Padgate, where he was awarded a certificate")
+        constraints = compile_gf_constraints(
+            proposal,
+            'Pred (OpenPN "He") (Compl Announce (ModifyRelAtVP '
+            '(OpenPN "Padgate") (OpenPN "He") '
+            '(PassComplRetained Award (OpenIndefCN "certificate" "certificates"))))',
+            LANGUAGE_RULES,
+            WORDNET_RULES,
+            {},
+            context_triggers=CONTEXT_TRIGGERS,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:RelativeClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
+    def test_modified_embedded_object_never_matches(self) -> None:
+        # Same safety guarantee as the ConjClauseObject/ComplOblique
+        # cases, one relation deeper: "a certificate FROM Cambridge"
+        # inside the relative clause must decline just as readily.
+        # Verified via local gf.exe: linearizes to "He announces Padgate ,
+        # at which He is awarded a certificate from Cambridge".
+        proposal = base_proposal(
+            "He studied at Padgate, where he was awarded a certificate from Cambridge"
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            'Pred (OpenPN "He") (Compl Announce (ModifyRelAtVP '
+            '(OpenPN "Padgate") (OpenPN "He") '
+            '(PassComplRetained Award (ModifyNP '
+            '(OpenIndefCN "certificate" "certificates") (FromPP (OpenPN "Cambridge"))))))',
+            LANGUAGE_RULES,
+            WORDNET_RULES,
+            {},
+            context_triggers=CONTEXT_TRIGGERS,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"].startswith("ContextTrigger:")
+        ]
+        self.assertEqual(trigger_constraints, [])
+
+    def test_unrelated_modify_rel_vp_is_unaffected(self) -> None:
+        # Regression guard: the existing subject-relative ModifyRelVP
+        # (a DIFFERENT constructor, "which was awarded...") is untouched
+        # -- only ModifyRelAtVP is checked for RelativeClauseObject.
+        proposal = base_proposal("Anna announces the dean who had a certificate")
+        constraints = compile_gf_constraints(
+            proposal,
+            'Pred (OpenPN "Anna") (Compl Announce (ModifyRelVP '
+            '(OpenIndefCN "dean" "deans") '
+            '(Compl Read (OpenIndefCN "certificate" "certificates"))))',
+            LANGUAGE_RULES,
+            WORDNET_RULES,
+            {},
+            context_triggers=CONTEXT_TRIGGERS,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"].startswith("ContextTrigger:")
+        ]
         self.assertEqual(trigger_constraints, [])
 
 
@@ -607,6 +697,63 @@ class RealDataFileCorpusExamplesTests(unittest.TestCase):
             c
             for c in constraints
             if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
+    def test_padgate_certificate_is_derived_automatically(self) -> None:
+        # Real WiMCor sentence using ModifyRelAtVP (grammar/Metonymy.gf):
+        # "where he was awarded a Certificate" modifies the target's own
+        # NP directly, via "at which" (RGL has no locative "where" RP in
+        # this pinned commit -- see the grammar file's own comment).
+        sentence = (
+            "He studied at Padgate Training College, Warrington, where "
+            "he was awarded a Certificate in Education in 1977."
+        )
+        action_start = sentence.index("studied at")
+        action_end = action_start + len("studied at")
+        proposal = {
+            "action": "study at",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:study_at"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "study at",
+                        "surface": "studied at",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:study_at",
+                }
+            ],
+        }
+        # "Warrington" (appositive) and "in Education"/"in 1977" (on the
+        # target and the certificate respectively) are dropped -- the
+        # same safe simplification as every other real example above.
+        tree = (
+            'Pred (OpenPN "He") (Compl Announce (ModifyRelAtVP '
+            '(OpenPN "Padgate") (OpenPN "He") '
+            '(PassComplRetained Award (OpenIndefCN "certificate" "certificates"))))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:RelativeClauseObject"
         ]
         self.assertEqual(len(trigger_constraints), 1)
         self.assertEqual(

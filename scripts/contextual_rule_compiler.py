@@ -59,6 +59,7 @@ ARITIES = {
     "ModifyNP": 2,
     "ModifyRel": 3,
     "ModifyRelVP": 2,
+    "ModifyRelAtVP": 3,
     "IndefCN": 1,
     "DefCN": 1,
     "ModifyRelCN": 3,
@@ -827,6 +828,29 @@ def compile_gf_constraints(
             return lexical_head(node.arguments[0])
         return node
 
+    def coordinated_object_lemma(vp: GFNode) -> str | None:
+        """Compl/PassCompl/PassComplRetained's second argument is already
+        a bare NP -- _noun_lemma handles it directly. ComplOblique's
+        second argument is a PP (e.g. WithPP(OpenIndefCN ...)) wrapping
+        the NP one level deeper; still passed through the same bare
+        _noun_lemma check (no lexical_head), so a modifier on the PP's
+        own object -- benign or institution-redirecting -- still safely
+        declines. Used both for ConjClauseObject (a coordinated sibling
+        VP) and RelativeClauseObject (a VP embedded in a ModifyRelAtVP
+        that itself modifies the target) -- the same "what does this VP's
+        own object say" question, just reached via a different tree
+        relation each time."""
+        if (
+            vp.constructor in {"Compl", "PassCompl", "PassComplRetained"}
+            and len(vp.arguments) == 2
+        ):
+            return _noun_lemma(vp.arguments[1])
+        if vp.constructor == "ComplOblique" and len(vp.arguments) == 2:
+            pp = vp.arguments[1]
+            if isinstance(pp, GFNode) and len(pp.arguments) == 1:
+                return _noun_lemma(pp.arguments[0])
+        return None
+
     # PassCompl's second argument is the "by"-agent NP, not a grammatical
     # object -- but it is analyzed exactly like Compl's object here: when
     # it is the metonymy target itself (a bare proper noun, whichever hole
@@ -842,6 +866,41 @@ def compile_gf_constraints(
     )
     if complement and len(complement.arguments) == 2:
         object_node = complement.arguments[1]
+        # RelativeClauseObject: a content word inside the VP embedded in
+        # a ModifyRelAtVP that modifies the TARGET's own NP directly
+        # ("Padgate, at which he was awarded a Certificate...") --
+        # distinct from ConjClauseObject (a sibling VP reached through
+        # PredConjVP coordination): here the relative clause hangs off
+        # the target NP itself, found as the primary complement's own
+        # object, not a coordinated sibling. Reuses coordinated_object_
+        # lemma (the same "what does this VP's own object say" check,
+        # same no-lexical_head safety guarantee) since a ModifyRelAtVP's
+        # third argument is an ordinary Compl/PassCompl/PassComplRetained/
+        # ComplOblique VP, no different from one found via coordination.
+        if (
+            isinstance(object_node, GFNode)
+            and object_node.constructor == "ModifyRelAtVP"
+            and len(object_node.arguments) == 3
+        ):
+            embedded_vp = object_node.arguments[2]
+            embedded_lemma = (
+                coordinated_object_lemma(embedded_vp)
+                if isinstance(embedded_vp, GFNode)
+                else None
+            )
+            if embedded_lemma:
+                relative_trigger = _lookup_context_trigger(
+                    context_triggers, "RelativeClauseObject", embedded_lemma
+                )
+                if relative_trigger:
+                    constraints.append(
+                        _context_trigger_constraint(
+                            proposal,
+                            embedded_lemma,
+                            "RelativeClauseObject",
+                            relative_trigger,
+                        )
+                    )
         head = lexical_head(object_node)
         head_lemma = _noun_lemma(head)
         if (
@@ -1015,26 +1074,6 @@ def compile_gf_constraints(
     # "degree" -- a verb-level oblique PP, already documented in
     # build_gf_tree_from_dependencies.py as having no attachment point
     # in this grammar.)
-    def coordinated_object_lemma(vp: GFNode) -> str | None:
-        """Compl/PassCompl/PassComplRetained's second argument is already
-        a bare NP -- _noun_lemma handles it directly. ComplOblique's
-        second argument is a PP (e.g. WithPP(OpenIndefCN ...)) wrapping
-        the NP one level deeper; still passed through the same bare
-        _noun_lemma check (no lexical_head), so a modifier on the PP's
-        own object -- benign or institution-redirecting -- still safely
-        declines, exactly the same guarantee as the Compl/PassCompl
-        case above."""
-        if (
-            vp.constructor in {"Compl", "PassCompl", "PassComplRetained"}
-            and len(vp.arguments) == 2
-        ):
-            return _noun_lemma(vp.arguments[1])
-        if vp.constructor == "ComplOblique" and len(vp.arguments) == 2:
-            pp = vp.arguments[1]
-            if isinstance(pp, GFNode) and len(pp.arguments) == 1:
-                return _noun_lemma(pp.arguments[0])
-        return None
-
     for extra_complement in coordinated_complements(root):
         if extra_complement is complement:
             continue

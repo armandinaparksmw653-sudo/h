@@ -28,6 +28,13 @@
       "requirement": "HasSort University",
       "strength": "prefers",
       "provenance": "manual-curated:v1 (real WiMCor sentence, 'He later attended Berklee and graduated with a diploma in arranging and composition in 1966' -- structure verified via local Stanza/gf.exe; uses the new ComplOblique grammar shape, since 'with a diploma' is a verb-level oblique, not a direct object; strength kept at prefers, not requires, since the specific institution has not been individually checked against live Wikidata P31/P279)"
+    },
+    {
+      "construction": "RelativeClauseObject",
+      "lemma": "certificate",
+      "requirement": "HasSort University",
+      "strength": "prefers",
+      "provenance": "manual-curated:v1 (real WiMCor sentence, 'He studied at Padgate Training College, Warrington, where he was awarded a Certificate in Education in 1977' -- structure verified via local Stanza/gf.exe; uses the new ModifyRelAtVP grammar shape ('where' built from 'at which'); strength kept at prefers, not requires, since the specific institution has not been individually checked against live Wikidata P31/P279 -- note the source surface here ('Padgate Training College') already includes 'College', a milder version of the Yale/Harvard self-describing-name caveat)"
     }
   ]
 }

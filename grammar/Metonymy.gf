@@ -50,6 +50,28 @@ abstract Metonymy = {
     -- `mkVP : VP -> Adv -> VP` ("sleep here") overload is exactly this
     -- shape -- PP's own lincat is already Adv (see MetonymyEng.gf).
     ComplOblique : V -> PP -> VP ;
+    -- Locative relative clause on the metonymy target itself ("X, WHERE
+    -- he was awarded a degree") -- a real WiMCor shape (a place attended/
+    -- studied at, with a second, later clause attached via "where"
+    -- describing an event that happened there), distinct from
+    -- ModifyRelVP (whose RP is the clause's own SUBJECT, "which was
+    -- awarded..." -- wrong here: "he", not the target, is awarded).
+    -- "Where" itself has no RGL relative-pronoun counterpart in this
+    -- pinned commit (checked: Structural.gf/ExtraEngAbs.gf only declare
+    -- which_who_RP/that_RP/which_RP/who_RP, no locative one) -- built
+    -- instead from "at which" (a real, grammatical alternative phrasing
+    -- of "where"), composing three abstract Verb.gf/Sentence.gf/Extend.gf
+    -- functions confirmed against the pinned gf-rgl-src, not guessed:
+    -- `VPSlashPrep : VP -> Prep -> VPSlash` ("live in (it)") opens a
+    -- prepositional gap on top of an already-COMPLETE VP (so the
+    -- embedded clause's own object, e.g. "a degree", stays intact --
+    -- only the locative "at ___" is left open); `SlashVP : NP -> VPSlash
+    -- -> ClSlash` ("(whom) he sees") supplies the embedded clause's own
+    -- subject ("he"); `PiedPipingRelSlash : RP -> ClSlash -> RCl` ("with
+    -- whom John lives") fronts the gap's preposition together with the
+    -- relative pronoun. See MetonymyEng.gf for the concrete composition
+    -- and which modules each piece needed opening from.
+    ModifyRelAtVP : NP -> NP -> VP -> NP ;
     InPP : NP -> PP ;
     AboutPP : NP -> PP ;
     WithPP : NP -> PP ;
