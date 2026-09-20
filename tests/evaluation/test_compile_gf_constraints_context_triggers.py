@@ -371,6 +371,59 @@ class RealDataFileCorpusExamplesTests(unittest.TestCase):
             "studied at Pisa and obtained his doctorate",
         )
 
+    def test_ucla_fraternity_is_derived_automatically(self) -> None:
+        sentence = "He enrolled at UCLA and joined the Delta Sigma Phi fraternity."
+        action_start = sentence.index("enrolled at")
+        action_end = action_start + len("enrolled at")
+        proposal = {
+            "action": "enroll at",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:enroll_at"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "enroll at",
+                        "surface": "enrolled at",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:enroll_at",
+                }
+            ],
+        }
+        # "Delta Sigma Phi" is a UD compound modifier on "fraternity", not
+        # a PP -- dropped the same way OpenPN2/OpenPN3 chains are used
+        # elsewhere for multi-word proper-noun-like content; a bare
+        # OpenIndefCN is the honest simplification (no ModifyNP wrapper,
+        # so the safety fix above still applies if this were ever a real
+        # competing-institution PP instead).
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "UCLA")) '
+            '(Compl Read (OpenIndefCN "fraternity" "fraternities"))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
 
 class NegativeUnrelatedClauseTests(unittest.TestCase):
     def test_trigger_word_inside_an_unrelated_relative_clause_is_ignored(self) -> None:

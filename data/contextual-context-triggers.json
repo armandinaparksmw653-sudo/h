@@ -14,6 +14,13 @@
       "requirement": "HasSort University",
       "strength": "prefers",
       "provenance": "manual-curated:v1 (real WiMCor sentence, 'studied at Pisa and obtained his doctorate of law in 1719' -- structure verified via local Stanza/gf.exe; strength kept at prefers, not requires, because the specific institution near Pisa this sentence refers to has not yet been individually checked against live Wikidata P31/P279 the way degree->University was for Valparaiso/Haifa)"
+    },
+    {
+      "construction": "ConjClauseObject",
+      "lemma": "fraternity",
+      "requirement": "HasSort University",
+      "strength": "prefers",
+      "provenance": "manual-curated:v1 (real WiMCor sentence, 'He enrolled at UCLA and joined the Delta Sigma Phi fraternity' -- structure verified via local Stanza/gf.exe; a US-style fraternity is specifically a university/college social organization, but strength kept at prefers, not requires, since the specific institution has not been individually checked against live Wikidata P31/P279)"
     }
   ]
 }
