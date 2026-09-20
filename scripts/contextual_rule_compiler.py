@@ -707,6 +707,47 @@ def _sorts(requirement: str) -> set[str]:
     return set(re.findall(r"HasSort ([A-Za-z][A-Za-z0-9]*)", requirement))
 
 
+def _lookup_context_trigger(
+    context_triggers: dict | None, construction: str, lemma: str
+) -> dict | None:
+    """(lemma, structural relation to the metonymy target) -> constraint.
+
+    Deliberately keyed on BOTH the lemma and the construction (the same
+    discipline language_rules["context_templates"] already uses for
+    ModifyNP+PP -- not a bag-of-words match on the lemma alone). A word
+    reachable in the tree only through some OTHER construction (e.g.
+    inside an unrelated relative clause) must never match here, however
+    tempting a flat word->requirement table would be -- see
+    docs/contextual-tower.md's note on why a flat table would have
+    wrongly attached "degree" from an unrelated dean/Yale clause to an
+    unrelated target.
+    """
+    if not context_triggers:
+        return None
+    return next(
+        (
+            trigger
+            for trigger in context_triggers.get("triggers", [])
+            if trigger["construction"] == construction
+            and trigger["lemma"] == lemma.casefold()
+        ),
+        None,
+    )
+
+
+def _context_trigger_constraint(
+    proposal: dict, token: str, construction: str, trigger: dict
+) -> dict:
+    payload_key = "requires" if trigger.get("strength") == "requires" else "prefers"
+    return {
+        "origin": _cumulative_origin(
+            proposal, token, f"ContextTrigger:{construction}", token.casefold()
+        ),
+        "payload": {payload_key: trigger["requirement"]},
+        "provenance": trigger["provenance"],
+    }
+
+
 def compile_gf_constraints(
     proposal: dict,
     tree: str,
@@ -717,6 +758,7 @@ def compile_gf_constraints(
     enable_existential: bool = True,
     gf_actions: dict[str, str] | None = None,
     gf_nouns: dict[str, str] | None = None,
+    context_triggers: dict | None = None,
 ) -> list[dict]:
     root = parse_gf_tree(tree)
     constraints = []
@@ -740,6 +782,32 @@ def compile_gf_constraints(
             if found:
                 return found
         return None
+
+    def coordinated_complements(node: GFNode | str) -> list[GFNode]:
+        """Compl/PassCompl nodes reached ONLY as a direct VP argument of
+        PredConjVP/PredOrConjVP -- deliberately NOT "every Compl/PassCompl
+        anywhere in the tree" (a first, broken version of this used a
+        generic all-nodes search and wrongly matched a Compl buried inside
+        an unrelated ModifyRelVP relative clause -- caught by this
+        module's own negative test). PredConjVP's shape (one NP argument
+        shared by both VPs) is what licenses "shares the target's
+        subject"; nothing else does, so nothing else is descended into
+        for this purpose."""
+        if not isinstance(node, GFNode):
+            return []
+        found = []
+        if (
+            node.constructor in {"PredConjVP", "PredOrConjVP"}
+            and len(node.arguments) == 3
+        ):
+            found.extend(
+                vp
+                for vp in node.arguments[1:]
+                if isinstance(vp, GFNode) and vp.constructor in {"Compl", "PassCompl"}
+            )
+        for argument in node.arguments:
+            found.extend(coordinated_complements(argument))
+        return found
 
     def lexical_head(node: GFNode | str) -> GFNode | str:
         if isinstance(node, GFNode) and node.constructor in {
@@ -912,6 +980,30 @@ def compile_gf_constraints(
                         ),
                     }
                 )
+
+    # ConjClauseObject: a content word that is the object of the OTHER
+    # Compl/PassCompl in a PredConjVP/PredOrConjVP coordination (shared
+    # subject, guaranteed by that constructor's own shape -- see
+    # coordinated_complements above). first_node already claimed the
+    # FIRST Compl/PassCompl in the tree for the primary action; this is
+    # only ever its coordinated sibling, never an unrelated Compl reached
+    # through some other construction (e.g. a relative clause).
+    for extra_complement in coordinated_complements(root):
+        if extra_complement is complement or len(extra_complement.arguments) != 2:
+            continue
+        extra_head = lexical_head(extra_complement.arguments[1])
+        extra_lemma = _noun_lemma(extra_head)
+        if not extra_lemma:
+            continue
+        trigger = _lookup_context_trigger(
+            context_triggers, "ConjClauseObject", extra_lemma
+        )
+        if trigger:
+            constraints.append(
+                _context_trigger_constraint(
+                    proposal, extra_lemma, "ConjClauseObject", trigger
+                )
+            )
 
     def walk(node: GFNode | str) -> None:
         if not isinstance(node, GFNode):
@@ -1116,6 +1208,26 @@ def compile_gf_constraints(
                                     + template["provenance"]
                                 ),
                             }
+                        )
+                # ModifyNPObject: the modifier's object is a common noun
+                # (not the proper-noun/entity case handled above --
+                # _proper_lemma returns None for it, so target_lemma is
+                # None and the QID-relation branch above is a no-op) --
+                # look it up directly as a target-sort trigger instead of
+                # trying to resolve it to a Wikidata entity at all.
+                modifier_common_lemma = _noun_lemma(modifier.arguments[0])
+                if modifier_common_lemma:
+                    modifier_trigger = _lookup_context_trigger(
+                        context_triggers, "ModifyNPObject", modifier_common_lemma
+                    )
+                    if modifier_trigger:
+                        constraints.append(
+                            _context_trigger_constraint(
+                                proposal,
+                                modifier_common_lemma,
+                                "ModifyNPObject",
+                                modifier_trigger,
+                            )
                         )
             return
         for argument in node.arguments:

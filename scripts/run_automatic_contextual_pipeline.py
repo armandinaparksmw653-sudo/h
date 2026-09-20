@@ -519,6 +519,12 @@ def main() -> None:
     wordnet_rules = json.loads(wordnet_rules_path.read_text(encoding="utf-8"))
     if args.ablation == "no-wordnet":
         wordnet_rules = {"lexical_sorts": {}, "adjective_sorts": {}}
+    context_triggers_path = Path("data/contextual-context-triggers.json")
+    context_triggers = (
+        json.loads(context_triggers_path.read_text(encoding="utf-8"))
+        if context_triggers_path.exists()
+        else {"triggers": []}
+    )
     aliases = {}
     with (args.snapshot / "aliases.jsonl").open(encoding="utf-8") as source:
         for line in source:
@@ -546,6 +552,7 @@ def main() -> None:
                 enable_existential=args.ablation != "no-existential",
                 gf_actions=gf_actions,
                 gf_nouns=gf_nouns,
+                context_triggers=context_triggers,
             )
         )
     except ValueError as error:

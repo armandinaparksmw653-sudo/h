@@ -1,0 +1,12 @@
+{
+  "schema_version": "contextual-context-triggers-1",
+  "triggers": [
+    {
+      "construction": "ConjClauseObject",
+      "lemma": "degree",
+      "requirement": "HasSort University",
+      "strength": "requires",
+      "provenance": "manual-curated:v1 (verified against real WiMCor Valparaiso/Haifa 'degree'/'BA' mentions and live Wikidata P31/P279 checks, see evaluation/pilot-decode-wimcor/README.md)"
+    }
+  ]
+}
