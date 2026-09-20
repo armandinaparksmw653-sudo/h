@@ -241,6 +241,26 @@ abstract Metonymy = {
     Read : V2 ;
     Drink : V2 ;
     Sign : V2 ;
+    -- data/predicates.tsv's local:selectional-lexicon table already had
+    -- rows for these (hand-curated HardRequirement overrides where
+    -- VerbNet/FrameNet's own selectional restriction is too generic --
+    -- e.g. "hear"'s VerbNet class see-30.1 has an EMPTY <SELRESTRS/> for
+    -- its Stimulus role, confirmed by reading the pinned commit's own
+    -- see-30.1.xml, not guessed; FrameNet's Perception_experience frame
+    -- aggregation doesn't help either, since every sibling verb in that
+    -- frame -- feel/hear/perceive/see/smell/taste -- is equally generic),
+    -- but no V2 constructor existed for 7 of the 10 rows, making them
+    -- unreachable for real tree-building despite resolve_action already
+    -- knowing the intended Sort. Same proven pattern as Read/Drink/Sign
+    -- above, just filling in the missing half of an existing mechanism.
+    Study : V2 ;
+    Review : V2 ;
+    Translate : V2 ;
+    Eat : V2 ;
+    ListenTo : V2 ;
+    Watch : V2 ;
+    Wear : V2 ;
+    Hear : V2 ;
 
     Award : V3 ;
 

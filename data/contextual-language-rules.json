@@ -58,6 +58,18 @@
     "wear": {
       "forms": ["wear", "wears", "wore"],
       "gf_form": "wears"
+    },
+    "study": {
+      "forms": ["study", "studies", "studied"],
+      "gf_form": "studies"
+    },
+    "eat": {
+      "forms": ["eat", "eats", "ate", "eaten"],
+      "gf_form": "eats"
+    },
+    "hear": {
+      "forms": ["hear", "hears", "heard"],
+      "gf_form": "hears"
     }
   },
   "lexical_sorts": {

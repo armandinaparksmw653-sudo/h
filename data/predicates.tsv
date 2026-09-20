@@ -9,3 +9,4 @@ listen-to	listen to	ListenTo	Human	Audible	HardRequirement	mkV2 (mkV "listen") t
 watch	watch	Watch	Human	Watchable	HardRequirement	mkV2 "watch"	local:selectional-lexicon
 wear	wear	Wear	Human	Wearable	HardRequirement	mkV2 "wear"	local:selectional-lexicon
 sign	sign	Sign	Agent	Agreement	HardRequirement	mkV2 "sign"	local:selectional-lexicon
+hear	hear	Hear	Human	Audible	HardRequirement	mkV2 "hear"	local:selectional-lexicon

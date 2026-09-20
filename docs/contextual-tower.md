@@ -3805,3 +3805,80 @@ Valparaiso/Haifa); every other entry stays at `prefers` -- real,
 structurally-clean sentences, but their specific implied institution
 hasn't been individually checked yet, so they can narrow a fiber but can
 never wrongly eliminate the correct answer on their own.
+
+## `data/predicates.tsv`'s local:selectional-lexicon table was half-built -- found while chasing a container-for-content/causer-for-result dead end
+
+Investigating why ConMeC's container-for-content/causer-for-result
+families (flute/extinguisher/orchestra -- "is heard", "was activated")
+gave no useful second signal for the context-trigger mechanism above led
+somewhere more fundamental: their *primary* action itself resolves too
+weakly. Checked directly, not guessed: VerbNet's own class for "hear"
+(`see-30.1`, shared with feel/perceive/see/smell/taste) has a literally
+empty `<SELRESTRS/>` for its Stimulus role in the pinned commit's own
+`see-30.1.xml` -- not a mapping gap (unlike `region`->`Place` in the
+original VerbNet-import round), a genuine absence of restriction data in
+VerbNet itself. Checked `data/framenet-role-capabilities.json`'s
+generator (`scripts/generate_framenet_capabilities.py`, SemLink VerbNet
+x FrameNet aggregation) too: "hear" maps to FrameNet's
+`Perception_experience` frame, but aggregating every compiled VerbNet row
+across all six sibling verbs in that frame still gives `HasSort Entity`
+19 times out of 20 -- the whole frame is equally generic, so
+cross-verb agreement recovers nothing.
+
+Asked about "read" as a comparison point (`читать Достоевского`,
+"reading Dostoevsky" -- author-for-work metonymy) -- turns out `read`
+has the *exact same* disease in VerbNet's own compiled
+rows (generic `Entity`), but it's already fixed: `data/predicates.tsv`, a
+small hand-curated table independent of VerbNet entirely
+(`provenance: local:selectional-lexicon`, `strength: HardRequirement`),
+already carries `read -> Readable`, and `resolve_action`'s own documented
+policy (`contextual-language-rules.json`'s
+`"prefer-hard-else-disjoin-compiled-preferences"`) makes this hard
+override win over VerbNet's weaker compiled rows for the same lemma --
+confirmed directly, not assumed, by loading both and calling
+`resolve_action` on a real sentence.
+
+But `data/predicates.tsv` turned out to be half-built: of its 10 rows
+(read/study/review/translate/drink/eat/listen-to/watch/wear/sign), only
+3 (`Read`/`Drink`/`Sign`) had a matching V2 constructor in
+`grammar/Metonymy.gf`/`MetonymyEng.gf` -- the other 7 named a GF function
+in their `gf_expression` column that simply didn't exist, making them
+unreachable for real tree-building despite `resolve_action` already
+knowing the intended Sort. Added the missing 7
+(`Study`/`Review`/`Translate`/`Eat`/`ListenTo`/`Watch`/`Wear`, all
+`mkV2 "..."` except `ListenTo = mkV2 (mkV "listen") to_Prep` -- the
+phrasal-V2 shape `data/predicates.tsv`'s own `gf_expression` column
+already specified, confirmed against the pinned `gf-rgl-src`'s
+`ParadigmsEng.gf` overload set) plus a new 8th, `hear -> Audible`
+(the lemma this investigation started from), same proven
+`Read`/`Drink`/`Sign` pattern, each linearization checked via local
+`gf.exe` before being written into any test.
+
+Along the way, found (and fixed the same way `wear`'s `"wore"` already
+was) three more real gaps: `action_forms()`'s own regular-suffix guessing
+never produces `studied` (gives `studyed`), `ate`, or `heard` -- all
+three needed a `morphology_overrides` entry
+(`data/contextual-language-rules.json`) the same way `wear`/`announce`/
+`read`/`sign` already have one. Without it, `resolve_action` would never
+match these verbs' most common past-tense surface form in real text at
+all (`hear`'s own real ConMeC candidate sentences are all past tense --
+"is heard" already passive-inflected via `heard`, so this wasn't a
+hypothetical).
+
+Also confirmed, not swept under the rug: `resolve_action`'s *no-hint*
+fallback path (used whenever a real dependency hint isn't available --
+already documented elsewhere in this file as the actual, common case in
+real CI, since Stanza isn't installed there) mis-assigns passive-voice
+subjects to `SubjectHole` instead of `ObjectHole` for verbs like
+this -- "A bass flute is heard..." resolves to `SubjectHole -> HasSort
+Human` (wrong; should be `ObjectHole -> HasSort Audible`). Verified this
+is a **pre-existing, general** limitation, not something this round's
+work introduced: the exact same sentence shape already mishandles the
+long-working `read` the identical way ("The book is read by millions"
+also resolves to `SubjectHole -> HasSort Human`). Left alone,
+out of scope for this round -- the real production pipeline always
+supplies a genuine dependency hint (which does track passive voice
+correctly via `annotate_dependency_hints.py`'s own `voice` field); this
+finding is recorded here so a future round chasing ConMeC's
+container-for-content/causer-for-result examples through the no-hint
+path specifically doesn't have to rediscover it.
