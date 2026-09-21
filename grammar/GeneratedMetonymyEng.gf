@@ -176,6 +176,7 @@ concrete GeneratedMetonymyEng of GeneratedMetonymy =
     ListenTo = mkV2 (mkV "listen") to_Prep ;
     Watch = mkV2 "watch" ;
     Wear = mkV2 "wear" ;
+    Hear = mkV2 "hear" ;
     VN_Analyse = mkV2 "analyse" ;
     VN_Check = mkV2 "check" ;
     VN_Chew = mkV2 "chew" ;

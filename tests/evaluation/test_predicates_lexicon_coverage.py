@@ -1,30 +1,38 @@
-"""data/predicates.tsv's local:selectional-lexicon table was half-built:
-7 of its 10 rows (study/review/translate/eat/listen-to/watch/wear) named a
-GF V2 constructor in their gf_expression column that did not actually exist
-in grammar/Metonymy.gf/MetonymyEng.gf -- meaning resolve_action already knew
-the intended HardRequirement Sort for these lemmas, but no real tree could
-ever be built using them. Found while investigating why "hear" (VerbNet's
-see-30.1 perception-verb class has an EMPTY <SELRESTRS/> for its Stimulus
-role, confirmed by reading the pinned commit's own see-30.1.xml -- not a
-mapping gap, a real absence of data in VerbNet itself; FrameNet's
-Perception_experience frame aggregation doesn't help either, since every
-sibling verb in that frame -- feel/hear/perceive/see/smell/taste -- is
-equally generic) needed the exact same fix "read" already had (read's own
-VerbNet entries are just as generic, but data/predicates.tsv already
-overrides it to Readable).
+"""data/predicates.tsv's local:selectional-lexicon table overrides too-
+generic VerbNet/FrameNet selectional preferences with a hand-curated
+HardRequirement Sort for specific lemmas. Investigated while chasing why
+"hear" resolves too weakly: VerbNet's see-30.1 perception-verb class has an
+EMPTY <SELRESTRS/> for its Stimulus role (confirmed by reading the pinned
+commit's own see-30.1.xml -- not a mapping gap, a real absence of data in
+VerbNet itself), and FrameNet's Perception_experience frame aggregation
+doesn't help either, since every sibling verb in that frame -- feel/hear/
+perceive/see/smell/taste -- is equally generic. "read" already gets this
+same fix (read's own VerbNet entries are just as generic, but
+data/predicates.tsv already overrides it to Readable) -- "hear" just needed
+the same treatment: a new predicates.tsv row.
 
-This file confirms, for all 8 affected lemmas (the 7 pre-existing gaps plus
-the new "hear"):
-1. Each has a real V2 constructor now (grammar/Metonymy.gf), each verified
-   via local gf.exe before being written here (see the grammar files' own
-   comments for the exact linearizations checked).
-2. load_action_roles picks up the HardRequirement row from predicates.tsv
+An early version of this round *also* hand-declared V2 constructors in
+grammar/Metonymy.gf/MetonymyEng.gf for "hear" and seven OTHER predicates.tsv
+lemmas (study/review/translate/eat/listen-to/watch/wear), on the wrong
+assumption that they were missing -- this failed real CI ("cannot unify ...
+fun Eat : Metonymy.V2 ; ... in module GeneratedMetonymy"): scripts/
+generate_gf_lexicon.py already emits a V2 declaration for every
+predicates.tsv row except three hardcoded exceptions (Read/Drink/Sign), so
+those seven were already reachable and the hand declarations were pure
+duplicates. Reverted; see docs/contextual-tower.md's own correction note.
+The lesson this file's own construction embodies: verify a grammar claim by
+running the actual generator/compiling the actual generated file, not by
+grepping the hand-written one alone.
+
+This file confirms, for all 8 lemmas (the 7 already-generated ones plus the
+new "hear"):
+1. load_action_roles picks up the HardRequirement row from predicates.tsv
    alongside VerbNet's weaker SelectionalPreference rows for the same
    lemma.
-3. resolve_action's real ranking (data/contextual-language-rules.json's
+2. resolve_action's real ranking (data/contextual-language-rules.json's
    own "prefer-hard-else-disjoin-compiled-preferences" policy) actually
    prefers the hard requirement on a real sentence, not just in isolation.
-4. action_forms() alone misses three of these lemmas' irregular
+3. action_forms() alone misses three of these lemmas' irregular
    inflections (study -> "studyed" instead of "studied"; eat -> only
    "eated", never "ate"; hear -> only "heared", never "heard") --
    data/contextual-language-rules.json's morphology_overrides already

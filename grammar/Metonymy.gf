@@ -241,26 +241,20 @@ abstract Metonymy = {
     Read : V2 ;
     Drink : V2 ;
     Sign : V2 ;
-    -- data/predicates.tsv's local:selectional-lexicon table already had
-    -- rows for these (hand-curated HardRequirement overrides where
-    -- VerbNet/FrameNet's own selectional restriction is too generic --
-    -- e.g. "hear"'s VerbNet class see-30.1 has an EMPTY <SELRESTRS/> for
-    -- its Stimulus role, confirmed by reading the pinned commit's own
-    -- see-30.1.xml, not guessed; FrameNet's Perception_experience frame
-    -- aggregation doesn't help either, since every sibling verb in that
-    -- frame -- feel/hear/perceive/see/smell/taste -- is equally generic),
-    -- but no V2 constructor existed for 7 of the 10 rows, making them
-    -- unreachable for real tree-building despite resolve_action already
-    -- knowing the intended Sort. Same proven pattern as Read/Drink/Sign
-    -- above, just filling in the missing half of an existing mechanism.
-    Study : V2 ;
-    Review : V2 ;
-    Translate : V2 ;
-    Eat : V2 ;
-    ListenTo : V2 ;
-    Watch : V2 ;
-    Wear : V2 ;
-    Hear : V2 ;
+    -- Study/Review/Translate/Eat/ListenTo/Watch/Wear/Hear deliberately
+    -- NOT declared here: scripts/generate_gf_lexicon.py already emits a
+    -- `fun X : V2` (and its `mkV2 "..."` linearization, straight from
+    -- data/predicates.tsv's own gf_expression column) for every
+    -- predicates.tsv row EXCEPT the three hardcoded ones above
+    -- (`base_predicates = {"Read", "Drink", "Sign"}` in that script) --
+    -- confirmed by actually running the generator locally and reading
+    -- its output, not guessed a second time, after a real CI failure
+    -- ("cannot unify ... fun Eat : Metonymy.V2 ; ... fun Eat : V2 ; in
+    -- module GeneratedMetonymy") from an earlier attempt to hand-declare
+    -- these here too, duplicating what GeneratedMetonymy.gf already
+    -- provides. Adding a NEW predicates.tsv row (e.g. "hear") is
+    -- therefore sufficient on its own -- no grammar file edit needed at
+    -- all, for any lemma outside this three-word exception list.
 
     Award : V3 ;
 

@@ -175,6 +175,7 @@ abstract GeneratedMetonymy = Metonymy ** {
     ListenTo : V2 ;
     Watch : V2 ;
     Wear : V2 ;
+    Hear : V2 ;
     VN_Analyse : V2 ;
     VN_Check : V2 ;
     VN_Chew : V2 ;

@@ -298,18 +298,13 @@ concrete MetonymyEng of Metonymy =
     Read = mkV2 "read" ;
     Drink = mkV2 "drink" ;
     Sign = mkV2 "sign" ;
-    Study = mkV2 "study" ;
-    Review = mkV2 "review" ;
-    Translate = mkV2 "translate" ;
-    Eat = mkV2 "eat" ;
-    -- mkV2 : V -> Prep -> V2 ("believe in"-style phrasal V2, confirmed
-    -- against the pinned gf-rgl-src's ParadigmsEng.gf overload set, not
-    -- guessed) -- the same shape data/predicates.tsv's own gf_expression
-    -- column already specified for this row.
-    ListenTo = mkV2 (mkV "listen") to_Prep ;
-    Watch = mkV2 "watch" ;
-    Wear = mkV2 "wear" ;
-    Hear = mkV2 "hear" ;
+    -- Study/Review/Translate/Eat/ListenTo/Watch/Wear/Hear: see
+    -- Metonymy.gf's comment at the matching `cat`-adjacent declaration
+    -- site -- scripts/generate_gf_lexicon.py already generates these
+    -- (GeneratedMetonymyEng.gf) straight from data/predicates.tsv's own
+    -- gf_expression column; hand-declaring them here too is exactly what
+    -- caused a real CI failure (duplicate `fun` across Metonymy and
+    -- GeneratedMetonymy).
 
     Award = mkV3 "award" ;
 

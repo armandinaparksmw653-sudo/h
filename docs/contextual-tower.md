@@ -3882,3 +3882,43 @@ correctly via `annotate_dependency_hints.py`'s own `voice` field); this
 finding is recorded here so a future round chasing ConMeC's
 container-for-content/causer-for-result examples through the no-hint
 path specifically doesn't have to rediscover it.
+
+**Correction, caught by real CI, not by local verification**: the "half-
+built" framing above was wrong in its own diagnosis. The first push of
+this round (hand-adding `Study`/`Review`/`Translate`/`Eat`/`ListenTo`/
+`Watch`/`Wear`/`Hear` as `V2` declarations directly to
+`grammar/Metonymy.gf`/`MetonymyEng.gf`) failed real CI:
+```
+grammar/GeneratedMetonymy.gf:
+   cannot unify the information
+       fun Eat : Metonymy.V2 ;
+   in module Metonymy with
+       fun Eat : V2 ;
+   in module GeneratedMetonymy
+```
+Reading `scripts/generate_gf_lexicon.py` (only after the failure, which
+is the actual mistake here -- this should have been read, or the
+generator actually run, *before* concluding anything was "missing")
+showed the real mechanism: it already emits a `fun X : V2` declaration
+(and the matching `mkV2 "..."` linearization, straight from
+`data/predicates.tsv`'s own `gf_expression` column) into
+`grammar/GeneratedMetonymy.gf`/`GeneratedMetonymyEng.gf` for **every**
+`predicates.tsv` row except three hardcoded exceptions
+(`base_predicates = {"Read", "Drink", "Sign"}` in that script -- plus
+`Announce`, handled separately). Confirmed by actually running the
+generator locally (pure Python, no Haskell needed) *before* editing
+anything a second time: `Study`/`Review`/`Translate`/`Eat`/`ListenTo`/
+`Watch`/`Wear` were **already** being generated correctly, every single
+time, since long before this round started -- the grammar was never
+half-built at all. The only genuinely new thing this round needed was
+the `hear` row in `data/predicates.tsv` itself; adding it alone (no
+`Metonymy.gf`/`MetonymyEng.gf` edit at all) makes the generator produce
+`fun Hear : V2 ;`/`Hear = mkV2 "hear" ;` automatically, confirmed by
+regenerating locally and compiling `GeneratedMetonymyEng.gf` (not just
+`MetonymyEng.gf` alone, which is what the first, failed local check had
+compiled -- the real gap in that verification, now fixed for future
+grammar rounds too: always compile the *generated* companion file
+locally, not just the hand-written one, since that is what CI actually
+builds). The 8 hand-declared `V2` lines were reverted; only the
+`predicates.tsv`/`morphology_overrides` data changes and the `hear`
+finding itself stood.
