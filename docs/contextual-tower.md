@@ -4392,3 +4392,22 @@ word-ending surface (Chanel/Cupertino/Valparaiso/Rumi), and confirmed it
 now matches `"Apple Inc."` correctly. Full local suite re-run clean (576
 passed, same 15 known-environment failures, no regressions) before
 pushing the fix as its own commit.
+
+**Real CI confirmed the fix works, cleanly, both directions**: the next
+run's `contextual-corpus-test` reported `instances=11 failures=0` for
+the audited set (up from 9, zero failures) -- both new rows resolved
+correctly with no false positives: `exact_match_by_direction.expand`
+5/5 -> 6/6, `.contract` 4/4 -> 5/5, `contraction_safety.unique-
+contextual-fiber` 2 -> 3 (the new "Apple Inc. signed the commercial
+agreement" contraction reports exactly `unique-contextual-fiber`, not
+ambiguous), `fiber_cardinality_histogram["1"]` 4 -> 6 (both new
+instances gave a genuinely singleton fiber, confirming Cupertino has no
+ambiguity with any other institution in the snapshot, exactly as
+checked before adding it). Only remaining step was `assert_json_equal`
+correctly reporting the committed `audited-summary.json` no longer
+matched -- reconstructed it field-by-field from the real unified diff
+printed in the CI log (not guessed), committed as a follow-up. This is
+now genuinely `make contextual-corpus-test`-green: the first real,
+non-fictional, non-University working example added by this session,
+verified end to end through the same production engine + Agda checker
+as every other real example in this project.
