@@ -4368,3 +4368,27 @@ Pushed expecting `assert_json_equal` to fail once, read the exact actual
 report from its printed diff, then committed the corrected summary in a
 follow-up commit -- the same two-round pattern already used earlier this
 session for the stale `VerbNet snapshot contributes 41 predicates` count.
+
+**The real CI run found a genuine, previously-latent bug, not just a
+stale summary**: `audited-contract-cupertino-commercial` failed with
+`"status": "propose-scenario-failed", "detail": "target-occurrence-not-found"`
+(the silver set's 69 instances and the audited set's other 10 all
+passed cleanly -- the `ModuleNotFoundError: No module named 'stanza'`
+lines right above it in the log are the already-known, harmless
+dependency-hint fallback, unrelated). Root cause, found by reading
+`scripts/contextual_rule_compiler.py:207-212`'s `_mention_span` directly:
+it matches a target surface with `\b<surface>\b`, and `\b` requires a
+word/non-word transition on *both* sides -- which fails whenever the
+surface itself ends in punctuation immediately followed by whitespace,
+since neither side of that boundary is a word character. `"Apple Inc."`
+(a real alias verbatim from the production snapshot's own `aliases.jsonl`)
+is exactly this case: `\bApple Inc\.\b` can never match `"Apple Inc.
+signed..."`, because the `.`/`" "` pair straddling the intended end
+position is non-word on both sides. `"Chanel"`/`"Cupertino"` (both
+word-ending) were never exposed to this, which is why nothing caught it
+before. Fixed by replacing both `\b`s with `(?<!\w)`/`(?!\w)` lookarounds
+-- verified identical behavior to the old pattern on every existing
+word-ending surface (Chanel/Cupertino/Valparaiso/Rumi), and confirmed it
+now matches `"Apple Inc."` correctly. Full local suite re-run clean (576
+passed, same 15 known-environment failures, no regressions) before
+pushing the fix as its own commit.

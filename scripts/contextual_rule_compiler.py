@@ -205,8 +205,17 @@ def _surface_phrases(sentence: str) -> list[tuple[str, int, int]]:
 
 
 def _mention_span(sentence: str, surfaces: list[str]) -> tuple[int, int] | None:
+    # \b requires a word/non-word transition on BOTH sides -- fails for a
+    # surface ending in punctuation (e.g. "Apple Inc.", an alias verbatim
+    # from a real Wikidata snapshot) followed by whitespace, since "."
+    # and " " are both non-word characters and no such transition exists
+    # there. (?<!\w)/(?!\w) only assert what's immediately outside the
+    # match isn't a word character -- identical to \b for the common
+    # word-ending case, but correct for punctuation-ending surfaces too.
     for surface in surfaces:
-        match = re.search(rf"\b{re.escape(surface)}\b", sentence, re.IGNORECASE)
+        match = re.search(
+            rf"(?<!\w){re.escape(surface)}(?!\w)", sentence, re.IGNORECASE
+        )
         if match:
             return match.start(), match.end()
     return None
