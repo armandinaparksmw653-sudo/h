@@ -4218,4 +4218,90 @@ both predicate tables -- this class of bug cannot recur for any other
 lemma today, though it could if `data/predicates.tsv` and `data/
 verbnet-predicates.tsv` are edited independently again without
 re-running `import_verbnet.py`'s exclusion step.
-but would be needed for a real `ModifyNP`+QID-alias path later.
+
+## Three real "professions/writers" triggers: fellow/member/editor-in-chief
+
+After the synthetic round above, asked directly: can any of the 78
+synthetic entries actually be pushed to `requires`? The honest answer for
+the *synthetic* ones is no (nothing real to check them against, see the
+"Explicitly not done" note above). But the same real-corpus-search
+methodology that originally found `doctorate`/`fraternity`/`diploma`/
+`certificate` (this file's earlier sections) hadn't been re-run for the
+new "professions/writers" territory the 78-entry round opened up
+conceptually (`LiteraryWork`/`MusicalWork`/`Film` families) -- so it was
+run again, this time systematically: for every real `target_span` in the
+full local WiMCor test split (41200 rows, already cached from earlier
+this session at `build/local-curation/wimcor-test.combined.jsonl`),
+checked whether the text immediately after the span matches `and
+VERB2(ed) a/an/the NOUN` -- the exact shape `ConjClauseObject` needs,
+using the corpus's own annotated offsets rather than guessing which
+capitalized span is the target. 346 raw hits, most noise (`record` in a
+sports-statistics sense, `cast` meaning bell-founding, etc. -- the same
+polysemy risk this file has flagged before), but three clean,
+`gold: "metonymic"`, `bridge: "location-for-institution"` sentences with
+no competing-institution redirect (the same risk class as the rejected
+Gettysburg/Webster/Yale/etc. examples earlier in this file):
+
+- `wimcor:test:960` (Winchester): "...emeritus professor of early
+  Medieval history at Winchester, and is a fellow of the Royal
+  Historical Society."
+- `wimcor:test:8246` (Phoenix): "...degree... from Phoenix and is a
+  member of the Delta Mu Delta International Business Honor Society."
+- `wimcor:test:20447` (Loughborough): "...Professor... at the London
+  campus of Loughborough, and also the editor-in-chief of the Journal of
+  Institutional Economics."
+
+(Two other candidates from the same search, "Bryn Mawr...professor of
+English at Princeton University" and "...Master's degree...from the
+George Washington...", were found and rejected for naming a competing
+institution -- the same discipline as the earlier rejections.)
+
+**Live Wikidata verification, honestly partial**: checked Winchester
+fully -- University of Winchester (Q3551690) has `P31`->Q62078547
+("public research university") and `P131`->Q172157, the *exact* QID
+`wbsearchentities` returns for the bare surface "Winchester". Then hit a
+live Wikidata API rate limit (`HTTP 403`, "please respect our robot
+policy") partway through checking Phoenix/Loughborough -- `wbsearchentities`
+had already identified the plausible real institutions (University of
+Phoenix Q1889100, Loughborough University Q1434547) before the block,
+but the `P31`/`P131` claims-level check for those two was not completed.
+This is recorded honestly in each entry's own `provenance` string in
+`data/contextual-context-triggers.json` -- not silently treated as done.
+
+**Why all three stay `prefers`, even the fully-verified one**: this is a
+different, weaker class of signal than `degree`. "Attended X and
+received a degree" -- the degree is conferred BY X, there is nowhere
+else for it to come from; a direct entailment. "Was professor at X, and
+is a fellow of [society Y]" -- the fellowship is a fact about the
+*person*, correlated with them being an academic (and therefore X likely
+being university-like), but not a *consequence* of X specifically. The
+person could hold that same fellowship regardless of which institution
+X is. So even a fully Wikidata-confirmed instance (Winchester) doesn't
+change the strength decision -- the entailment tightness, not the
+per-instance verification, is what gates `requires` here. This is a
+genuine refinement of the strength policy, not just "insufficient
+verification": some triggers are structurally never going to earn
+`requires` no matter how many instances get checked.
+
+**Grammar**: no new GF constructor needed, despite the real sentences
+using a copula ("is a fellow of...", "is a member of...") rather than a
+transitive verb. All three trees reuse the exact established
+`PredConjVP (OpenPN target-holder) (Compl Announce (OpenPN place))
+(Compl Read (OpenIndefCN "<lemma>" "<lemma>s"))` shape already used for
+Pisa/UCLA/Ankara -- the same "verb doesn't need to semantically match,
+only structurally fit" convention this file has used from the start
+(e.g. "Farina announces Valparaiso and reads a degree" for "attended...
+and received a degree"). Verified via local `gf.exe` before writing to
+tests, as always. One incidental confirmation of the already-documented
+`OpenIndefCN` a/an limitation: "editor-in-chief" is vowel-initial, so its
+real linearization is "a editor-in-chief" -- harmless (constraint
+derivation never linearizes the tree), left as-is rather than swapped
+for a synonym, since this round is about a *real* corpus word, not a
+freely chosen synthetic one.
+
+Added to `data/contextual-context-triggers.json` (86 entries total now)
+and to `tests/evaluation/test_compile_gf_constraints_context_triggers.py`'s
+`RealDataFileCorpusExamplesTests` (three new methods, same class as
+Pisa/UCLA/Ankara/Berklee/Padgate -- these are real corpus examples, not
+synthetic ones, so they belong there, not in the synthetic-multidomain
+test file).

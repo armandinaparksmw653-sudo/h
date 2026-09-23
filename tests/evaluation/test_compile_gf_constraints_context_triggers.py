@@ -760,6 +760,201 @@ class RealDataFileCorpusExamplesTests(unittest.TestCase):
             trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
         )
 
+    def test_winchester_fellow_is_derived_automatically(self) -> None:
+        # Real WiMCor sentence: "professions/writers" family, found this
+        # session by searching the real target_span's own tail for the
+        # "TARGET and VERB2 a/an NOUN" coordination shape (the same
+        # methodology that originally found doctorate/fraternity/diploma/
+        # certificate). "fellow of the Royal Historical Society" is a
+        # DIFFERENT class of signal than "degree": a degree is conferred
+        # BY its institution (direct entailment); a fellowship is a
+        # correlated fact about the person, not a consequence of the
+        # target -- kept at prefers even though the specific institution
+        # WAS individually verified against live Wikidata this round
+        # (University of Winchester, Q3551690: P31->Q62078547 "public
+        # research university", P131->Q172157, the exact QID of the
+        # surface "Winchester"). See data/contextual-context-triggers.json's
+        # own provenance string and docs/contextual-tower.md.
+        sentence = (
+            "She is currently emeritus professor of early Medieval "
+            "history at Winchester, and is a fellow of the Royal "
+            "Historical Society."
+        )
+        action_start = sentence.index("is currently")
+        action_end = action_start + len("is currently")
+        proposal = {
+            "action": "be",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:be"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "be",
+                        "surface": "is",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:be",
+                }
+            ],
+        }
+        # "emeritus professor of early Medieval history at" simplified to
+        # Announce, and "is a fellow of X" simplified to a bare Compl
+        # object (dropping "of the Royal Historical Society", the same
+        # safe simplification already used for "diploma"/"certificate"'s
+        # own PP modifiers) -- verified via local gf.exe.
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "Winchester")) '
+            '(Compl Read (OpenIndefCN "fellow" "fellows"))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
+    def test_phoenix_member_is_derived_automatically(self) -> None:
+        # Real WiMCor sentence, same search as Winchester above. The
+        # specific institution (University of Phoenix, Q1889100) was
+        # identified via Wikidata search but NOT individually confirmed
+        # via live P31/P131 claims this round -- a Wikidata API rate
+        # limit (HTTP 403) was hit mid-session, honestly recorded in
+        # data/contextual-context-triggers.json's own provenance string
+        # rather than silently skipped or claimed as done.
+        sentence = (
+            "Smith holds a Doctor of Management degree in organizational "
+            "leadership from Phoenix and is a member of the Delta Mu "
+            "Delta International Business Honor Society."
+        )
+        action_start = sentence.index("holds")
+        action_end = action_start + len("holds")
+        proposal = {
+            "action": "hold",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:hold"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "hold",
+                        "surface": "holds",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:hold",
+                }
+            ],
+        }
+        # "Doctor of Management degree in organizational leadership" and
+        # "of the Delta Mu Delta International Business Honor Society"
+        # both dropped -- same safe simplification as every other real
+        # example above. Verified via local gf.exe.
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "Phoenix")) '
+            '(Compl Read (OpenIndefCN "member" "members"))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
+    def test_loughborough_editor_in_chief_is_derived_automatically(self) -> None:
+        # Real WiMCor sentence, same search and same unfinished-
+        # verification honesty as Phoenix above (Loughborough University,
+        # Q1434547, identified via search but not claims-confirmed this
+        # round).
+        sentence = (
+            "Geoffrey Martin Hodgson is a Professor in Management at the "
+            "London campus of Loughborough, and also the editor-in-chief "
+            "of the Journal of Institutional Economics."
+        )
+        action_start = sentence.index("is a Professor")
+        action_end = action_start + len("is")
+        proposal = {
+            "action": "be",
+            "sentence": sentence,
+            "role": "ObjectHole",
+            "frames": [],
+            "provenance": {"action": "test:VerbNet:be"},
+            "constraints": [
+                {
+                    "origin": {
+                        "constructor": "Verb",
+                        "lemma": "be",
+                        "surface": "is",
+                        "start": action_start,
+                        "end": action_end,
+                    },
+                    "payload": {"prefers": "HasSort Entity"},
+                    "provenance": "test:VerbNet:be",
+                }
+            ],
+        }
+        # "of the Journal of Institutional Economics" dropped -- same
+        # safe simplification as every other real example above. Also
+        # note: OpenIndefCN always emits "a" (never "an"), a pre-existing,
+        # documented grammar characteristic (see docs/contextual-tower.md's
+        # synthetic multi-domain section) -- "editor-in-chief" is vowel-
+        # initial, so the real linearization here is "a editor-in-chief",
+        # not "an editor-in-chief"; harmless for constraint derivation,
+        # which never linearizes the tree. Verified via local gf.exe.
+        tree = (
+            'PredConjVP (OpenPN "He") '
+            '(Compl Announce (OpenPN "Loughborough")) '
+            '(Compl Read (OpenIndefCN "editor-in-chief" "editor-in-chiefs"))'
+        )
+        constraints = compile_gf_constraints(
+            proposal,
+            tree,
+            self.language_rules,
+            self.wordnet_rules,
+            {},
+            context_triggers=self.context_triggers,
+        )
+        trigger_constraints = [
+            c
+            for c in constraints
+            if c["origin"]["constructor"] == "ContextTrigger:ConjClauseObject"
+        ]
+        self.assertEqual(len(trigger_constraints), 1)
+        self.assertEqual(
+            trigger_constraints[0]["payload"], {"prefers": "HasSort University"}
+        )
+
 
 class NegativeUnrelatedClauseTests(unittest.TestCase):
     def test_trigger_word_inside_an_unrelated_relative_clause_is_ignored(self) -> None:
