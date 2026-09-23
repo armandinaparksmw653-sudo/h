@@ -1,7 +1,7 @@
 module Main where
 
 import Control.Monad (unless)
-import Data.List (find, isPrefixOf)
+import Data.List (find, isPrefixOf, sort)
 import Metonymy.Automatic
 import Metonymy.Contextual
 import Metonymy.ContextualChecked
@@ -16,6 +16,7 @@ import Metonymy.OpenDomain
 import Metonymy.Promotion
 import Metonymy.Resolution
 import Metonymy.Snapshot
+import Metonymy.SyntheticTowers
 import Metonymy.Types
 import Metonymy.Verified
 import Metonymy.Waterloo
@@ -32,6 +33,8 @@ main = do
   (waterlooSnapshot, waterlooRules) <-
     loadSnapshot "data/wikidata-qid-snapshot"
   waterlooAliases <- loadSnapshotAliases "data/wikidata-qid-snapshot"
+  (syntheticTowersSnapshot, _) <-
+    loadSnapshot "data/synthetic-towers-snapshot"
   loadedContextScenarios <-
     loadContextScenarios waterlooSnapshot "data/contextual-scenarios.tsv"
   semanticEntities <- loadSemanticEntityRows "data/semantic-entities.tsv"
@@ -1177,6 +1180,8 @@ main = do
       putStrLn ("FAIL: unique Waterloo contraction: " <> errorMessage)
       exitFailure
 
+  mapM_ (assertSyntheticTower syntheticTowersSnapshot) towers
+
   putStrLn "all tests passed"
 
 require :: String -> IO Scenario
@@ -1192,6 +1197,101 @@ assert label condition =
   unless condition $ do
     putStrLn ("FAIL: " <> label)
     exitFailure
+
+-- | Runs one fictional tower (data/synthetic-towers-snapshot,
+-- Metonymy.SyntheticTowers) through the real Agda-checked contextual
+-- pipeline (Metonymy.ContextualChecked), the same functions the real
+-- Waterloo tests above exercise. Five assertions, all through the
+-- compiled Agda checker where a fiber is actually computed:
+--   1/2. each of the tower's two Sorts ALONE is genuinely ambiguous
+--        (two survivors) -- so a later unique narrowing is a real
+--        conjunction, not one signal that already sufficed alone.
+--   3. both Sorts as Prefers (data/contextual-context-triggers.json's
+--      actual, shipped strength for all 78 new entries) does NOT narrow
+--      the fiber -- Prefers ranks, never filters
+--      (Metonymy.Contextual.applyConstraints).
+--   4. both Sorts as Requires (an explicitly hypothetical "if
+--      individually verified and promoted" variant, not today's
+--      dictionary) narrows to exactly the one candidate sharing both
+--      Sorts, and Agda-checked contraction reports
+--      "unique-contextual-fiber".
+--   5. under that same Requires-both context, a candidate with only ONE
+--      of the two Sorts is correctly rejected as a contraction target.
+assertSyntheticTower :: Snapshot -> TowerFixture -> IO ()
+assertSyntheticTower snapshot fixture = do
+  assertFiberTargets
+    (label <> ": " <> show firstSort <> " alone is ambiguous")
+    (towerContextSingle snapshot fixture firstSort)
+    [towerBothCandidate fixture, towerFirstOnlyCandidate fixture]
+
+  assertFiberTargets
+    (label <> ": " <> show secondSort <> " alone is ambiguous")
+    (towerContextSingle snapshot fixture secondSort)
+    [towerBothCandidate fixture, towerSecondOnlyCandidate fixture]
+
+  assertFiberTargets
+    (label <> ": prefers-both does not narrow (matches shipped dictionary strength)")
+    (towerContextPreferring snapshot fixture)
+    [ towerBothCandidate fixture
+    , towerFirstOnlyCandidate fixture
+    , towerSecondOnlyCandidate fixture
+    , towerDecoyCandidate fixture
+    ]
+
+  case
+      contextualContractionChecked
+        snapshot
+        [InstitutionOf]
+        1
+        (towerContextRequiring snapshot fixture)
+        (towerBothCandidate fixture) of
+    Right result ->
+      assert
+        (label <> ": requires-both narrows uniquely to the shared-sort candidate (Agda-checked)")
+        ( contractionSource result == towerSource fixture
+            && contractionTarget result == towerBothCandidate fixture
+            && contractionSafety result == "unique-contextual-fiber"
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: " <> label <> " requires-both unique contraction: " <> errorMessage)
+      exitFailure
+
+  case
+      contextualContractionChecked
+        snapshot
+        [InstitutionOf]
+        1
+        (towerContextRequiring snapshot fixture)
+        (towerFirstOnlyCandidate fixture) of
+    Left message
+      | "explicit-target-not-in-final-fiber" `isPrefixOf` message ->
+          assert (label <> ": requires-both correctly rejects a single-sort candidate") True
+    other -> do
+      putStrLn
+        ( "FAIL: "
+            <> label
+            <> " expected rejection of the single-sort candidate, got "
+            <> show other
+        )
+      exitFailure
+  where
+    label = towerLabel fixture
+    firstSort = towerFirstSort fixture
+    secondSort = towerSecondSort fixture
+
+    assertFiberTargets :: String -> Context -> [EntityId] -> IO ()
+    assertFiberTargets assertionLabel context expected =
+      case contextualFiberChecked snapshot [InstitutionOf] 1 context of
+        Right stages ->
+          assert
+            assertionLabel
+            (sortEntityIds (stageTargets (last stages)) == sortEntityIds expected)
+        Left errorMessage -> do
+          putStrLn ("FAIL: " <> assertionLabel <> ": " <> errorMessage)
+          exitFailure
+
+    sortEntityIds :: [EntityId] -> [String]
+    sortEntityIds = sort . map unEntityId
 
 assertLinearizes :: String -> String -> String -> IO ()
 assertLinearizes label tree expected = do

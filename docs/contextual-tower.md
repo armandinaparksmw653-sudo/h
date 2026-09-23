@@ -4062,6 +4062,96 @@ as a trigger word) would need new `data/wordnet-context-rules.json`
 entries -- not needed here since trigger lemmas are matched structurally,
 but would be needed for a real `ModifyNP`+QID-alias path later.
 
+## Running the 5 synthetic towers through the REAL engine + Agda, not just Python
+
+The round above was verified only at the GF-tree/Python level. The user
+asked directly to run it through the whole engine pipeline. There is no
+real Wikidata QID for invented names like "Ashford", so the live
+`data/wikidata-openalex-snapshot` path is the wrong tool here -- instead,
+reused the exact mechanism `engine/test/Main.hs` already uses for its own
+non-live Waterloo fixture: a small, fully local, hand-built snapshot
+directory (`data/wikidata-qid-snapshot`'s 5-file format) plus
+`Metonymy.Contextual`/`Metonymy.ContextualChecked`'s real
+`contextualFiber`/`contextualFiberChecked`/`contextualContractionChecked`,
+which call the actual compiled Agda `contextLayerCheck`
+(`formal/Metonymy/Checker.agda:731-746`) per stage. Confirmed by reading
+`engine/src/Metonymy/Snapshot.hs`/`Types.hs` directly, not assumed:
+`EntityId` is an unvalidated opaque string (no `Q\d+` check, no external
+lookup anywhere), and `loadSnapshot`'s only "network-shaped" step is a
+`python3 scripts/extract_wikidata_snapshot.py verify` subprocess that
+only re-hashes the snapshot's own files for internal self-consistency --
+fully fictional QIDs work identically to real ones.
+
+**A finding that reshapes what "verified" can honestly mean here**:
+`Metonymy.Contextual.applyConstraints` only lets `Requires`-kind
+constraints actually eliminate fiber candidates -- `Prefers`-kind
+constraints rank but never filter (`survivors = if preference then
+candidates else matched`). Every one of the 78 new dictionary entries is
+`strength: "prefers"` (honestly, since none were individually verified).
+A literal translation of the dictionary's current state into Haskell
+would therefore show the fiber **never narrowing** -- not a bug, the
+correct and expected behavior of an unverified preference. Real fiber
+narrowing (Valparaiso/Haifa, `0f8cee7`) always used `Requires`, the one
+strength level out of the original five entries that had been
+individually checked against live Wikidata P31/P279.
+
+**Built both variants, honestly, rather than picking the one that "looks
+like a win"**: `data/synthetic-towers-snapshot/` (25 fully fictional
+entities, 5 clusters, one per tower -- e.g. `ASHFORD`/`ASHFORD_UNIVERSITY`
+(University+ResearchInstitution)/`ASHFORD_COLLEGE`(University only)/
+`ASHFORD_LAB`(ResearchInstitution only)/`ASHFORD_MUSEUM`(neither, decoy))
+and `engine/src/Metonymy/SyntheticTowers.hs` (mirrors
+`Metonymy.Waterloo`'s existing hand-built-`Context` pattern) provide,
+per tower:
+- `towerContextSingle` with just one of the two Sorts -- confirms that
+  Sort ALONE is genuinely ambiguous (2 survivors), so a later unique
+  narrowing is a real conjunction, not one signal that already sufficed.
+- `towerContextPreferring` -- both Sorts as `Prefers`, i.e. exactly what
+  the shipped dictionary actually is today.
+- `towerContextRequiring` -- both Sorts as `Requires`, an explicitly
+  labeled **hypothetical** "if these were individually verified and
+  promoted" variant, not a change to the real dictionary.
+
+`engine/test/Main.hs`'s new `assertSyntheticTower` (one call per tower,
+via `mapM_`) asserts, through `contextualFiberChecked`/
+`contextualContractionChecked` (i.e. through the real compiled Agda
+checker, not the unchecked `contextualFiber`) for each of the 5 towers:
+1/2. each Sort alone leaves exactly 2 candidates;
+3. `Prefers`-both leaves all 4 candidates (does not narrow) -- the
+   honest, current-dictionary-accurate result;
+4. `Requires`-both narrows to exactly the shared-Sort candidate,
+   `contextualContractionChecked` succeeds with
+   `contractionSafety == "unique-contextual-fiber"` -- the hypothetical,
+   Agda-verified "if promoted" result;
+5. an explicit single-Sort candidate is correctly rejected as a
+   contraction target under `Requires`-both.
+
+Five towers: `ashford-university-research`, `boutiqueville-clothing-brand`,
+`millbrook-business-research`, `vinedale-drink-food`,
+`relaypoint-communication-programme` -- reusing the SAME `InstitutionOf`
+relation (`P131`, inverse) for all five, since the point under test is
+Sort-based fiber narrowing, not diversity of `Relation` values (already
+proven separately by the real Waterloo tests). Type-projection QIDs reuse
+the real ones already in `data/wikidata-qid-snapshot/rules.json` for
+Sorts it already maps (`University`, `ResearchInstitution`,
+`BusinessOrganization`, `Clothing`); the rest (`Brand`, `Drinkable`,
+`Food`, `CommunicationContent`, `Programme`) get plain fictional markers
+local to the new snapshot (`rules.json`'s `"types"` array is fully
+snapshot-local and never checked against anything external -- confirmed
+by reading `Snapshot.hs` directly). `graph_sha256` computed and
+independently re-verified locally (`py -3`, byte-for-byte reproduction of
+`scripts/extract_wikidata_snapshot.py`'s `verify()` hashing formula)
+before committing -- the actual `loadSnapshot` verification (a `python3`
+subprocess call) only runs for real in CI, no local Haskell/Agda toolchain
+on this machine.
+
+Zero new Haskell/Agda code beyond the new fixture module and test
+assertions -- no new `Sort`, no new `Relation`, no change to
+`Metonymy.Contextual`/`ContextualChecked`/`Verified`/`Checker.agda`
+themselves. Nothing here changes `data/contextual-context-triggers.json`
+or promotes any of its entries to `requires` -- the "requires" variant
+lives only in this dedicated, clearly-labeled Haskell test fixture.
+
 ## A real, pre-existing CI regression found while pushing the round above,
 ## unrelated to it -- a duplicate GF function for "hear"
 
