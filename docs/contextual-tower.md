@@ -4509,3 +4509,113 @@ cleanup (this machine has no local `ghc`/`cabal`/`agda` to verify
 Haskell compiles), and is done as a separate, later change, verified
 only through real CI, following the same discipline used for every
 Haskell-adjacent change this whole season.
+
+## The Haskell surgery, and a real bug it caught before it reached CI
+
+The deferred Haskell side landed as a follow-up: `OpenDomain.hs`,
+`Automatic.hs`, `Examples.hs`, `Forgetting.hs`, `Data.hs`, and
+`Promotion.hs` moved to `trash/engine/src/Metonymy/`, and three files
+were edited in place.
+
+**`engine/app/Main.hs`** (982 -> 232 lines): the `list`/`expand`/
+`contract`/`evaluate`/`open-evaluate`/`open-batch` CLI branches, and
+every helper function reachable only from them (`printCandidate`,
+`runExpand`/`runContract`/`runExpandText`/`runContractText`,
+`authorizationStatus`, the whole `OpenEvaluationResult`/
+`evaluateOpen`/`resolveOpenDecision`/`renderOpenBatchRow` chain, etc.)
+are gone. `main`'s own data loading shrank to match: it turned out
+`predicates`/`actionRoles`/`endpointSnapshot`/`expandedKnowledgeBase`
+were *only* ever consumed by the branches being removed -- the tower
+commands (`contextual-fiber`/`contextual-contract`) only ever needed
+`qidSnapshot`/`contextualScenarios`. `parse`/`linearize` (the two
+GF-only diagnostic commands the Python pipeline still shells out to)
+are untouched.
+
+**`engine/src/Metonymy/Verified.hs`** (332 -> 130 lines): removed the
+`import Metonymy.Automatic (Clause (..), parseClause)` line that was
+the actual compile-time coupling forcing `Automatic.hs` to stay in the
+build, along with `verifyWithAgda`, `verifyRuntimeWithAgda`,
+`verifyPreferenceRuntimeWithAgda`, `verifyContextualRuntimeWithAgda`,
+the private `verifyRuntimeCandidate` helper, `verifyPromotionWithAgda`
+(zero remaining callers after `Promotion.hs` moved, confirmed by grep
+before removing -- not guessed), and every `toAgda*` helper reachable
+only from those (`toAgdaClause`, `toAgdaForgetContext`,
+`toAgdaEvidence`, `toAgdaCertificate`, `toDirection`, `toHole`,
+`toEdge`). Kept `verifyContextLayerWithAgda`/`verifyPreferenceLayerWithAgda`
+(the only two `ContextualChecked.hs` actually calls, confirmed by grep)
+and every `toAgda*` helper they transitively need
+(`toAgdaKnowledgeBase`, `toAgdaContext`, `toAgdaContextConstraint`,
+`toAgdaAnchor`, `toAgdaRequirement`, and the plain fact-conversion
+helpers `toTypeFact`/`toRelationFact`/`toSubsortRule`/`toPredicateFact`/
+`toLexemeFact`). None of the four removed functions actually needed
+`Metonymy.Automatic` themselves except through this shared helper web --
+`verifyWithAgda` in particular never touched `Clause`/`parseClause` at
+all, it only lost its home because its sole caller (`printCandidate`)
+was Automatic-only.
+
+**`engine/test/Main.hs`** (1422 -> 411 lines): kept the GF-tokenizer
+tests (`spaceBeforeCommas`/`spaceAroundParens`, self-contained, no
+fixture dependency) and the entire Waterloo + synthetic-towers tower
+block verbatim, byte-for-byte. Everything between them -- the
+`exampleKnowledgeBase`/`expandScenario`/`contractScenario` block, the
+`automaticExpand`/`automaticContract`/VerbNet-preference-promotion
+block, the `analyzeOpen`/`analyzeOpenAtWithDependencyHint` block, and
+the `inferForgetContext`/`safeToForget` "context gate" block -- is
+gone, along with the now-unused helper functions at the bottom
+(`require`, `assertLinearizes`, `assertParses`, `requireParsedTrees`,
+`assertRecognizes(With)`, `assertAutomaticExpansion`/`Contraction`,
+`requireParseTrees`). A direct grep confirmed the tower block never
+called any of the four removed `Verified.hs` functions itself (only
+`contextualFiberChecked`/`contextualContractionChecked`, which reach
+`verifyContextLayerWithAgda`/`verifyPreferenceLayerWithAgda`
+indirectly through `ContextualChecked.hs`) -- so `import Metonymy.
+Verified` could be dropped from the test file entirely, not just
+trimmed.
+
+**`Makefile`**/**`scripts/reproduce.sh`**: removed the `safecon`/
+`safecon-context` targets (their only dataset, `evaluation/safecon-
+mini/`, is in `trash/`) and the `experiment` target (its only script,
+`run_experiment.py`, is in `trash/`), and their invocations from
+`verify`/`reproduce.sh`. `scripts/bootstrap.sh` already runs `make
+test` (the Haskell test suite) as part of its own sequence, so
+`reproduce.sh` didn't need a replacement call added for that.
+
+**A real, previously-latent bug this surgery surfaced, not a Haskell
+one**: `scripts/generate_gf_lexicon.py` -- still very much load-bearing,
+`make grammar` calls it unconditionally -- defaults to reading `data/
+wikidata-author-works.tsv` and `data/semantic-entities.tsv`. Both had
+been moved to `trash/data/` in the earlier Python-side commit on the
+assumption that they were exclusively `Metonymy.Automatic`-era demo
+data. They are not: the *currently committed* `grammar/
+GeneratedMetonymy.gf`/`GeneratedMetonymyEng.gf` (9773 lines) contains
+thousands of `Author_*`/`Works_*`/`Work_*` NP constructors generated
+directly from `wikidata-author-works.tsv`, plus a handful (`Mozart`,
+`MusicOfMozart`, ...) from `semantic-entities.tsv` -- and the grammar is
+a single shared artifact every pipeline compiles against, tower
+included, not a per-pipeline file. Removing the two input files without
+also regenerating (and re-verifying, against a real `gf`/RGL toolchain)
+the grammar they feed would have made `make grammar` -- and therefore
+`make all` and every CI job -- crash with a plain `FileNotFoundError`
+on the very next run.
+
+Caught before it ever reached CI: the local GF toolchain (`gf.exe` +
+pinned `gf-rgl`, already set up earlier this project for grammar
+iteration) meant `scripts/generate_gf_lexicon.py` could just be run
+directly against the restored files and diffed against the committed
+`.gf`/`.json` outputs -- byte-identical, confirming the restore was a
+pure no-op relative to the pre-cleanup state, not a new risk. The two
+files are back in `data/`, *not* re-trashed; trimming the generator to
+stop emitting per-author/work constructors that nothing in the tower
+path references is a legitimate follow-up, but it means regenerating
+and re-verifying a large compiled grammar end to end (real `gf -make`,
+not just a byte-diff), which is deliberately not bundled into this
+already-large cleanup round.
+
+**What this changes about the cleanup's own accounting**: `Metonymy.
+Data`/`Metonymy.Examples`/`Metonymy.Forgetting`/`Metonymy.OpenDomain`/
+`Metonymy.Promotion` (the Haskell-side consumers of author/work and
+semantic-entity data) are still fully retired -- nothing in the kept
+Haskell tree reads `data/wikidata-author-works.tsv`/`semantic-
+entities.tsv` anymore. Only the Python-side grammar *generator*
+still needs them, as raw lexicon-seeding input, independent of which
+Haskell pipeline (if any) goes on to use the resulting constructors.

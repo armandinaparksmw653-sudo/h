@@ -6,8 +6,8 @@ CUBICAL_LIB ?= $(HOME)/.cache/metonymy/cubical-v0.5
 RGL_LIB ?= $(HOME)/.cache/metonymy/gf-rgl-lib
 RGL_PATH = $(RGL_LIB)/alltenses:$(RGL_LIB)/prelude
 
-.PHONY: all grammar formal formal-artifact checker engine test evaluation-test experiment \
-	safecon safecon-context generated-check verbnet-generated-check verify \
+.PHONY: all grammar formal formal-artifact checker engine test evaluation-test \
+	generated-check verbnet-generated-check verify \
 	framenet-generated-check qid-fiber-test contextual-corpus-test \
 	contextual-ablations reproduce clean
 
@@ -75,20 +75,6 @@ test: all
 evaluation-test:
 	python3 -m unittest discover -s tests/evaluation -p 'test_*.py'
 
-safecon: engine
-	python3 scripts/evaluation/safecon.py \
-		--dataset evaluation/safecon-mini/dataset.jsonl \
-		--engine build/metonymy \
-		--predictions build/evaluation/safecon-predictions.jsonl \
-		--report build/evaluation/safecon-report.json
-
-safecon-context: engine
-	python3 scripts/evaluation/safecon.py \
-		--dataset evaluation/safecon-mini/context-v2.jsonl \
-		--engine build/metonymy \
-		--predictions build/evaluation/safecon-context-predictions.jsonl \
-		--report build/evaluation/safecon-context-report.json
-
 generated-check:
 	./scripts/generate_gf_lexicon.py
 	git diff --exit-code -- \
@@ -111,8 +97,6 @@ verbnet-generated-check:
 verify:
 	$(MAKE) test
 	$(MAKE) evaluation-test
-	$(MAKE) safecon
-	$(MAKE) safecon-context
 	$(MAKE) generated-check
 	$(MAKE) framenet-generated-check
 	$(MAKE) qid-fiber-test
@@ -170,17 +154,6 @@ contextual-ablations: engine
 
 reproduce:
 	./scripts/reproduce.sh
-
-experiment:
-	@test -n "$(EVALUATION_DATASET)" || \
-		{ echo "EVALUATION_DATASET is required"; exit 2; }
-	@test -n "$(EVALUATION_PREDICTIONS)" || \
-		{ echo "EVALUATION_PREDICTIONS is required"; exit 2; }
-	python3 scripts/evaluation/run_experiment.py \
-		--dataset "$(EVALUATION_DATASET)" \
-		--predictions "$(EVALUATION_PREDICTIONS)" \
-		--metadata evaluation/toolchain.json \
-		--output-dir build/evaluation/report
 
 clean:
 	rm -rf build dist-newstyle

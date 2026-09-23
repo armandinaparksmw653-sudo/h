@@ -1,108 +1,13 @@
 module Metonymy.Verified
-  ( verifyWithAgda
-  , verifyRuntimeWithAgda
-  , verifyPreferenceRuntimeWithAgda
-  , verifyContextualRuntimeWithAgda
-  , verifyContextLayerWithAgda
+  ( verifyContextLayerWithAgda
   , verifyPreferenceLayerWithAgda
-  , verifyPromotionWithAgda
   ) where
 
 import qualified Data.Text as Text
 import qualified Metonymy.CheckerAPI as Agda
-import Metonymy.Automatic (Clause (..), parseClause)
 import Metonymy.Contextual
 import Metonymy.Ontology
 import Metonymy.Types
-
-verifyWithAgda ::
-  KnowledgeBase ->
-  [Predicate] ->
-  Certificate ->
-  Bool
-verifyWithAgda knowledgeBase predicates certificate =
-  Agda.check
-    (toAgdaKnowledgeBase knowledgeBase predicates)
-    (toAgdaCertificate selectedRequirement certificate)
-  where
-    predicate = certificatePredicate certificate
-    selectedRequirement =
-      case certificateHoleRole certificate of
-        SubjectHole -> subjectRequirement predicate
-        ObjectHole -> objectRequirement predicate
-
-verifyRuntimeWithAgda ::
-  KnowledgeBase ->
-  [Predicate] ->
-  Candidate ->
-  Bool
-verifyRuntimeWithAgda knowledgeBase predicates candidate =
-  verifyRuntimeCandidate
-    Agda.runtimeCheck
-    knowledgeBase
-    predicates
-    candidate
-
-verifyPreferenceRuntimeWithAgda ::
-  KnowledgeBase ->
-  [Predicate] ->
-  Candidate ->
-  Bool
-verifyPreferenceRuntimeWithAgda knowledgeBase predicates candidate =
-  verifyRuntimeCandidate
-    Agda.preferenceRuntimeCheck
-    knowledgeBase
-    predicates
-    candidate
-
--- | A single-shot combined check: compiled Agda's
--- @contextualRuntimeCheck@ is literally @runtimeCheck before after raw
--- \`and\` contextLayerCheck ... (rawTarget raw)@ (formal/Metonymy/Checker.agda)
--- -- the flat pipeline's one-rewrite @HardCell@-style verification ANDed
--- with exactly one tower context layer, both proven Sound and Complete.
---
--- It is NOT what the production @contextual-fiber@/@contextual-contract@
--- CLI path (Metonymy.ContextualChecked) actually calls at runtime: that
--- code calls 'verifyContextLayerWithAgda' once per stage as the tower is
--- built up, not this function once for a single combined rewrite+layer.
--- This function predates that iterative design and is kept because it is
--- independently correct (compiled and formally proven, not merely
--- unused-and-untested) and its tests in engine/test/Main.hs exercise the
--- same Context->RawContext Agda-FFI marshaling
--- ('toAgdaContext'/'toAgdaContextConstraint') that
--- 'verifyContextLayerWithAgda' also depends on in production. Removing it
--- would need touching the matching Agda theorems
--- (@contextualRuntimeCheckSound@/@contextualRuntimeCheckComplete@) and
--- would drop that FFI-marshaling coverage, for no behavioral gain since
--- nothing calls it -- so it stays, documented rather than deleted.
-verifyContextualRuntimeWithAgda ::
-  Snapshot ->
-  [Predicate] ->
-  Context ->
-  Candidate ->
-  Bool
-verifyContextualRuntimeWithAgda snapshot predicates context candidate =
-  case
-      ( parseClause (candidateSourceTree candidate)
-      , parseClause (candidateAbstractTree candidate)
-      ) of
-    (Just before, Just after) ->
-      Agda.contextualRuntimeCheck
-        (toAgdaKnowledgeBase knowledgeBase predicates)
-        (toAgdaClause (certificateForgetContext certificate) before)
-        (toAgdaClause (certificateForgetContext certificate) after)
-        (toAgdaCertificate selectedRequirement certificate)
-        (text (snapshotHash snapshot))
-        (toAgdaContext context)
-    _ -> False
-  where
-    knowledgeBase = snapshotKnowledgeBase snapshot
-    certificate = candidateCertificate candidate
-    predicate = certificatePredicate certificate
-    selectedRequirement =
-      case certificateHoleRole certificate of
-        SubjectHole -> subjectRequirement predicate
-        ObjectHole -> objectRequirement predicate
 
 verifyContextLayerWithAgda :: Snapshot -> Context -> EntityId -> Bool
 verifyContextLayerWithAgda snapshot context candidate =
@@ -165,52 +70,6 @@ toAgdaAnchor anchor =
     (fromIntegral (anchorStart anchor))
     (fromIntegral (anchorEnd anchor))
 
-verifyRuntimeCandidate ::
-  ( Agda.KnowledgeBase ->
-    Agda.RuntimeClause ->
-    Agda.RuntimeClause ->
-    Agda.RawCertificate ->
-    Bool
-  ) ->
-  KnowledgeBase ->
-  [Predicate] ->
-  Candidate ->
-  Bool
-verifyRuntimeCandidate checker knowledgeBase predicates candidate =
-  case
-      ( parseClause (candidateSourceTree candidate)
-      , parseClause (candidateAbstractTree candidate)
-      ) of
-    (Just before, Just after) ->
-      checker
-        (toAgdaKnowledgeBase knowledgeBase predicates)
-        (toAgdaClause (certificateForgetContext certificate) before)
-        (toAgdaClause (certificateForgetContext certificate) after)
-        (toAgdaCertificate selectedRequirement certificate)
-    _ -> False
-  where
-    certificate = candidateCertificate candidate
-    predicate = certificatePredicate certificate
-    selectedRequirement =
-      case certificateHoleRole certificate of
-        SubjectHole -> subjectRequirement predicate
-        ObjectHole -> objectRequirement predicate
-
-verifyPromotionWithAgda ::
-  Certificate ->
-  DiscourseEvidence ->
-  Bool
-verifyPromotionWithAgda certificate evidence =
-  Agda.checkPromotion
-    (toAgdaCertificate selectedRequirement certificate)
-    (Just (toAgdaEvidence evidence))
-  where
-    predicate = certificatePredicate certificate
-    selectedRequirement =
-      case certificateHoleRole certificate of
-        SubjectHole -> subjectRequirement predicate
-        ObjectHole -> objectRequirement predicate
-
 toAgdaKnowledgeBase ::
   KnowledgeBase ->
   [Predicate] ->
@@ -228,33 +87,6 @@ toLexemeFact info =
   Agda.lexemeFact
     (text (entityGF info))
     (text (show (entityId info)))
-
-toAgdaClause :: ForgetContext -> Clause -> Agda.RuntimeClause
-toAgdaClause context clause =
-  Agda.runtimeClause
-    (text (clauseSubjectGF clause))
-    (text (clauseVerbGF clause))
-    (text (clauseObjectGF clause))
-    (toAgdaForgetContext context)
-
-toAgdaForgetContext :: ForgetContext -> Agda.ForgetContext
-toAgdaForgetContext context =
-  Agda.forgetContext
-    (genericWholeFiber context)
-    (hasRestrictor context)
-    (hasQuantifier context)
-    (isPositive context)
-    (isUnfocused context)
-    (hasAnaphoricDependent context)
-    (hasTemporalRestriction context)
-
-toAgdaEvidence ::
-  DiscourseEvidence ->
-  Agda.RawDiscourseEvidence
-toAgdaEvidence evidence =
-  Agda.targetSalient
-    (text (show (evidenceTarget evidence)))
-    (text (evidenceSource evidence))
 
 toTypeFact :: TypeAssertion -> Agda.TypeFact
 toTypeFact assertion =
@@ -283,41 +115,6 @@ toPredicateFact predicate =
     (toAgdaRequirement (objectRequirement predicate))
     (text (show (predicateStrength predicate)))
     (text (predicateProvenance predicate))
-
-toAgdaCertificate ::
-  Requirement ->
-  Certificate ->
-  Agda.RawCertificate
-toAgdaCertificate requirement certificate =
-  Agda.rawCertificate
-    (toDirection (certificateDirection certificate))
-    (toAgdaForgetContext (certificateForgetContext certificate))
-    (text (gfFunction predicate))
-    (toHole (certificateHoleRole certificate))
-    (text (show (coarseSource (certificateCoarse certificate))))
-    (text (show (fineTarget fine)))
-    (toAgdaRequirement requirement)
-    (text (show (predicateStrength predicate)))
-    (text (predicateProvenance predicate))
-    (map toEdge (unBridgePath (finePath fine)))
-  where
-    predicate = certificatePredicate certificate
-    fine = certificateFine certificate
-
-toDirection :: Direction -> Agda.Direction
-toDirection Expand = Agda.expand
-toDirection Contract = Agda.contract
-
-toHole :: HoleRole -> Agda.Hole
-toHole SubjectHole = Agda.subjectHole
-toHole ObjectHole = Agda.objectHole
-
-toEdge :: BridgeStep -> Agda.Edge
-toEdge step =
-  Agda.edge
-    (text (show (bridgeRelation step)))
-    (text (show (bridgeSource step)))
-    (text (show (bridgeTarget step)))
 
 toAgdaRequirement :: Requirement -> Agda.Requirement
 toAgdaRequirement (HasSort sort) = Agda.hasSort (text (show sort))

@@ -13,15 +13,16 @@ library
   import: warnings
   exposed-modules:
       Metonymy.Types
-      Metonymy.Data
-      Metonymy.Automatic
-      Metonymy.Forgetting
-      Metonymy.OpenDomain
-      Metonymy.Promotion
       Metonymy.Verified
       Metonymy.Ontology
       Metonymy.Resolution
-      Metonymy.Examples
+      Metonymy.Contextual
+      Metonymy.ContextualChecked
+      Metonymy.ContextSpec
+      Metonymy.Snapshot
+      Metonymy.Waterloo
+      Metonymy.SyntheticTowers
+      Metonymy.Elaborator
       Metonymy.GF
   hs-source-dirs: src
   build-depends:

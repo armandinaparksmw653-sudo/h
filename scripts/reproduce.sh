@@ -24,8 +24,6 @@ require_min_version \
 
 ./scripts/bootstrap.sh
 make evaluation-test
-make safecon
-make safecon-context
 make qid-fiber-test
 make contextual-corpus-test
 make contextual-ablations
