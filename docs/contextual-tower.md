@@ -4305,3 +4305,66 @@ and to `tests/evaluation/test_compile_gf_constraints_context_triggers.py`'s
 Pisa/UCLA/Ankara/Berklee/Padgate -- these are real corpus examples, not
 synthetic ones, so they belong there, not in the synthetic-multidomain
 test file).
+
+## A real non-University working example: Cupertino -> Apple
+
+Asked directly whether any real, non-fictional, non-University working
+example exists anywhere in the project. It turns out `evaluation/
+contextual-multidomain` (Paris -> Chanel, London -> NYSE Euronext Liffe/
+SABMiller/International Airlines Group) already is one -- and, checked
+directly this round, goes through the *exact same* Haskell tower
+(`Metonymy.Contextual`/`ContextualChecked`, `contextualFiberChecked`/
+`contextualContractionChecked`) as the university-domain examples, via
+the identical `run_contextual_corpus.py` -> `run_automatic_contextual_
+pipeline.py` -> `contextual_rule_compiler.py` -> `ContextSpec.hs` chain --
+not a different or older pipeline. The mechanism there is FrameComposition
+(an adjective like "commercial" composing with a noun like "agreement"
+via `composition_matrix`/`action_object_requirements` in `data/
+contextual-language-rules.json`) rather than context-triggers, but it is
+domain-agnostic and produces a real `Requires (HasSort BusinessOrganization)`
+constraint -- stronger than any of this session's new context-trigger
+entries, all of which stayed at `prefers`.
+
+Tried to find a genuinely *new* real non-University instance by searching
+the production snapshot (`data/wikidata-openalex-snapshot`, 808 entities)
+for an unused BusinessOrganization entity with a materialized headquarters
+place -- found that every clean, unambiguous combination already in the
+snapshot (Moscow/Yandex, Bonn/Telekom, Neuilly or Paris/Chanel, London/
+NYSE+SABMiller+IAG) is already exploited by the existing silver/audited
+rows; this snapshot was clearly built purposefully to cover exactly its
+current test cases, not with spare unused material.
+
+So this round extends the production snapshot itself, honestly and
+minimally: `claims.jsonl` already contained `{"property":"P159","source":
+"Q312","target":"Q189471"}` (Apple's real Wikidata headquarters claim,
+presumably kept from whatever the original extraction allowlist included)
+but `Q189471` itself was never materialized as a labeled entity in
+`entities.jsonl`/`aliases.jsonl` -- confirmed live against Wikidata
+(`Q189471` = "Cupertino") and confirmed it is Apple's *only* P159 target
+present in this snapshot (no ambiguity risk). Added exactly two lines
+(`entities.jsonl`, `aliases.jsonl`) plus the two matching new rows in
+`evaluation/contextual-multidomain/audited-inputs.jsonl`/`audited-gold.jsonl`
+("Cupertino signed the commercial agreement" -> Apple Q312 expand;
+"Apple Inc. signed the commercial agreement" -> Cupertino Q189471
+contract, mirroring the existing Chanel/Paris pair exactly) -- no new
+claims needed, since Apple's own `P31`->`Q4830453` (BusinessOrganization)
+and the `P159`->Cupertino claim already existed.
+
+`manifest.json`'s `graph_sha256` was recomputed and independently
+verified against the actual staged git blobs (not the local working
+copy, which this Windows checkout's `core.autocrlf` reflows to CRLF --
+the same care taken for the synthetic-towers-snapshot earlier), and
+cross-checked by reproducing the *current*, already-correct hash from
+the unmodified files first, confirming the hashing algorithm and file
+set (including the easy-to-miss optional `evidence.jsonl`) were both
+right before trusting the new one.
+
+**Honestly expected, not hidden**: `evaluation/contextual-multidomain/
+audited-summary.json` (the committed golden report `make contextual-
+corpus-test`'s `assert_json_equal` compares against) was NOT hand-updated
+to match -- doing that correctly requires actually running the real
+engine against the real snapshot, which this machine cannot do locally.
+Pushed expecting `assert_json_equal` to fail once, read the exact actual
+report from its printed diff, then committed the corrected summary in a
+follow-up commit -- the same two-round pattern already used earlier this
+session for the stale `VerbNet snapshot contributes 41 predicates` count.

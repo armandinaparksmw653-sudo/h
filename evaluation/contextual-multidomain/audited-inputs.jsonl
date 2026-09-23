@@ -7,3 +7,5 @@
 {"contract_target":"Chanel","direction":"contract","family":"location-for-institution","id":"audited-contract-paris-commercial","sentence":"Chanel signed the commercial agreement","source":"Paris"}
 {"contract_target":"UWaterloo","direction":"contract","expected_status":"rejected","family":"location-for-institution","id":"audited-reject-waterloo-ambiguous","sentence":"UWaterloo announced a programme in physics","source":"Waterloo"}
 {"contract_target":"Chanel","direction":"contract","expected_status":"rejected","family":"location-for-institution","id":"audited-reject-paris-political","sentence":"Chanel signed the political agreement","source":"Paris"}
+{"family":"location-for-institution","id":"audited-cupertino-commercial","sentence":"Cupertino signed the commercial agreement","source":"Cupertino"}
+{"contract_target":"Apple Inc.","direction":"contract","family":"location-for-institution","id":"audited-contract-cupertino-commercial","sentence":"Apple Inc. signed the commercial agreement","source":"Cupertino"}

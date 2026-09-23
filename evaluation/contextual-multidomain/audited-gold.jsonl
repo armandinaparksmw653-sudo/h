@@ -7,3 +7,5 @@
 {"gold_families":["location-for-institution"],"gold_qids":["Q90"],"id":"audited-contract-paris-commercial"}
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"audited-reject-waterloo-ambiguous"}
 {"gold_families":["location-for-institution"],"gold_qids":[],"id":"audited-reject-paris-political"}
+{"gold_families":["location-for-institution"],"gold_qids":["Q312"],"id":"audited-cupertino-commercial"}
+{"gold_families":["location-for-institution"],"gold_qids":["Q189471"],"id":"audited-contract-cupertino-commercial"}
