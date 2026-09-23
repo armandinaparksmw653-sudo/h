@@ -1,81 +1,49 @@
-# Cubical GF for proof-carrying metonymy
+# Cubical type theory for proof-carrying metonymy
 
-Research prototype positioning metonymy processing as an application of a
-**Cubical extension of Grammatical Framework**. Metonymic compression is
-treated as a context-indexed quotient of explicit meanings. The system
-combines:
+Research prototype positioning metonymy (predicate transfer) as an
+application of **Cubical Agda**: a metonymic reading is a *quotient* of a
+context-indexed fiber of candidate referents by a contextual compatibility
+relation, and the transfer itself is a proof-carrying path/equivalence,
+not a heuristic rewrite. The system combines:
 
-- Grammatical Framework (GF) with its standard English Resource Grammar
-  Library for parsing, morphology, agreement, and linearization;
-- a Haskell engine for typed ontology queries, bridge search, expansion,
-  contraction, and proof-carrying certificates;
-- Cubical Agda for the higher-inductive quotient, metonymic path
-  constructor, homotopy fiber of expansions, and round-trip results.
+- Grammatical Framework (GF), used narrowly as a hand-curated, type-checked
+  front end for a bounded set of English constructions — not a broad-coverage
+  parser;
+- a Haskell engine (the **contextual tower**: `Metonymy.Contextual`/
+  `ContextualChecked`/`ContextSpec`) that stacks context-derived constraints
+  as successive layers, each independently re-verified;
+- Cubical Agda for the higher-inductive quotient (`formal/Metonymy/
+  FilteredContext.agda`'s `CoarseFiber`), the metonymic path constructor,
+  and the compiled `contextLayerCheck` that is the sole authorization
+  boundary — nothing Haskell proposes is trusted until Agda accepts it.
 
-GF and the deterministic open frontend propose typed grammatical
-elaborations. Haskell proposes ontology bridges. The compiled Agda checker
-is the authorization boundary: only accepted certificates induce cubical
-paths and equality in the independent quotient semantics.
-
-The checked-in knowledge snapshots currently cover 33 imported authors,
-92 named literary works, 10 local predicates, 41 legacy GF predicates,
-6,739 VerbNet action senses, and 55,024 Action×Role realizations. Of those
-role rows, 17,006 have an audited executable projection; the rest remain
-lossless provenance records rather than being silently discarded.
-
-```text
-Anna reads Tolstoy.
-  → Anna reads Tolstoy's works.
-
-Anna drinks a glass.
-  → Anna drinks the contents of a glass.
-
-Moscow signs the agreement.
-  → The Russian government signs the agreement.
-
-John reads Rumi.
-  → John reads Rumi's works.
-  → John reads Masnavi.
-
-John studies Rumi.
-  → John studies Rumi's works.
-
-Alice listens to Mozart.
-  → Alice listens to Mozart's music.
-
-Bob watches Spielberg.
-  → Bob watches Spielberg's films.
-
-John eats a plate.
-  → John eats the food on the plate.
-
-Mary wears Chanel.
-  → Mary wears Chanel clothing.
-
-John scrutinizes Rumi.
-  → John scrutinizes Rumi's works.
-
-Alice hears Mozart.
-  → Alice hears Mozart's music.
-
-John devours a plate.
-  → John devours the food on the plate.
-```
-
-It also contracts generic explicit readings:
+**Scope, stated plainly**: this project does not claim state-of-the-art
+metonymy detection (for that, use an LLM). It demonstrates that predicate
+transfer for *referential/encyclopedic* metonymy (a place standing for an
+institution located there, a company for its headquarters, etc.) can be
+given a computable, machine-checked semantics, on a small number of
+deeply-verified real examples plus the formal apparatus to combine several
+independent contextual signals — not on large-corpus recall.
 
 ```text
-Anna reads Tolstoy's works.
-  → Anna reads Tolstoy.
+He attended Valparaiso and received a degree.
+  → He attended Valparaiso University.
+  (two stacked constraints — "attended" and "degree" — narrow the fiber
+   over the place "Valparaiso" to the one candidate that is both an
+   Organization and a University)
+
+Cupertino signed the commercial agreement.
+  → Apple Inc. signed the commercial agreement.
+  (a real, live-Wikidata-verified example: Cupertino → Apple, Inc.,
+   BusinessOrganization)
 ```
 
-Contraction of a specific work is deliberately rejected because it loses
-information:
-
-```text
-Anna reads War and Peace.
-  ↛ Anna reads Tolstoy.
-```
+See [docs/contextual-tower.md](docs/contextual-tower.md) for the full
+worked history of these and the other curated examples (Haifa, Pisa, UCLA,
+Berklee, Padgate, Winchester, Phoenix, Loughborough, and the synthetic
+multi-domain tower fixtures), including the ones that were searched for and
+honestly rejected (a competing institution named in the same sentence, a
+Wikidata data gap, etc.).
 
 ## Architecture
 
@@ -140,148 +108,56 @@ The English RGL location can likewise be overridden:
 RGL_LIB=/path/to/compiled-rgl ./scripts/check.sh
 ```
 
-## Running the prototype
+## Running the tower
 
-List scenarios:
-
-```bash
-./build/metonymy list
-```
-
-Expand metonymic expressions:
+Run a hand-built scenario (the Waterloo fixture, `data/contextual-scenarios.tsv`)
+directly through the compiled Agda checker:
 
 ```bash
-./build/metonymy expand "Anna reads Tolstoy"
-./build/metonymy expand "Anna drinks a glass"
-./build/metonymy expand "Moscow signs the agreement"
-./build/metonymy expand "John reads Rumi"
-./build/metonymy expand "John studies Rumi"
-./build/metonymy expand "Alice listens to Mozart"
-./build/metonymy expand "Bob watches Spielberg"
-./build/metonymy expand "John eats a plate"
-./build/metonymy expand "Mary wears Chanel"
-./build/metonymy expand "John scrutinizes Rumi"
-./build/metonymy expand "Alice hears Mozart"
-./build/metonymy expand "John devours a plate"
+./build/metonymy contextual-fiber waterloo
+./build/metonymy contextual-contract waterloo Q1049470
 ```
 
-VerbNet preferences remain candidates unless matching discourse evidence is
-provided:
+Run a real sentence end to end (GF tree → constraints → tower → Agda), the
+same pipeline the curated examples in `evaluation/pilot-decode-wimcor/` and
+`evaluation/contextual-multidomain/` are verified with:
 
 ```bash
-./build/metonymy expand "John scrutinizes Rumi"
-# status=candidate-only path=False
-
-./build/metonymy expand "John scrutinizes Rumi" \
-  --discourse-salient works-of-Q43347 \
-  --evidence-source conversation:turn-4
-# the matching generic reading has status=promoted-preference path=True
+python3 scripts/run_automatic_contextual_pipeline.py \
+  --engine build/metonymy \
+  --snapshot data/wikidata-openalex-snapshot \
+  --sentence "Cupertino signed the commercial agreement" \
+  --source Cupertino
 ```
 
-The Agda runtime checker binds every authorized path to the exact source and
-target GF trees, predicate, hole, direction, lexeme/entity mapping, and
-certificate. A checked preference without validated evidence does not
-generate a path.
+`./build/metonymy parse`/`linearize` remain available as GF-only diagnostic
+commands (no engine/Agda involvement) — see `docs/contextual-tower.md`.
 
-Contract a generic explicit expression:
-
-```bash
-./build/metonymy contract "Anna reads Tolstoy's works"
-```
-
-Observe rejection of lossy contraction:
-
-```bash
-./build/metonymy contract "Anna reads War and Peace"
-```
-
-Exercise GF parsing:
-
-```bash
-./build/metonymy parse "Anna reads Tolstoy"
-```
-
-Scenario identifiers remain available as a lower-level debugging interface:
-
-```bash
-./build/metonymy expand read-tolstoy
-./build/metonymy contract read-tolstoy works-of-tolstoy
-```
+**Legacy pipelines**: two earlier, independent engines (a flat
+`open-evaluate`/`open-batch` positional-heuristic frontend, and a separate
+"Automatic" `expand`/`contract`/`list` demo engine with its own hand-written
+knowledge base) have been moved to [`trash/`](trash/) — not deleted, kept
+for reference, but no longer built, tested, or run in CI. See
+`docs/contextual-tower.md`'s cleanup section for exactly what moved and why.
 
 ## Knowledge data
 
-`data/wikidata-author-works.tsv` is an offline, testable snapshot generated
-from Wikidata. Every row retains its source relation provenance. The query
-requires:
+The tower resolves entities against a small, hash-verified Wikidata-style
+snapshot (`data/wikidata-qid-snapshot/`, `data/wikidata-openalex-snapshot/`,
+or the fully fictional `data/synthetic-towers-snapshot/` used only for
+engine-level mechanism tests) — 5 files each (`entities.jsonl`,
+`aliases.jsonl`, `claims.jsonl`, `rules.json`, `manifest.json`), verified by
+`extract_wikidata_snapshot.py verify` before every use. It also loads:
 
 ```text
-author occupation/subclass → writer (P106/P279)
-author notable work         → work (P800)
-work instance/subclass      → literary work (P31/P279)
-```
-
-Refresh it explicitly:
-
-```bash
-./scripts/import_wikidata.py --limit 100
-make grammar
-```
-
-The build runs `generate_gf_lexicon.py`, producing GF abstract and English
-lexicon modules for every imported author, generic works class, and named
-work. The Haskell engine loads the same TSV, so parsing and semantic
-certificates share entity identifiers.
-
-Wikidata structured data is CC0. The snapshot is intentionally committed so
-tests do not depend on a live SPARQL endpoint. `P800` records notable works,
-not a complete bibliography; candidate coverage must not be interpreted as
-exhaustive.
-
-The automatic resolver also loads:
-
-```text
-data/predicates.tsv          argument types for verbs
-data/verbnet-predicates.tsv  imported selectional preferences
-data/verbnet-actions.tsv     sense-preserving VerbNet action identities
+data/predicates.tsv            hand-audited argument types for a small verb set
+data/verbnet-predicates.tsv    imported VerbNet selectional preferences
+data/verbnet-actions.tsv       sense-preserving VerbNet action identities
 data/verbnet-action-roles.tsv  structured Action×Role requirements
-data/semantic-entities.tsv   typed ontology nodes
-data/semantic-relations.tsv  directed bridge edges
-data/subsorts.tsv            ontology inheritance tree
+data/contextual-context-triggers.json  (lemma, tree-relation) → constraint
+data/contextual-language-rules.json    morphology, composition, frame rules
+data/wordnet-context-rules.json        lexical/adjective sort mappings
 ```
-
-## Scaling entity linking and evidence
-
-The committed snapshots are deliberately small regression artifacts. For
-open-domain coverage, use the explicit offline Wikidata runtime pipeline:
-
-```bash
-./scripts/download_wikidata_dump.sh \
-  https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2 \
-  ~/.cache/metonymy/wikidata/latest-all.json.bz2
-python3 scripts/build_wikidata_runtime_index.py build \
-  --dump ~/.cache/metonymy/wikidata/latest-all.json.bz2 \
-  --database ~/.cache/metonymy/wikidata/runtime.sqlite
-```
-
-The database supports exact normalized label/alias lookup and materializes
-bounded, hash-bound QID neighborhoods. It does not perform live API lookup
-during inference, silently choose ambiguous names, or bypass the Agda checker.
-See `docs/contextual-tower.md` for batch linker-cache and materialization
-commands.
-
-For every parsed `subject–verb–object` tree, it:
-
-1. looks up the predicate's required subject and object types;
-2. checks whether each supplied entity already inhabits its required type;
-3. when it does not, searches outgoing ontology paths of bounded length;
-4. retains endpoints that prove the required type through the subsort tree;
-5. builds and verifies expansion certificates from those paths.
-
-There are no verb-specific metonymy rules in this algorithm. For example,
-`read`, `study`, `review`, and `translate` independently request
-`Readable`; consequently they reuse the same author-to-work bridge.
-`listen to`, `watch`, `eat`, and `wear` select different endpoint types and
-therefore activate different bridges.
 
 Adding a manually audited verb is a data operation: add its GF expression
 and argument types to `data/predicates.tsv`, then run `make grammar`. The
@@ -356,7 +232,10 @@ bridges, coherent 2-cells, witnessed compression, semantic factorization,
 checker reflection, preference promotion, conservativity, and
 non-collapse—is indexed in `formal/Metonymy/PublicationTheorems.agda`.
 See [docs/mathematics.md](docs/mathematics.md) for the exact theorem-to-file
-map and assumptions.
+map and assumptions, and [docs/main-theorem.md](docs/main-theorem.md) for a
+concise statement of the main theorem (contextual homotopy fiber, filtered
+family, proof-carrying paths, decidable lifting, safe contraction) with its
+scope explicitly bounded.
 
 The self-contained formal source directory is
 [`formal/Metonymy`](formal/Metonymy). Its publication-facing theorem index is
@@ -382,91 +261,31 @@ CI runs the same command. Exact commits and artifact hashes are recorded in
 in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The paper-facing
 claim map is [`docs/claims.md`](docs/claims.md).
 
-## Open-domain GF elaboration
-
-The GF grammar includes open proper-name/common-noun constructors and a
-small audited family of open transitive predicates. When the closed grammar
-cannot cover a corpus sentence, `Metonymy.OpenDomain` performs a
-target-aware, construction-bounded elaboration into genuine GF constructor
-names:
-
-```text
-Pred OpenSourceNP (Compl OpenAgentive OpenContextNP)
-→
-Pred OpenTargetNP (Compl OpenAgentive OpenContextNP)
-```
-
-The open frontend first finds the nearest VerbNet/local action realization,
-infers subject or object from the marked target position, and runs the same
-typed `expandFiber` search as the controlled GF path. Legacy lexical triggers
-are untrusted ranking hints between type-compatible bridge paths, not the
-primary search gate. `runtimeCheck` still checks the structured requirement,
-GF terms, endpoint types, ontology edge, direction, and certificate.
-
-Corpus batch inputs now carry a designated character span for the target
-occurrence. Action matching and legacy path-ranking hints are bounded around
-that span; an invalid or absent span fails closed. The endpoint layer first uses
-an independently sourced, frozen linker cache when one exists (the included
-CC0-style fixture resolves Moscow → Government of Russia), and otherwise
-emits a generic class endpoint. WiMCor gold `fine` labels are never supplied
-to the frontend.
-
-```bash
-./build/metonymy open-evaluate \
-  full wimcor LOCATION Moscow "Moscow signed the agreement"
-```
-
-Historical hard family-trigger baseline results:
-
-- WiMCor test (41,200): metonymic F1 `0.1895`, accuracy `0.7398`;
-- ConMeC (5,999 valid): metonymic F1 `0.0961`, accuracy `0.6989`;
-- SafeCon-Mini: precision `1.0`, recall `0.6667`, F1 `0.8`,
-  unsafe-contraction rate `0`.
-
-The integrated Action×Role search is deliberately stricter: WiMCor
-metonymic F1 is `0.0518` and ConMeC metonymic F1 is `0.0220`. It discovers
-many more VerbNet preferences but abstains unless they have promotion
-evidence, instead of silently turning them into hard paths. Its frozen linker
-recovers one exact WiMCor endpoint (`recall@1 = 0.000095`). These are
-baseline, not state-of-the-art, claims; improving them requires dependency
-bindings, independently sourced discourse evidence, and a substantially
-larger entity linker. Gold remains physically separated from inference.
-
-Replacing `chooseActionRoles`'s positional-offset subject/object heuristic
-with an offline UD dependency parse (Stanza `en_ewt`,
-`scripts/annotate_dependency_hints.py`) more than doubles WiMCor metonymic
-F1 (`0.0518` → `0.1158`) and raises ConMeC metonymic F1 by roughly 64%
-(`0.0220` → `0.0360`), with coverage and metonymic precision improving
-alongside recall on both corpora rather than trading one for the other.
-Both frontends are routed through the identical compiled Agda
-`runtimeCheck`, so this is a coverage gain at an unchanged formal safety
-boundary. See
-[`evaluation/wimcor-dependency-frontend-summary.json`](evaluation/wimcor-dependency-frontend-summary.json)
-and
-[`evaluation/conmec-dependency-frontend-summary.json`](evaluation/conmec-dependency-frontend-summary.json)
-for the full breakdown, including the still-unaddressed bottlenecks (entity
-linking, VerbNet-imported roles not yet contributing any successful
-rewrite on either corpus).
-
 ## Current scope
 
-This is a formally checked GF extension with a deterministic open-domain
-elaboration baseline, not a general semantic parser. The proof-producing
-core combines hand-audited bridge schemas with a generated Wikidata entity
-layer. WordNet and FrameNet can be additional adapters. VerbNet is already
-imported as a preference source; no external source bypasses Agda
-certificate checking.
+This is a formally checked, narrow-coverage semantics for referential
+metonymy, not a general semantic parser and not a metonymy detector. The
+GF grammar covers a bounded set of English constructions (SVO, adjective+
+noun composition, a closed set of prepositions, relative clauses); a
+sentence outside that coverage is declined, not guessed at. Every
+constraint that reaches the tower — whether from `data/predicates.tsv`,
+imported VerbNet preferences, or `data/contextual-context-triggers.json`'s
+(lemma, construction) dictionary — is `Requires` or `Prefers` labeled with
+honest, per-entry provenance (real corpus + live Wikidata verification
+where done, explicitly marked synthetic where not); only `Requires`
+constraints ever eliminate fiber candidates. No external source bypasses
+the compiled Agda `contextLayerCheck`.
 
-Candidate ranking is intentionally deterministic in this slice. A future
-statistical or LLM scorer may reorder already admissible candidates but
-must not establish formal admissibility.
+Candidate ranking is deterministic; there is no statistical or LLM scorer
+establishing formal admissibility anywhere in the trusted path (an LLM can
+propose a *tree structure* as a third, untrusted GF-tree-source tier — see
+`scripts/llm_propose_clause_structure.py` — but never a constraint or a
+certificate).
 
-## Contextual QID fiber prototype
+## Waterloo fixture walkthrough
 
-The contextual prototype computes a set-valued fiber over a frozen QID
-snapshot. It preserves lexical origins for every constraint and applies them
-in order; a candidate that does not extend to the next layer receives a
-snapshot-relative obstruction rather than a fallback endpoint.
+`data/contextual-scenarios.tsv`'s one hand-written scenario illustrates the
+tower's stage-by-stage narrowing end to end:
 
 ```bash
 ./build/metonymy contextual-fiber waterloo
@@ -474,25 +293,14 @@ snapshot-relative obstruction rather than a fallback endpoint.
 ```
 
 The second command is rejected on the Waterloo fixture: the physics layer
-contains both `Q1049470` and `Q2004561`, so unique-fiber contraction is
-unsafe. A later constraint that leaves a singleton licenses the reverse
-path from that unique survivor back to the source QID.
+contains both `Q1049470` (University of Waterloo) and `Q2004561` (Perimeter
+Institute), so unique-fiber contraction is unsafe. Waterloo City Council
+receives a `MissingRelation` obstruction and is dropped at the `announce`
+layer. A later constraint that leaves a singleton licenses the reverse path
+from that unique survivor back to the source QID — exactly what happens for
+the curated real examples (Valparaiso, Cupertino, etc.) once a second,
+independent constraint is added.
 
-The Waterloo fixture starts from `Q639408`, retains organization-compatible
-institutions for `announce`, and then applies the lexical `physics` constraint
-as `Conducts(_, Q413)`. It returns both University of Waterloo and Perimeter
-Institute when their facts are present, while Waterloo City Council receives a
-`MissingRelation` obstruction. This is a finite-snapshot result, not a claim
-that the fiber is complete in Wikidata or that its surviving candidates are
-semantically equal.
-
-The full data flow, tower invariants, obstruction interpretation, and formal
-witness map are documented in
-[`docs/contextual-tower.md`](docs/contextual-tower.md). Additional scenarios
-can be added as data rows in `data/contextual-scenarios.tsv`; the runtime and
-scorer are not Waterloo-specific.
-
-For the implemented independent scorer, SemEval adapter, five ablations,
-separate expansion/contraction reporting, false-path analysis, and dataset
-licensing policy, see [evaluation/README.md](evaluation/README.md) and
-[docs/evaluation.md](docs/evaluation.md).
+For the independent scorer, five ablations, and dataset licensing policy
+for the curated example sets, see [evaluation/README.md](evaluation/README.md)
+and [docs/evaluation.md](docs/evaluation.md).

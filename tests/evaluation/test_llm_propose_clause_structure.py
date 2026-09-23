@@ -1,12 +1,10 @@
 """Unit tests for llm_propose_clause_structure.py.
 
-Mirrors tests/evaluation/test_propose_promotion_evidence.py's own
-pattern exactly: business logic (propose_clause_structure) is tested
-with an INJECTED query callable (a lambda), never a real or mocked
-Ollama HTTP call -- query_ollama's own network glue (reused directly
-from propose_promotion_evidence.py) stays untested here, verified only
-by a real CI run, the same policy as every Stanza-dependent test in
-this project.
+Business logic (propose_clause_structure) is tested with an INJECTED
+query callable (a lambda), never a real or mocked Ollama HTTP call --
+query_ollama's own network glue (scripts/ollama_client.py) stays
+untested here, verified only by a real CI run, the same policy as
+every Stanza-dependent test in this project.
 """
 
 from __future__ import annotations

@@ -4411,3 +4411,101 @@ now genuinely `make contextual-corpus-test`-green: the first real,
 non-fictional, non-University working example added by this session,
 verified end to end through the same production engine + Agda checker
 as every other real example in this project.
+
+## Repository cleanup: tower path + formal core + curated examples only
+
+After the publication-strategy pivot (formalizing predicate transfer via
+quotient types in Cubical Type Theory, demonstrated on a small number of
+deeply-verified real examples, not large-corpus metonymy-detection
+recall), the repository carried a substantial amount of large-scale
+benchmark infrastructure and two earlier, independent engines that no
+longer serve that story. The user asked for a full cleanup: keep only
+(1) the contextual tower pipeline, (2) the formal Agda core and
+theorems, (3) the scripts needed to support the small curated example
+sets -- everything else moves to `trash/` (a plain, non-gitignored
+directory, reviewable in git, not deleted -- "just in case").
+
+**Three pipelines, not two, were found on investigation** (via a
+dedicated `Explore` pass over both the Haskell import graph and the
+Python/data/evaluation file usage, not assumed): the target **tower**
+(`contextual-fiber`/`contextual-contract` CLI, `Metonymy.Contextual`/
+`ContextualChecked`/`ContextSpec`/`Snapshot`/`Waterloo`/
+`SyntheticTowers`/`Elaborator`); a legacy **OpenDomain** engine
+(`open-evaluate`/`open-batch` CLI, `Metonymy.OpenDomain`, already
+documented as legacy and untouched by `ci.yml`); and a third, separate
+**"Automatic"** demo engine (`list`/`expand`/`contract`/`evaluate` CLI,
+`Metonymy.Automatic`/`Examples`/`Forgetting`/`Data`/`Promotion`) that
+was neither the tower nor OpenDomain, and was CI-load-bearing via
+`make safecon`/`safecon-context` (the SafeCon-Mini curated
+safe-contraction fixtures).
+
+**What moved to `trash/`** (via `git mv`, preserving relative paths):
+- Both legacy pipelines' exclusive data: `entity-link-snapshot.tsv`,
+  `wikidata-author-works.tsv`, `semantic-entities.tsv`,
+  `semantic-relations.tsv`, `subsorts.tsv`,
+  `wikidata-multidomain-snapshot/` (an orphaned duplicate of
+  `wikidata-openalex-snapshot/`, found in an earlier audit round).
+- Large-scale benchmark evaluation directories and summaries:
+  `safecon-mini/`, `independent-conmec-300/`, and seven corpus-scale
+  summary JSONs (`wimcor-test-summary.json`, `conmec-summary.json`, the
+  dependency-frontend and typed-fiber variants, `semeval-location-test-
+  summary.json`).
+- Their exclusive scripts: `safecon.py`, `run_engine_predictions.py`,
+  `score_predictions.py`, `analyze_false_paths.py`, `run_experiment.py`,
+  `extract_promotion_candidates.py`, `filter_by_ids.py`,
+  `adapt_metonymy_corpus_for_tower.py`, `prepare_wimcor.py`,
+  `prepare_conmec.py`, `prepare_semeval2007.py`, `split_inputs_gold.py`,
+  `select_independent_300.py`,
+  `estimate_action_vocabulary_coverage.py`, `import_wikidata.py`,
+  `build_wikidata_api_index.py`, `list_runtime_index_qids.py`,
+  `finish_wikidata_runtime_smoke.sh`, `fetch_curated_wikidata_fixture.py`,
+  `propose_promotion_evidence.py`.
+- `.github/workflows/contextual-tower-evaluation.yml` (the 150-sentence/
+  corpus-scale benchmark workflow) and its dedicated tests.
+- Their tests, and a full pre-trim copy of `tests/evaluation/
+  test_evaluation.py` (kept as `trash/tests/evaluation/
+  test_evaluation_legacy.py` for history) before the real file was
+  trimmed to the three test cases that still exercise `import_verbnet`
+  (the tower's own VerbNet-import machinery, unrelated to what moved).
+
+**The one genuine extraction, not a straight move**:
+`propose_promotion_evidence.py`'s `query_ollama`/`DEFAULT_MODEL`/
+`DEFAULT_ENDPOINT` -- the minimal local-Ollama HTTP client -- is the
+tower's own third tree-source tier's (`llm_propose_clause_structure.py`,
+see "Phase 1.5" above) only real caller for this code. Rather than
+either trashing a live dependency or keeping the whole pilot-specific
+promotion-evidence script alive just to anchor three functions, the
+client was pulled out verbatim into a new `scripts/ollama_client.py`,
+`llm_propose_clause_structure.py`'s import was repointed at it, and the
+rest of `propose_promotion_evidence.py` (the pilot-specific prompt and
+candidate-extraction logic, with no remaining caller) moved to `trash/`
+with everything else.
+
+**What stayed, confirmed reachable, not assumed**: the entire
+`formal/Metonymy/` directory (25 `.agda` files, all confirmed reachable
+from `PublicationTheorems.agda`/`Checker.agda`, none orphaned); all
+tower-path data (`contextual-context-triggers.json`, `contextual-
+language-rules.json`, `wordnet-context-rules.json`, `predicates.tsv`,
+the VerbNet import files, `wikidata-qid-snapshot/`, `wikidata-openalex-
+snapshot/`, `synthetic-towers-snapshot/`); the curated evaluation sets
+(`pilot-decode-wimcor/`, `pilot-curated-wimcor/`, `contextual-
+multidomain/`, `qid-fiber/`); and the full tower-pipeline script chain
+(`contextual_rule_compiler.py`, `run_automatic_contextual_pipeline.py`,
+`build_gf_tree_from_dependencies.py`, `annotate_dependency_hints.py`,
+`run_contextual_corpus.py`, `run_contextual_ablations.py`, and the
+`make verify` generators).
+
+**Verification, in order**: the Python/data/evaluation side was checked
+locally (`unittest discover`, full suite) after every batch of moves --
+zero import errors from the extensive file relocation, same pre-existing
+15-failure environment baseline (the `python3`-alias artifact of this
+Windows checkout), no regressions. This is a Python/data/evaluation/docs-
+only commit; the Haskell side (`engine/app/Main.hs`'s CLI branches for
+`list`/`expand`/`contract`/`evaluate`/`open-evaluate`/`open-batch`,
+`engine/test/Main.hs`'s corresponding assertion blocks, and `Metonymy.
+Verified`'s `Metonymy.Automatic`-dependent functions) is deliberately
+**not** touched by this commit -- it is the highest-risk part of the
+cleanup (this machine has no local `ghc`/`cabal`/`agda` to verify
+Haskell compiles), and is done as a separate, later change, verified
+only through real CI, following the same discipline used for every
+Haskell-adjacent change this whole season.

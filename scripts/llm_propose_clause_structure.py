@@ -16,8 +16,8 @@ for the full epistemic framing (the same one already used for the LLM
 promotion-evidence pilot: Agda checks the *form* of what is proposed,
 never the truth of a natural-language understanding claim).
 
-Talks to a local Ollama server via scripts/propose_promotion_evidence.py's
-own query_ollama -- no API key, no per-call cost, nothing to add as a
+Talks to a local Ollama server via scripts/ollama_client.py's
+query_ollama -- no API key, no per-call cost, nothing to add as a
 repository secret. Reused directly rather than duplicated.
 
 This tier's own advantage over the UD-based one: it never needs to find
@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from propose_promotion_evidence import (  # noqa: F401 (DEFAULT_* re-exported)
+from ollama_client import (  # noqa: F401 (DEFAULT_* re-exported)
     DEFAULT_ENDPOINT,
     DEFAULT_MODEL,
     query_ollama,
