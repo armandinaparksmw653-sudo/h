@@ -190,7 +190,6 @@ concrete GeneratedMetonymyEng of GeneratedMetonymy =
     VN_Gobble = mkV2 "gobble" ;
     VN_Gulp = mkV2 "gulp" ;
     VN_Guzzle = mkV2 "guzzle" ;
-    VN_Hear = mkV2 "hear" ;
     VN_Imbibe = mkV2 "imbibe" ;
     VN_Ingest = mkV2 "ingest" ;
     VN_Lap = mkV2 "lap" ;

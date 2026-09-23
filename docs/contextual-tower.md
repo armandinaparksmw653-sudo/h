@@ -4061,3 +4061,71 @@ Container-for-content with a real container noun as the *head* (not just
 as a trigger word) would need new `data/wordnet-context-rules.json`
 entries -- not needed here since trigger lemmas are matched structurally,
 but would be needed for a real `ModifyNP`+QID-alias path later.
+
+## A real, pre-existing CI regression found while pushing the round above,
+## unrelated to it -- a duplicate GF function for "hear"
+
+Pushing the synthetic-trigger commit hit a real CI failure that had
+nothing to do with it: `engine/test/Main.hs`'s "VerbNet auditory
+preference activates musical works" (`"Alice hears Mozart"`, expected
+automatic-expansion count 2) had already been failing for the **previous
+two commits** (`ec5a05e`, `01950ed`) without anyone noticing -- confirmed
+by checking each commit's own CI run directly (`a964f0c`, the commit
+before `hear` was added to `data/predicates.tsv`, was green; every commit
+since has been red on this exact test).
+
+**Root cause, found by reading code, not guessing**: `data/predicates.tsv`
+(manually curated, `HardRequirement`) and `data/verbnet-predicates.tsv`
+(VerbNet-imported, `SelectionalPreference`) are architecturally meant to
+be *complementary* (`docs/architecture.md`: "The production predicate
+table combines manually audited `data/predicates.tsv` entries with
+generated `data/verbnet-predicates.tsv` entries") -- and `scripts/
+import_verbnet.py`'s own `extract()` function is explicitly designed to
+exclude any lemma already present in `data/predicates.tsv` from being
+written into `data/verbnet-predicates.tsv` (`existing_lemmas(arguments.
+base_predicates)`, passed straight into `extract`'s `excluded` set). But
+`data/verbnet-predicates.tsv` was last regenerated on 2026-08-28, weeks
+before this session added a `hear` row to `data/predicates.tsv` -- so its
+own `verbnet-hear` row (`VN_Hear`, `Human`/`Audible`, `SelectionalPreference`)
+was never re-excluded and went stale. Confirmed by direct comparison:
+`hear` was the *only* lemma present in both files (checked programmatically,
+not by inspection alone).
+
+`scripts/generate_gf_lexicon.py` compiles **every** row from *both* files
+into its own `V2` GF function (`predicates = read_rows(predicates.tsv) +
+read_rows(verbnet_predicates.tsv)`, one `fun`/`lin` pair per row, no
+lemma-level deduplication) -- so once both `Hear` (from `data/
+predicates.tsv`) and `VN_Hear` (from the stale `data/verbnet-predicates.tsv`
+row) existed as separate compiled `V2`s both linearizing `"hear"`/`"hears"`,
+`"Alice hears Mozart"` became genuinely ambiguous at parse time. Confirmed
+directly with the local GF toolchain (`p -lang=GeneratedMetonymyEng "Alice
+hears Mozart"`) before touching anything: the ambiguity was real, not a
+guess. `engine/test/Main.hs`'s `requireParseTrees` returns *every*
+ambiguous parse tree (`Right trees` is a list), and `automaticExpand` is
+run via `concatMap` over all of them -- so the test's hardcoded expected
+count of 2 (written when only `VN_Hear` existed) silently stopped matching
+once a second, redundant `Hear`-driven parse entered the mix.
+
+**Fix**: removed the stale `verbnet-hear` row from `data/
+verbnet-predicates.tsv` (the one-line change `scripts/import_verbnet.py`
+would already have made itself had it been re-run after `hear` was added
+to `data/predicates.tsv`), then regenerated `grammar/GeneratedMetonymy.gf`/
+`GeneratedMetonymyEng.gf`/`data/contextual-gf-actions.json` via `scripts/
+generate_gf_lexicon.py` locally -- the diff is exactly the expected three
+lines (`VN_Hear : V2 ;` and its linearization removed, `hear`'s entry in
+`contextual-gf-actions.json` retargeted from `VN_Hear` to `Hear`).
+Re-verified via local `gf.exe` that `"Alice hears Mozart"` no longer has
+any `VN_Hear`-driven parse. High confidence this restores the test's
+original passing behavior exactly (not just "some" passing behavior):
+the old `VN_Hear` row and the new `Hear` row have **identical**
+`subject_sort`/`object_sort` (`Human`/`Audible`) -- only `strength` and
+the function name differed, and `Metonymy.Automatic.applyStrength` only
+scales `candidateScore`, never the candidate *count* -- so the actual
+requirement-driven candidate search `automaticExpand` performs is
+unchanged from what it always was; only the spurious duplicate parse
+path is gone. `hear` was confirmed to be the *only* lemma ever present in
+both predicate tables -- this class of bug cannot recur for any other
+lemma today, though it could if `data/predicates.tsv` and `data/
+verbnet-predicates.tsv` are edited independently again without
+re-running `import_verbnet.py`'s exclusion step.
+but would be needed for a real `ModifyNP`+QID-alias path later.

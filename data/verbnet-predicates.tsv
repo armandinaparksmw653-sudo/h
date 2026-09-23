@@ -12,7 +12,6 @@ verbnet-gnaw	gnaw	VN_Gnaw	Human	Edible	SelectionalPreference	"mkV2 ""gnaw"""	Ver
 verbnet-gobble	gobble	VN_Gobble	Human	Edible	SelectionalPreference	"mkV2 ""gobble"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:gobble-39.3-1:member-feature:+solid
 verbnet-gulp	gulp	VN_Gulp	Human	Drinkable	SelectionalPreference	"mkV2 ""gulp"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:gobble-39.3:member-feature:+liquid
 verbnet-guzzle	guzzle	VN_Guzzle	Human	Drinkable	SelectionalPreference	"mkV2 ""guzzle"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:gobble-39.3:member-feature:+liquid
-verbnet-hear	hear	VN_Hear	Human	Audible	SelectionalPreference	"mkV2 ""hear"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:learn-14-2-1:lemma-map:hear
 verbnet-imbibe	imbibe	VN_Imbibe	Human	Edible	SelectionalPreference	"mkV2 ""imbibe"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:devour-39.4:frame-map:Ingestion
 verbnet-ingest	ingest	VN_Ingest	Human	Edible	SelectionalPreference	"mkV2 ""ingest"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:devour-39.4:frame-map:Ingestion
 verbnet-lap	lap	VN_Lap	Human	Drinkable	SelectionalPreference	"mkV2 ""lap"""	VerbNet-3.4:ae8e9cfdc2c0d3414b748763612f1a0a34194cc1:chew-39.2:member-feature:+liquid

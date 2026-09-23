@@ -189,7 +189,6 @@ abstract GeneratedMetonymy = Metonymy ** {
     VN_Gobble : V2 ;
     VN_Gulp : V2 ;
     VN_Guzzle : V2 ;
-    VN_Hear : V2 ;
     VN_Imbibe : V2 ;
     VN_Ingest : V2 ;
     VN_Lap : V2 ;
