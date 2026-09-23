@@ -203,7 +203,10 @@ main = do
     (EntityId "moscow")
 
   assert "Wikidata snapshot contains 92 typed facts" (length importedRows == 92)
-  assert "VerbNet snapshot contributes 41 predicates" (length verbNetPredicates == 41)
+  -- Was 41 until the stale duplicate "verbnet-hear" row (superseded by
+  -- data/predicates.tsv's own hear row, see docs/contextual-tower.md's
+  -- "duplicate GF function for hear" section) was removed.
+  assert "VerbNet snapshot contributes 40 predicates" (length verbNetPredicates == 40)
   assert
     "all VerbNet constraints remain marked as preferences"
     ( all
