@@ -3922,3 +3922,142 @@ locally, not just the hand-written one, since that is what CI actually
 builds). The 8 hand-declared `V2` lines were reverted; only the
 `predicates.tsv`/`morphology_overrides` data changes and the `hear`
 finding itself stood.
+
+## Synthetic multi-domain trigger dictionary (17 families, 78 new entries)
+
+**Honest framing first, since this section is different in kind from
+everything above it**: every entry added in this round is *constructed*,
+not corpus-derived. A full real-corpus search (WiMCor's complete 41200-row
+test split, ConMeC's complete 5999-row set) for `ConjClauseObject`-style
+material using the newly-completed verbs (`wear`/`drink`/`eat`/`watch`/
+`listen to`) as the primary action found almost nothing usable outside the
+University domain, and -- more importantly -- **no real sentence in either
+corpus ever combines two independent context-trigger signals**. Every real
+example this project has built this season (Valparaiso, Haifa, Pisa, UCLA,
+Berklee, Padgate) is exactly "one weak base-action constraint + one
+trigger" -- two stages, never a genuine multi-layer tower. This section is
+the deliberate counter-demonstration, not an attempt to raise real recall:
+it shows (1) the `(construction, lemma) -> requirement` mechanism
+generalizes far past University using only Sort constants that already
+exist in `engine/src/Metonymy/Types.hs` (zero Haskell/Agda risk, the same
+"Ярус 1" discipline as the VerbNet selectional-preference expansion
+earlier in this file), and (2) the mechanism already supports a genuine
+2-independent-signal tower today, it just never had real material to
+exercise it on.
+
+**A fact found while designing this, worth calling out because it revises
+an earlier pessimistic note in this file**: none of `ConjClauseObject`,
+`ModifyNPObject`, or `RelativeClauseObject` actually gate on `SubjectHole`
+vs `ObjectHole` in `scripts/contextual_rule_compiler.py` -- traced all
+three call sites of `_lookup_context_trigger` directly, none reference
+`proposal["role"]` at all. The "SubjectHole-variant honestly deferred"
+language elsewhere in this document is about a *different*, unrelated gap
+(an agentive retained-object passive shape needing a third `HoleRole`
+constructor in Haskell), not about these three constructions. SubjectHole-
+targeted synthetic examples are still not built in this round (the
+grammar's closed vocabulary makes building target-as-subject trees a
+separate exercise), but the code is not the blocker anymore.
+
+**17 families, 78 new entries** (`data/contextual-context-triggers.json`,
+83 total triggers including the 5 pre-existing University-domain ones),
+`strength` deliberately kept at `"prefers"` throughout (never `"requires"`
+-- honest, since none of these were checked against any real corpus or
+live Wikidata, unlike `degree`/`doctorate`/`fraternity`/`diploma`/
+`certificate` above them in the same file):
+
+| Sort | new entries |
+|---|---|
+| `University` (extension) | 8 |
+| `ResearchInstitution` | 4 |
+| `ScientificDiscipline` | 4 |
+| `Government` | 4 |
+| `PoliticalOrganization` | 4 |
+| `BusinessOrganization` | 6 |
+| `LiteraryWork` | 6 |
+| `MusicalWork` | 5 |
+| `Film` | 4 |
+| `Brand` | 4 |
+| `Producer` | 3 |
+| `Product` | 2 |
+| `Clothing` | 6 |
+| `Food` | 4 |
+| `Drinkable` | 6 |
+| `CommunicationContent` | 6 |
+| `Programme` | 2 |
+
+Every trigger lemma is a plain string matched inside `OpenIndefCN`/
+`OpenDefCN` (GF's open common-noun constructors) -- confirmed by reading
+`_noun_lemma` directly: it extracts the lemma from the tree text itself,
+never through `data/wordnet-context-rules.json`/`data/contextual-gf-
+nouns.json`. This means new trigger words needed **zero** WordNet/noun-
+dictionary additions, only new JSON rows. The only real constraint was
+that the sentence's *verb* has to exist as a compiled GF `V2` -- every
+sentence in this round reuses only the 12 already-stable, already-
+gf.exe-verified verbs from earlier this session (`Announce`/`Read`/
+`Drink`/`Sign` plus the 8 `data/predicates.tsv` verbs), so no new
+`CTX_*`/`WN_*` hash-name lookups were needed either.
+
+One real grammatical snag found and fixed while drafting: `OpenIndefCN`
+always emits the article `"a"`, never `"an"` (it is a hand-written
+literal-string constructor, not RGL's phonology-aware article machinery)
+-- confirmed by batch-linearizing all 78 candidate lemmas through local
+`gf.exe` before committing to any of them, which caught `"a alumnus"`/
+`"a electorate"`/`"a atelier"`/`"a overture"`/`"a album"`/
+`"a advertisement"`/`"a assembly"`/`"a epilogue"` as ungrammatical. Fixed
+by substituting consonant-initial synonyms (`graduate`/`ballot`/
+`boutique`/`concerto`/`record`/`billboard`/`conveyor`/`glossary`) rather
+than touching the grammar -- this is a pre-existing, project-wide
+characteristic of `OpenIndefCN` (not something this round introduced),
+and every other vowel-initial noun already in the lexicon has the same
+latent issue.
+
+**Flagship towers** (`MultiConstraintTowerTests` in the new test file):
+five sentences, each combining two *independent* trigger signals on the
+same target from two different tree positions, narrowing across two
+different Sorts in one sentence -- verified via local `gf.exe` before
+being written into the test file:
+
+1. `"He announces Ashford on a campus and announces a grant"` --
+   `ModifyNPObject`(campus → `University`) + `ConjClauseObject`(grant →
+   `ResearchInstitution`).
+2. `"He announces Ashford from a boutique and announces a trademark"` --
+   `ModifyNPObject`(boutique → `Clothing`) + `ConjClauseObject`(trademark
+   → `Brand`).
+3. `"He announces Ashford, at which He is awarded a contract, and
+   announces a fellowship"` -- `RelativeClauseObject`(contract →
+   `BusinessOrganization`) + `ConjClauseObject`(fellowship →
+   `ResearchInstitution`) -- the first test in this project combining
+   `RelativeClauseObject` and `ConjClauseObject` in one tree (a
+   `PredConjVP` whose first VP's own object is a `ModifyRelAtVP`).
+4. `"He announces Ashford from a vineyard and announces a menu"` --
+   `ModifyNPObject`(vineyard → `Drinkable`) + `ConjClauseObject`(menu →
+   `Food`).
+5. `"He announces Ashford from a broadcast and announces a segment"` --
+   `ModifyNPObject`(broadcast → `CommunicationContent`) +
+   `ConjClauseObject`(segment → `Programme`).
+
+New test file: `tests/evaluation/test_compile_gf_constraints_synthetic_
+multidomain_triggers.py` (32 tests) -- a `SortVocabularyCoverageTests`
+class that parses every `requirement` string in the real shipped JSON
+file against a hand-maintained mirror of the 47-constructor `Sort` enum
+(catches a typo across all 83 entries at once, since nothing on the
+Python side validates this at runtime otherwise -- `compile_gf_
+constraints` copies a trigger's `requirement` string through completely
+unexamined, confirmed by reading `_context_trigger_constraint` directly),
+a `TriggerDictionaryHygieneTests` class enforcing the closed `construction`
+vocabulary and the "synthetic entries are never `requires`" rule
+programmatically, one test class per family (`subTest`-parametrized over
+that family's lemmas, reusing one verified tree shape per construction),
+the five tower tests above, and a repeat of the existing negative-clause
+guard on two new-family lemmas.
+
+**Explicitly not done in this round** (see the plan file's own "Дальше"
+section): no live pipeline run against a real Wikidata snapshot for these
+invented entities (there is nowhere for names like "Ashford" to have a
+QID) -- this round is dictionary-and-unit-test-level only, the same scope
+as every other "Ярус 1" round this session. SubjectHole-targeted examples
+are not built despite the code allowing them (see the fact above).
+Container-for-content with a real container noun as the *head* (not just
+as a trigger word) would need new `data/wordnet-context-rules.json`
+entries -- not needed here since trigger lemmas are matched structurally,
+but would be needed for a real `ModifyNP`+QID-alias path later.
