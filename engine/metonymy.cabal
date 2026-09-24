@@ -21,6 +21,7 @@ library
       Metonymy.ContextSpec
       Metonymy.Snapshot
       Metonymy.Waterloo
+      Metonymy.MoldeFK
       Metonymy.SyntheticTowers
       Metonymy.Elaborator
       Metonymy.GF

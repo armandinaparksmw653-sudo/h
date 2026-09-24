@@ -100,6 +100,7 @@ loadSnapshot directory = do
               , (BusinessOrganization, Organization, "snapshot:business-organization-is-organization")
               , (LiteraryWork, Readable, "snapshot:literary-work-is-readable")
               , (Clothing, Wearable, "snapshot:clothing-is-wearable")
+              , (SportsOrganization, Organization, "snapshot:sports-organization-is-organization")
               ]
           }
   pure (Snapshot graphHash kb, rules)

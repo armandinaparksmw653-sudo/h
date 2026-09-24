@@ -54,6 +54,7 @@ data Sort
   | CommercialAgreement
   | Political
   | Commercial
+  | SportsOrganization
   deriving stock (Eq, Ord, Show, Read, Enum, Bounded)
 
 data Relation
@@ -76,6 +77,7 @@ data Relation
   | Offers
   | Conducts
   | About
+  | PlaysInLeague
   deriving stock (Eq, Ord, Show, Read, Enum, Bounded)
 
 data Provenance

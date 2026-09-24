@@ -1,2 +1,3 @@
 scenario	source_qid	action	role	max_depth	bridge_relations	constraints
 waterloo	Q639408	announce	SubjectHole	1	InstitutionOf	Verb|announce|announced|9|18|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|physics|physics|38|45|relation|Conducts|Q413|context-template:programme-in-topic:v1
+molde	Q104095	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|6|15|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|51|57|requires|HasSort SportsOrganization|wimcor:real:molde-fk-season;;Noun|loan|loan|30|34|some|PlaysInLeague|HasSort Entity|wimcor:real:molde-fk-on-loan

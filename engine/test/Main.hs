@@ -1,12 +1,13 @@
 module Main where
 
 import Control.Monad (unless)
-import Data.List (isPrefixOf, sort)
+import Data.List (find, isPrefixOf, sort)
 import Metonymy.Contextual
 import Metonymy.ContextualChecked
 import Metonymy.ContextSpec
 import Metonymy.Elaborator
 import Metonymy.GF
+import Metonymy.MoldeFK
 import Metonymy.Snapshot
 import Metonymy.SyntheticTowers
 import Metonymy.Types
@@ -23,6 +24,7 @@ main = do
   loadedContextScenarios <-
     loadContextScenarios waterlooSnapshot "data/contextual-scenarios.tsv"
   let waterlooContext = waterlooContextFor waterlooSnapshot
+      moldeContext = moldeContextFor waterlooSnapshot
 
   -- spaceBeforeCommas (Metonymy/GF.hs): confirmed by direct testing
   -- against a real gf.exe build (the official Windows release of GF
@@ -174,14 +176,25 @@ main = do
     "snapshot alias layer resolves Waterloo to its QID"
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
+    "contextual scenario file has exactly the waterloo and molde rows"
+    (length loadedContextScenarios == 2)
+  assert
     "Waterloo contextual scenario is loaded from versioned data"
-    ( case loadedContextScenarios of
-        [scenario] ->
-          contextScenarioName scenario == "waterloo"
-            && contextSource (contextScenarioContext scenario) == contextSource waterlooContext
+    ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
+        Just scenario ->
+          contextSource (contextScenarioContext scenario) == contextSource waterlooContext
             && contextAction (contextScenarioContext scenario) == contextAction waterlooContext
             && contextConstraints (contextScenarioContext scenario) == contextConstraints waterlooContext
-        _ -> False
+        Nothing -> False
+    )
+  assert
+    "Molde contextual scenario is loaded from versioned data"
+    ( case find ((== "molde") . contextScenarioName) loadedContextScenarios of
+        Just scenario ->
+          contextSource (contextScenarioContext scenario) == contextSource moldeContext
+            && contextAction (contextScenarioContext scenario) == contextAction moldeContext
+            && contextConstraints (contextScenarioContext scenario) == contextConstraints moldeContext
+        Nothing -> False
     )
   assert
     "tower rejects a context bound to another snapshot"
@@ -302,6 +315,68 @@ main = do
         )
     Left errorMessage -> do
       putStrLn ("FAIL: unique Waterloo contraction: " <> errorMessage)
+      exitFailure
+
+  -- Real, three-signal tower: "Molde announced ... signed Kamara on loan
+  -- for the ... season" (real WiMCor sentence, live-Wikidata-verified,
+  -- see Metonymy.MoldeFK's module docstring). Unlike Waterloo, one
+  -- signal (announce) and two signals (announce+season) both stay
+  -- genuinely ambiguous between Molde FK and the real decoy Bjørset FK
+  -- -- only the third (on loan, RequiresSome PlaysInLeague) narrows to
+  -- the single correct candidate.
+  case contextualFiber waterlooSnapshot [InstitutionOf] 1 moldeContext of
+    Left errorMessage -> do
+      putStrLn ("FAIL: Molde contextual fiber: " <> errorMessage)
+      exitFailure
+    Right stages -> do
+      assert
+        "Molde fiber has one initial and three constraint stages"
+        (length stages == 4)
+      assert
+        "Molde graph layer finds both real Molde football clubs"
+        ( sort (map unEntityId (stageTargets (stages !! 0)))
+            == sort (map unEntityId [moldeFK, bjorsetFK])
+        )
+      assert
+        "announce alone does not disambiguate (both are organizations)"
+        (sort (map unEntityId (stageTargets (stages !! 1))) == sort (map unEntityId [moldeFK, bjorsetFK]))
+      assert
+        "season alone does not disambiguate (both are football clubs)"
+        (sort (map unEntityId (stageTargets (stages !! 2))) == sort (map unEntityId [moldeFK, bjorsetFK]))
+      assert
+        "on loan narrows to the one club with a real league claim"
+        (map unEntityId (stageTargets (stages !! 3)) == [unEntityId moldeFK])
+
+  case
+      contextualContractionChecked
+        waterlooSnapshot
+        [InstitutionOf]
+        1
+        moldeContext
+        moldeFK of
+    Right result ->
+      assert
+        "unique Molde FK fiber contracts to the source place (Agda-checked)"
+        ( contractionSource result == moldeSource
+            && contractionTarget result == moldeFK
+            && contractionSafety result == "unique-contextual-fiber"
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: unique Molde FK contraction: " <> errorMessage)
+      exitFailure
+
+  case
+      contextualContractionChecked
+        waterlooSnapshot
+        [InstitutionOf]
+        1
+        moldeContext
+        bjorsetFK of
+    Left message
+      | "explicit-target-not-in-final-fiber" `isPrefixOf` message ->
+          assert "the real decoy Bjørset FK is correctly rejected" True
+    other -> do
+      putStrLn ("FAIL: expected Bjørset FK to be rejected, got " <> show other)
       exitFailure
 
   mapM_ (assertSyntheticTower syntheticTowersSnapshot) towers
