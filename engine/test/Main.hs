@@ -5,6 +5,7 @@ import Data.List (find, isPrefixOf, sort)
 import Metonymy.Contextual
 import Metonymy.ContextualChecked
 import Metonymy.ContextSpec
+import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
 import Metonymy.MoldeFK
@@ -21,6 +22,8 @@ main = do
   waterlooAliases <- loadSnapshotAliases "data/wikidata-qid-snapshot"
   (syntheticTowersSnapshot, _) <-
     loadSnapshot "data/synthetic-towers-snapshot"
+  (containerSnapshot, _) <-
+    loadSnapshot "data/container-content-snapshot"
   loadedContextScenarios <-
     loadContextScenarios waterlooSnapshot "data/contextual-scenarios.tsv"
   let waterlooContext = waterlooContextFor waterlooSnapshot
@@ -378,6 +381,28 @@ main = do
     other -> do
       putStrLn ("FAIL: expected Bjørset FK to be rejected, got " <> show other)
       exitFailure
+
+  -- Three real, corpus-attested container-for-content examples (ConMeC
+  -- CONTAINER category -- see Metonymy.ContainerContent's module
+  -- docstring). A different transfer mechanism from location-for-
+  -- institution: each container has exactly one real content edge, so
+  -- the tower narrows to a unique, Agda-checked candidate through the
+  -- graph walk alone, with no extra Requires signal needed.
+  mapM_
+    ( \(label, context, expected) ->
+        case contextualFiberChecked containerSnapshot [Contains] 1 context of
+          Right stages ->
+            assert
+              (label <> " narrows to its one real content, Agda-checked")
+              (map unEntityId (stageTargets (last stages)) == [unEntityId expected])
+          Left errorMessage -> do
+            putStrLn ("FAIL: " <> label <> ": " <> errorMessage)
+            exitFailure
+    )
+    [ ("glass -> rum", glassContext containerSnapshot, rumEntity)
+    , ("carton -> milk", cartonContext containerSnapshot, milkEntity)
+    , ("pack -> beer", packContext containerSnapshot, beerEntity)
+    ]
 
   mapM_ (assertSyntheticTower syntheticTowersSnapshot) towers
 

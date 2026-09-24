@@ -22,6 +22,7 @@ library
       Metonymy.Snapshot
       Metonymy.Waterloo
       Metonymy.MoldeFK
+      Metonymy.ContainerContent
       Metonymy.SyntheticTowers
       Metonymy.Elaborator
       Metonymy.GF
