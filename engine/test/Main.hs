@@ -5,6 +5,7 @@ import Data.List (find, isPrefixOf, sort)
 import Metonymy.Contextual
 import Metonymy.ContextualChecked
 import Metonymy.ContextSpec
+import Metonymy.Cathedrals
 import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
@@ -381,6 +382,33 @@ main = do
     other -> do
       putStrLn ("FAIL: expected Bjørset FK to be rejected, got " <> show other)
       exitFailure
+
+  -- Two real, single-signal location-for-artifact examples: "Gloucester
+  -- has a Norman nave..." and "the lady chapel of Ely..." (see
+  -- Metonymy.Cathedrals). A live SPARQL check found no real ambiguity
+  -- here (unlike Molde): each place has exactly one Q56242250-typed
+  -- entity, so one Requires (HasSort Artifact) signal already narrows
+  -- to the unique cathedral.
+  mapM_
+    ( \(label, context, expected) ->
+        case
+            contextualContractionChecked
+              waterlooSnapshot
+              [InstitutionOf]
+              1
+              context
+              expected of
+          Right result ->
+            assert
+              (label <> " contracts uniquely to its cathedral (Agda-checked)")
+              (contractionTarget result == expected && contractionSafety result == "unique-contextual-fiber")
+          Left errorMessage -> do
+            putStrLn ("FAIL: " <> label <> ": " <> errorMessage)
+            exitFailure
+    )
+    [ ("Gloucester -> Gloucester Cathedral", gloucesterContext waterlooSnapshot, gloucesterCathedral)
+    , ("Ely -> Ely Cathedral", elyContext waterlooSnapshot, elyCathedral)
+    ]
 
   -- Three real, corpus-attested container-for-content examples (ConMeC
   -- CONTAINER category -- see Metonymy.ContainerContent's module
