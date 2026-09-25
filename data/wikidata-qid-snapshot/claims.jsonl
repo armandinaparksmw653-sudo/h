@@ -8,6 +8,7 @@
 {"property":"P159","source":"Q318969","target":"Q1647"}
 {"property":"P361","source":"Q3799227","target":"Q1049470"}
 {"property":"P131","source":"Q11961495","target":"Q104095"}
+{"property":"P131","source":"Q482633","target":"Q16520"}
 {"property":"P131","source":"Q2004561","target":"Q639408"}
 {"property":"P131","source":"Q208552","target":"Q104095"}
 {"property":"P131","source":"Q262500","target":"Q170497"}
@@ -24,6 +25,7 @@
 {"property":"P31","source":"Q208552","target":"Q476028"}
 {"property":"P31","source":"Q262500","target":"Q56242250"}
 {"property":"P31","source":"Q413","target":"Q11862829"}
+{"property":"P31","source":"Q482633","target":"Q220505"}
 {"property":"P31","source":"Q579004","target":"Q56242250"}
 {"property":"P31","source":"Q639408","target":"Q515"}
 {"property":"P31","source":"Q7974219","target":"Q355304"}

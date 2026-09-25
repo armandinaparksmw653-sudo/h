@@ -8,6 +8,7 @@ import Metonymy.ContextSpec
 import Metonymy.Cathedrals
 import Metonymy.Eswatini
 import Metonymy.Rijeka
+import Metonymy.Busan
 import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
@@ -324,18 +325,25 @@ main = do
       exitFailure
 
   -- Real two-hop walk (maxDepth=2), genuinely untested at that depth
-  -- until now: Waterloo -InstitutionOf-> University of Waterloo
-  -- -AffiliatedWith-> Institute for Quantum Computing (Q3799227, real
-  -- P361 claim, already P31=Q31855 ResearchInstitution -- the same QID
-  -- already registered from Perimeter Institute). The initial graph
-  -- layer at depth 2 finds this fourth, more-distant real candidate that
-  -- depth 1 cannot reach; the existing physics/Conducts constraint still
-  -- correctly excludes it in the end (it has no P101 claim at all), so
-  -- going deeper finds more raw candidates without losing precision.
+  -- until now: Waterloo -InstitutionOf(inverse P131)-> University of
+  -- Waterloo -InstitutionOf(inverse P361, newly registered)-> Institute
+  -- for Quantum Computing (Q3799227, real P361 "part of" claim, already
+  -- P31=Q31855 ResearchInstitution -- the same QID already registered
+  -- from Perimeter Institute). Reuses InstitutionOf rather than the
+  -- existing AffiliatedWith projection: P361/P749's own AffiliatedWith
+  -- registration is forward (keeps the claim's own child->parent
+  -- direction, IQC->UWaterloo), the opposite of what a source->target
+  -- graph walk here needs (UWaterloo->IQC) -- caught by a real CI
+  -- failure on the first attempt, not assumed correct in advance. The
+  -- initial graph layer at depth 2 finds this fourth, more-distant real
+  -- candidate that depth 1 cannot reach; the existing physics/Conducts
+  -- constraint still correctly excludes it in the end (it has no P101
+  -- claim at all), so going deeper finds more raw candidates without
+  -- losing precision.
   case
       contextualFiberChecked
         waterlooSnapshot
-        [InstitutionOf, AffiliatedWith]
+        [InstitutionOf]
         2
         waterlooContext of
     Left errorMessage -> do
@@ -440,6 +448,26 @@ main = do
     , ("Ely -> Ely Cathedral", elyContext waterlooSnapshot, elyCathedral)
     ]
 
+  -- Real, single-signal location-for-event example (see Metonymy.Busan):
+  -- the WiMCor EVENT medium had by far the fewest usable subject-position
+  -- candidates this session (422 rows, almost none subject-position or
+  -- reachable by a verb the grammar already had) -- this is the one real
+  -- example found and verified in that domain.
+  case
+      contextualContractionChecked
+        waterlooSnapshot
+        [InstitutionOf]
+        1
+        (busanContext waterlooSnapshot)
+        busanFilmFestival of
+    Right result ->
+      assert
+        "Busan contracts uniquely to its film festival (Agda-checked)"
+        (contractionTarget result == busanFilmFestival && contractionSafety result == "unique-contextual-fiber")
+    Left errorMessage -> do
+      putStrLn ("FAIL: Busan contraction: " <> errorMessage)
+      exitFailure
+
   -- Real Government-domain example: "The cabinet of eSwatini was placed
   -- in quarantine..." (see Metonymy.Eswatini). Requires (HasSort
   -- Government) narrows the real 88-entity P1001 neighborhood down to
@@ -538,6 +566,106 @@ main = do
       , gloucesterCathedral
       )
     ]
+
+  -- Compositionality: two different transfer mechanisms, drawing on two
+  -- different snapshots (Rijeka's location-for-institution via
+  -- waterlooSnapshot, "glass" 's container-for-content via
+  -- containerSnapshot), each independently and correctly resolved from
+  -- ONE real combined sentence: "Rijeka announces a season and he drinks
+  -- the glass". Nothing in the tower shares state across a Context
+  -- value (each is a pure record), so this mainly documents that two
+  -- lexical anchors sitting in the same real sentence text do not
+  -- interfere -- but it is the first time two mechanisms have actually
+  -- been run from a single shared sentence rather than two unrelated
+  -- ones.
+  let compositionRijekaContext =
+        Context
+          { contextTree =
+              LexicalApply
+                "AndS"
+                [ LexicalApply
+                    "Pred"
+                    [ LexicalLeaf (LexicalAnchor "OpenPN" "rijeka" "Rijeka" 0 6) []
+                    , LexicalApply
+                        "Compl"
+                        [ LexicalLeaf
+                            (LexicalAnchor "Verb" "announce" "announces" 7 16)
+                            [Requires (AnyOf [HasSort Animate, HasSort Organization])]
+                        , LexicalLeaf (LexicalAnchor "Noun" "season" "season" 19 25) []
+                        ]
+                    ]
+                , LexicalApply
+                    "Pred"
+                    [ LexicalLeaf (LexicalAnchor "HePN" "he" "he" 30 32) []
+                    , LexicalApply
+                        "Compl"
+                        [LexicalLeaf (LexicalAnchor "Verb" "drink" "drinks" 33 39) [], LexicalLeaf (LexicalAnchor "Noun" "glass" "glass" 44 49) []]
+                    ]
+                ]
+          , contextSnapshotHash = snapshotHash waterlooSnapshot
+          , contextSource = rijekaSource
+          , contextAction = "announce"
+          , contextRole = SubjectHole
+          , contextConstraints =
+              [ ContextConstraint
+                  (LexicalAnchor "Verb" "announce" "announces" 7 16)
+                  (Requires (AnyOf [HasSort Animate, HasSort Organization]))
+                  "VerbNet:say-37.7"
+              ]
+          , contextRuleProvenance = ["VerbNet:say-37.7"]
+          }
+      compositionGlassContext =
+        Context
+          { contextTree =
+              LexicalApply
+                "AndS"
+                [ LexicalApply
+                    "Pred"
+                    [ LexicalLeaf (LexicalAnchor "OpenPN" "rijeka" "Rijeka" 0 6) []
+                    , LexicalApply
+                        "Compl"
+                        [LexicalLeaf (LexicalAnchor "Verb" "announce" "announces" 7 16) [], LexicalLeaf (LexicalAnchor "Noun" "season" "season" 19 25) []]
+                    ]
+                , LexicalApply
+                    "Pred"
+                    [ LexicalLeaf (LexicalAnchor "HePN" "he" "he" 30 32) []
+                    , LexicalApply
+                        "Compl"
+                        [ LexicalLeaf (LexicalAnchor "Verb" "drink" "drinks" 33 39) [Prefers (HasSort Entity)]
+                        , LexicalLeaf (LexicalAnchor "Noun" "glass" "glass" 44 49) []
+                        ]
+                    ]
+                ]
+          , contextSnapshotHash = snapshotHash containerSnapshot
+          , contextSource = glassEntity
+          , contextAction = "drink"
+          , contextRole = ObjectHole
+          , contextConstraints =
+              [ ContextConstraint
+                  (LexicalAnchor "Verb" "drink" "drinks" 33 39)
+                  (Prefers (HasSort Entity))
+                  "local:selectional-lexicon"
+              ]
+          , contextRuleProvenance = ["local:selectional-lexicon"]
+          }
+  case contextualFiberChecked waterlooSnapshot [InstitutionOf] 1 compositionRijekaContext of
+    Right stages ->
+      assert
+        "composed sentence: Rijeka half still resolves to its two real clubs"
+        ( sort (map unEntityId (stageTargets (last stages)))
+            == sort (map unEntityId [hnkRijeka, nkOrijent])
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: composed Rijeka half: " <> errorMessage)
+      exitFailure
+  case contextualFiberChecked containerSnapshot [Contains] 1 compositionGlassContext of
+    Right stages ->
+      assert
+        "composed sentence: glass half still resolves to its one real content"
+        (map unEntityId (stageTargets (last stages)) == [unEntityId rumEntity])
+    Left errorMessage -> do
+      putStrLn ("FAIL: composed glass half: " <> errorMessage)
+      exitFailure
 
   mapM_ (assertSyntheticTower syntheticTowersSnapshot) towers
 

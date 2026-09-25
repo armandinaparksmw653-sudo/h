@@ -299,6 +299,7 @@ concrete MetonymyEng of Metonymy =
     Drink = mkV2 "drink" ;
     Sign = mkV2 "sign" ;
     Have = mkV2 (mkV "have" "has" "had" "had" "having") ;
+    Mark = mkV2 "mark" ;
     -- Study/Review/Translate/Eat/ListenTo/Watch/Wear/Hear: see
     -- Metonymy.gf's comment at the matching `cat`-adjacent declaration
     -- site -- scripts/generate_gf_lexicon.py already generates these
