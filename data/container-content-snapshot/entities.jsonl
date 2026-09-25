@@ -1,8 +1,18 @@
+{"id":"LOCAL_BARREL","labels":["the barrel"]}
 {"id":"LOCAL_BEER","labels":["beer"]}
+{"id":"LOCAL_CANISTER","labels":["the canister"]}
 {"id":"LOCAL_CARTON","labels":["the carton"]}
+{"id":"LOCAL_EXTINGUISHER","labels":["the extinguisher"]}
+{"id":"LOCAL_FOAM","labels":["foam"]}
 {"id":"LOCAL_GLASS","labels":["the glass"]}
+{"id":"LOCAL_KETTLE","labels":["the kettle"]}
 {"id":"LOCAL_MILK","labels":["milk"]}
 {"id":"LOCAL_ORCHESTRA","labels":["the orchestra"]}
+{"id":"LOCAL_OXYGEN","labels":["oxygen"]}
 {"id":"LOCAL_PACK","labels":["a pack"]}
 {"id":"LOCAL_RUM","labels":["rum"]}
+{"id":"LOCAL_SHOT","labels":["shot"]}
 {"id":"LOCAL_SYMPHONY","labels":["the symphony"]}
+{"id":"LOCAL_TANK","labels":["the tank"]}
+{"id":"LOCAL_WATER","labels":["water"]}
+{"id":"LOCAL_WINE","labels":["wine"]}

@@ -300,6 +300,7 @@ concrete MetonymyEng of Metonymy =
     Sign = mkV2 "sign" ;
     Have = mkV2 (mkV "have" "has" "had" "had" "having") ;
     Mark = mkV2 "mark" ;
+    Empty = mkV2 "empty" ;
     -- Study/Review/Translate/Eat/ListenTo/Watch/Wear/Hear: see
     -- Metonymy.gf's comment at the matching `cat`-adjacent declaration
     -- site -- scripts/generate_gf_lexicon.py already generates these

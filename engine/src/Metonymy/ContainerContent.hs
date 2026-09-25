@@ -32,6 +32,11 @@ module Metonymy.ContainerContent
   , cartonContext
   , packContext
   , orchestraContext
+  , kettleContext
+  , tankContext
+  , canisterContext
+  , barrelContext
+  , extinguisherContext
   , glassEntity
   , rumEntity
   , cartonEntity
@@ -40,6 +45,16 @@ module Metonymy.ContainerContent
   , beerEntity
   , orchestraEntity
   , symphonyEntity
+  , kettleEntity
+  , waterEntity
+  , tankEntity
+  , oxygenEntity
+  , canisterEntity
+  , shotEntity
+  , barrelEntity
+  , wineEntity
+  , extinguisherEntity
+  , foamEntity
   ) where
 
 import Metonymy.Contextual
@@ -123,3 +138,65 @@ beerEntity = EntityId "LOCAL_BEER"
 orchestraEntity, symphonyEntity :: EntityId
 orchestraEntity = EntityId "LOCAL_ORCHESTRA"
 symphonyEntity = EntityId "LOCAL_SYMPHONY"
+
+-- Scale batch 4: four more real ConMeC CONTAINER-category sentences,
+-- simplified to "he empties the X" (a new Empty V2, since "drink" only
+-- fits liquid content -- oxygen and shot are not drinkable), plus one
+-- more real CONTAINER sentence ("Gutiérrez's in-car fire extinguisher
+-- activated...", already surfaced but not built earlier this session):
+--   "her grandmother's need to recharge her oxygen tank every two days"
+--   -> tank -> Contains -> oxygen
+--   "the American gunners switched from firing roundshot to firing
+--   canister" -> canister -> Contains -> shot
+--   "a single grape, chardonnay... barrel fermented" -> barrel ->
+--   Contains -> wine
+--   "He invites Stevie to stay for coffee, saying Gerri is just boiling
+--   the kettle" -> kettle -> Contains -> water
+--   "Gutiérrez's in-car fire extinguisher activated..." -> extinguisher
+--   -> Contains -> foam
+emptyContext :: Snapshot -> EntityId -> String -> Context
+emptyContext snapshot source noun =
+  Context
+    { contextTree =
+        LexicalApply
+          "Pred"
+          [ LexicalLeaf (anchor "HePN" "he" "he" 0 2) []
+          , LexicalApply
+              "Compl"
+              [ LexicalLeaf
+                  (anchor "Verb" "empty" "empties" 3 10)
+                  [Prefers (HasSort Entity)]
+              , LexicalLeaf (anchor "Noun" noun noun 15 (15 + length noun)) []
+              ]
+          ]
+    , contextSnapshotHash = snapshotHash snapshot
+    , contextSource = source
+    , contextAction = "empty"
+    , contextRole = ObjectHole
+    , contextConstraints =
+        [ ContextConstraint
+            (anchor "Verb" "empty" "empties" 3 10)
+            (Prefers (HasSort Entity))
+            "local:selectional-lexicon"
+        ]
+    , contextRuleProvenance = ["local:selectional-lexicon"]
+    }
+
+kettleContext, tankContext, canisterContext, barrelContext, extinguisherContext :: Snapshot -> Context
+kettleContext snapshot = emptyContext snapshot kettleEntity "kettle"
+tankContext snapshot = emptyContext snapshot tankEntity "tank"
+canisterContext snapshot = emptyContext snapshot canisterEntity "canister"
+barrelContext snapshot = emptyContext snapshot barrelEntity "barrel"
+extinguisherContext snapshot = emptyContext snapshot extinguisherEntity "extinguisher"
+
+kettleEntity, waterEntity, tankEntity, oxygenEntity, canisterEntity, shotEntity, barrelEntity, wineEntity, extinguisherEntity, foamEntity :: EntityId
+kettleEntity = EntityId "LOCAL_KETTLE"
+waterEntity = EntityId "LOCAL_WATER"
+tankEntity = EntityId "LOCAL_TANK"
+oxygenEntity = EntityId "LOCAL_OXYGEN"
+canisterEntity = EntityId "LOCAL_CANISTER"
+shotEntity = EntityId "LOCAL_SHOT"
+barrelEntity = EntityId "LOCAL_BARREL"
+wineEntity = EntityId "LOCAL_WINE"
+extinguisherEntity = EntityId "LOCAL_EXTINGUISHER"
+foamEntity = EntityId "LOCAL_FOAM"

@@ -1,4 +1,9 @@
 {"property":"P527","source":"LOCAL_CARTON","target":"LOCAL_MILK"}
 {"property":"P527","source":"LOCAL_GLASS","target":"LOCAL_RUM"}
 {"property":"P527","source":"LOCAL_PACK","target":"LOCAL_BEER"}
+{"property":"P527","source":"LOCAL_KETTLE","target":"LOCAL_WATER"}
+{"property":"P527","source":"LOCAL_TANK","target":"LOCAL_OXYGEN"}
+{"property":"P527","source":"LOCAL_CANISTER","target":"LOCAL_SHOT"}
+{"property":"P527","source":"LOCAL_BARREL","target":"LOCAL_WINE"}
+{"property":"P527","source":"LOCAL_EXTINGUISHER","target":"LOCAL_FOAM"}
 {"property":"P176","source":"LOCAL_SYMPHONY","target":"LOCAL_ORCHESTRA"}

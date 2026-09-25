@@ -635,6 +635,28 @@ main = do
     , ("pack -> beer", packContext containerSnapshot, beerEntity)
     ]
 
+  -- Scale batch 4: four more real ConMeC CONTAINER examples plus one
+  -- surfaced earlier this session but not built (extinguisher), all via
+  -- the new Empty verb (see Metonymy.ContainerContent's module
+  -- docstring for why "drink" does not fit oxygen/shot).
+  mapM_
+    ( \(label, context, expected) ->
+        case contextualFiberChecked containerSnapshot [Contains] 1 context of
+          Right stages ->
+            assert
+              (label <> " narrows to its one real content, Agda-checked")
+              (map unEntityId (stageTargets (last stages)) == [unEntityId expected])
+          Left errorMessage -> do
+            putStrLn ("FAIL: " <> label <> ": " <> errorMessage)
+            exitFailure
+    )
+    [ ("kettle -> water", kettleContext containerSnapshot, waterEntity)
+    , ("tank -> oxygen", tankContext containerSnapshot, oxygenEntity)
+    , ("canister -> shot", canisterContext containerSnapshot, shotEntity)
+    , ("barrel -> wine", barrelContext containerSnapshot, wineEntity)
+    , ("extinguisher -> foam", extinguisherContext containerSnapshot, foamEntity)
+    ]
+
   case contextualFiberChecked containerSnapshot [Produces] 1 (orchestraContext containerSnapshot) of
     Right stages ->
       assert
