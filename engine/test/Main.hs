@@ -7,6 +7,7 @@ import Metonymy.ContextualChecked
 import Metonymy.ContextSpec
 import Metonymy.Cathedrals
 import Metonymy.Eswatini
+import Metonymy.Rijeka
 import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
@@ -429,6 +430,20 @@ main = do
       putStrLn ("FAIL: Eswatini cabinet fiber: " <> errorMessage)
       exitFailure
 
+  -- Second real TEAM tower (see Metonymy.Rijeka): unlike Molde, no
+  -- lexical signal here distinguishes HNK Rijeka from the real decoy NK
+  -- Orijent, so this stays an honest two-candidate result too.
+  case contextualFiberChecked waterlooSnapshot [InstitutionOf] 1 (rijekaContext waterlooSnapshot) of
+    Right stages ->
+      assert
+        "Rijeka's season signal narrows to the two real football clubs, Agda-checked"
+        ( sort (map unEntityId (stageTargets (last stages)))
+            == sort (map unEntityId [hnkRijeka, nkOrijent])
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: Rijeka fiber: " <> errorMessage)
+      exitFailure
+
   -- Three real, corpus-attested container-for-content examples (ConMeC
   -- CONTAINER category -- see Metonymy.ContainerContent's module
   -- docstring). A different transfer mechanism from location-for-
@@ -459,6 +474,42 @@ main = do
     Left errorMessage -> do
       putStrLn ("FAIL: orchestra -> symphony: " <> errorMessage)
       exitFailure
+
+  -- Honest reject tests for the three newer, non-location-for-
+  -- institution mechanisms (Container, Producer, Government): each
+  -- graph only has the one real edge from its own source, so asking the
+  -- tower to contract to an entity from a DIFFERENT source's graph is
+  -- correctly refused, the same "explicit-target-not-in-final-fiber"
+  -- shape already exercised for Bjørset FK and Waterloo City Council.
+  mapM_
+    ( \(label, snapshot, relations, context, wrongTarget) ->
+        case contextualContractionChecked snapshot relations 1 context wrongTarget of
+          Left message
+            | "explicit-target-not-in-final-fiber" `isPrefixOf` message ->
+                assert label True
+          other -> do
+            putStrLn ("FAIL: " <> label <> ": expected rejection, got " <> show other)
+            exitFailure
+    )
+    [ ( "glass correctly rejects milk (belongs to carton, not glass)"
+      , containerSnapshot
+      , [Contains]
+      , glassContext containerSnapshot
+      , milkEntity
+      )
+    , ( "orchestra correctly rejects rum (belongs to a glass, not the orchestra)"
+      , containerSnapshot
+      , [Produces]
+      , orchestraContext containerSnapshot
+      , rumEntity
+      )
+    , ( "Eswatini's cabinet correctly rejects an unrelated entity (Gloucester Cathedral)"
+      , waterlooSnapshot
+      , [GovernedBy]
+      , eswatiniContext waterlooSnapshot
+      , gloucesterCathedral
+      )
+    ]
 
   mapM_ (assertSyntheticTower syntheticTowersSnapshot) towers
 
