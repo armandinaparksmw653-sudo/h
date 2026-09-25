@@ -45,3 +45,8 @@ leeds-artifact	Q2460124	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|12|1
 ascot-artifact	Q2197644	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|12|18|requires|HasSort Artifact|wimcor:real:ascot-racecourse-garden
 hackney-artifact	Q205679	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|14|20|requires|HasSort Artifact|wimcor:real:hackney-empire-garden
 campbelltown-artifact	Q1030585	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|19|25|requires|HasSort Artifact|wimcor:real:campbelltown-stadium-garden
+viborg-team	Q21176	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|7|16|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|19|25|requires|HasSort SportsOrganization|wimcor:real:viborg-team-season
+lugo-team	Q11125	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|5|14|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|17|23|requires|HasSort SportsOrganization|wimcor:real:lugo-team-season
+thun-team	Q68978	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|5|14|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|17|23|requires|HasSort SportsOrganization|wimcor:real:thun-team-season
+morelia-team	Q200252	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|8|17|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|20|26|requires|HasSort SportsOrganization|wimcor:real:morelia-team-season
+sabadell-team	Q12258	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|9|18|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|21|27|requires|HasSort SportsOrganization|wimcor:real:sabadell-team-season

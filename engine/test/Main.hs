@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 46)
+    (length loadedContextScenarios == 51)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -492,6 +492,40 @@ main = do
     , ("ascot-artifact", "Q723336")
     , ("hackney-artifact", "Q5637363")
     , ("campbelltown-artifact", "Q5028227")
+    ]
+
+  -- Scale batch 12: five more real WiMCor TEAM examples, mined with a
+  -- wider verb net (finished/beat/relegated/etc., not just announce/
+  -- sign) since the earlier lists were exhausted. Viborg, Lugo, Thun,
+  -- Morelia, Sabadell. One candidate (Castleford Tigers, a rugby league
+  -- club) was checked and dropped: its real P131 is Wakefield, not
+  -- Castleford.
+  mapM_
+    ( \(name, club) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real club, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [club])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("viborg-team", "Q837956")
+    , ("lugo-team", "Q11984")
+    , ("thun-team", "Q464775")
+    , ("morelia-team", "Q1480985")
+    , ("sabadell-team", "Q12260")
     ]
 
   assert
