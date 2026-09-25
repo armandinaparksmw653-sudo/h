@@ -95,3 +95,17 @@
 {"property":"P31","source":"Q967165","target":"Q875538"}
 {"property":"P131","source":"Q3056813","target":"Q1022488"}
 {"property":"P31","source":"Q3056813","target":"Q3918"}
+{"property":"P159","source":"Q41420","target":"Q1295"}
+{"property":"P31","source":"Q41420","target":"Q476028"}
+{"property":"P159","source":"Q19518","target":"Q7880"}
+{"property":"P31","source":"Q19518","target":"Q476028"}
+{"property":"P159","source":"Q128446","target":"Q36433"}
+{"property":"P31","source":"Q128446","target":"Q476028"}
+{"property":"P159","source":"Q1543","target":"Q490"}
+{"property":"P31","source":"Q1543","target":"Q476028"}
+{"property":"P159","source":"Q327238","target":"Q172"}
+{"property":"P31","source":"Q327238","target":"Q476028"}
+{"property":"P159","source":"Q220854","target":"Q3646"}
+{"property":"P31","source":"Q220854","target":"Q476028"}
+{"property":"P159","source":"Q24711","target":"Q749"}
+{"property":"P31","source":"Q24711","target":"Q476028"}

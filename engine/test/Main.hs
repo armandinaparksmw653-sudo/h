@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 35)
+    (length loadedContextScenarios == 42)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -418,6 +418,41 @@ main = do
     , ("boston-university", "Q49110")
     , ("york-university", "Q967165")
     , ("brighton-university", "Q3056813")
+    ]
+
+  -- Scale batch 9: seven more real WiMCor TEAM examples, mined fresh
+  -- from the full corpus (the original subject-candidates.txt list from
+  -- earlier in this session was exhausted by batch 6). All seven real
+  -- P31 values were already Q476028, and all seven checked candidates
+  -- matched their real P159 target on the first pass.
+  mapM_
+    ( \(name, club) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real club, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [club])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("dortmund-team", "Q41420")
+    , ("toulouse-team", "Q19518")
+    , ("porto-team", "Q128446")
+    , ("milan-team", "Q1543")
+    , ("toronto-team", "Q327238")
+    , ("krasnodar-team", "Q220854")
+    , ("groningen-team", "Q24711")
     ]
 
   assert
