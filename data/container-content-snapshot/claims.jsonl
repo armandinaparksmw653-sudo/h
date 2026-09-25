@@ -1,3 +1,4 @@
 {"property":"P527","source":"LOCAL_CARTON","target":"LOCAL_MILK"}
 {"property":"P527","source":"LOCAL_GLASS","target":"LOCAL_RUM"}
 {"property":"P527","source":"LOCAL_PACK","target":"LOCAL_BEER"}
+{"property":"P176","source":"LOCAL_SYMPHONY","target":"LOCAL_ORCHESTRA"}

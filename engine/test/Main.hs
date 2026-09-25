@@ -432,6 +432,15 @@ main = do
     , ("pack -> beer", packContext containerSnapshot, beerEntity)
     ]
 
+  case contextualFiberChecked containerSnapshot [Produces] 1 (orchestraContext containerSnapshot) of
+    Right stages ->
+      assert
+        "orchestra -> symphony narrows to its one real product, Agda-checked"
+        (map unEntityId (stageTargets (last stages)) == [unEntityId symphonyEntity])
+    Left errorMessage -> do
+      putStrLn ("FAIL: orchestra -> symphony: " <> errorMessage)
+      exitFailure
+
   mapM_ (assertSyntheticTower syntheticTowersSnapshot) towers
 
   putStrLn "all tests passed"

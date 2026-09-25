@@ -2,5 +2,7 @@
 {"id":"LOCAL_CARTON","labels":["the carton"]}
 {"id":"LOCAL_GLASS","labels":["the glass"]}
 {"id":"LOCAL_MILK","labels":["milk"]}
+{"id":"LOCAL_ORCHESTRA","labels":["the orchestra"]}
 {"id":"LOCAL_PACK","labels":["a pack"]}
 {"id":"LOCAL_RUM","labels":["rum"]}
+{"id":"LOCAL_SYMPHONY","labels":["the symphony"]}
