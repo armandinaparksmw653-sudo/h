@@ -17,4 +17,10 @@
 {"property":"P527","source":"LOCAL_MUG","target":"LOCAL_COFFEE"}
 {"property":"P527","source":"LOCAL_BOWL","target":"LOCAL_SOUP"}
 {"property":"P527","source":"LOCAL_HOSE","target":"LOCAL_WATER"}
+{"property":"P527","source":"LOCAL_BUCKET","target":"LOCAL_WATER"}
+{"property":"P527","source":"LOCAL_CASSEROLE","target":"LOCAL_LENTILS"}
+{"property":"P527","source":"LOCAL_BOTTLE","target":"LOCAL_WINE"}
+{"property":"P527","source":"LOCAL_CASK","target":"LOCAL_ALE"}
+{"property":"P527","source":"LOCAL_CONTAINER","target":"LOCAL_LIQUID"}
+{"property":"P527","source":"LOCAL_POT","target":"LOCAL_STEW"}
 {"property":"P176","source":"LOCAL_SYMPHONY","target":"LOCAL_ORCHESTRA"}

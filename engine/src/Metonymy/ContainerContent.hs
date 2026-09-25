@@ -48,6 +48,12 @@ module Metonymy.ContainerContent
   , mugContext
   , bowlContext
   , hoseContext
+  , bucketContext
+  , casseroleContext
+  , bottleContext
+  , caskContext
+  , containerContext2
+  , potContext
   , glassEntity
   , rumEntity
   , cartonEntity
@@ -83,6 +89,16 @@ module Metonymy.ContainerContent
   , bowlEntity
   , soupEntity
   , hoseEntity
+  , bucketEntity
+  , casseroleEntity
+  , lentilsEntity
+  , bottleEntity
+  , caskEntity
+  , aleEntity
+  , container2Entity
+  , liquidEntity
+  , potEntity
+  , stewEntity
   ) where
 
 import Metonymy.Contextual
@@ -285,3 +301,34 @@ coffeeEntity = EntityId "LOCAL_COFFEE"
 bowlEntity = EntityId "LOCAL_BOWL"
 soupEntity = EntityId "LOCAL_SOUP"
 hoseEntity = EntityId "LOCAL_HOSE"
+
+-- Scale batch 13: six more real ConMeC CONTAINER examples:
+--   "they must pour their bucket into their container" -> bucket ->
+--   Contains -> water
+--   "Neil cooks a lentil casserole" -> casserole -> Contains -> lentils
+--   "an opened bottle will survive unharmed" (Madeira) -> bottle ->
+--   Contains -> wine
+--   "cask conditioned beers"/"cask and keg ales" -> cask -> Contains ->
+--   ale
+--   "disposed of the remains by pouring out the container" ->
+--   container -> Contains -> liquid
+--   "A pot is boiling there" -> pot -> Contains -> stew
+bucketContext, casseroleContext, bottleContext, caskContext, containerContext2, potContext :: Snapshot -> Context
+bucketContext snapshot = emptyContext snapshot bucketEntity "bucket"
+casseroleContext snapshot = emptyContext snapshot casseroleEntity "casserole"
+bottleContext snapshot = emptyContext snapshot bottleEntity "bottle"
+caskContext snapshot = emptyContext snapshot caskEntity "cask"
+containerContext2 snapshot = emptyContext snapshot container2Entity "container"
+potContext snapshot = emptyContext snapshot potEntity "pot"
+
+bucketEntity, casseroleEntity, lentilsEntity, bottleEntity, caskEntity, aleEntity, container2Entity, liquidEntity, potEntity, stewEntity :: EntityId
+bucketEntity = EntityId "LOCAL_BUCKET"
+casseroleEntity = EntityId "LOCAL_CASSEROLE"
+lentilsEntity = EntityId "LOCAL_LENTILS"
+bottleEntity = EntityId "LOCAL_BOTTLE"
+caskEntity = EntityId "LOCAL_CASK"
+aleEntity = EntityId "LOCAL_ALE"
+container2Entity = EntityId "LOCAL_CONTAINER"
+liquidEntity = EntityId "LOCAL_LIQUID"
+potEntity = EntityId "LOCAL_POT"
+stewEntity = EntityId "LOCAL_STEW"
