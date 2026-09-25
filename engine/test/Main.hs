@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 8)
+    (length loadedContextScenarios == 14)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -241,6 +241,41 @@ main = do
     , ("durham-university", "Q458393")
     , ("bath-university", "Q1422458")
     , ("derby-university", "Q3183295")
+    ]
+
+  -- Scale batch 2: six more real WiMCor TEAM examples (city -> football
+  -- club), same lighter, no-decoy-search tier as the university batch
+  -- above. Two of the six needed their real P31 registered (Q51481377
+  -- "women's association football club" for Portland Thorns FC,
+  -- Q103229495 "men's association football team" for FC Barcelona)
+  -- rather than assuming the usual Q476028.
+  mapM_
+    ( \(name, club) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real club, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [club])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("zagreb-team", "Q462411")
+    , ("cluj-team", "Q205998")
+    , ("portland-team", "Q1446672")
+    , ("barcelona-team", "Q7156")
+    , ("lyon-team", "Q704")
+    , ("casablanca-team", "Q1051514")
     ]
 
   assert
