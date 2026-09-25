@@ -6,4 +6,9 @@
 {"property":"P527","source":"LOCAL_CANISTER","target":"LOCAL_SHOT"}
 {"property":"P527","source":"LOCAL_BARREL","target":"LOCAL_WINE"}
 {"property":"P527","source":"LOCAL_EXTINGUISHER","target":"LOCAL_FOAM"}
+{"property":"P527","source":"LOCAL_SYRINGE","target":"LOCAL_DRUG"}
+{"property":"P527","source":"LOCAL_RESERVOIR","target":"LOCAL_WATER"}
+{"property":"P527","source":"LOCAL_PLATTER","target":"LOCAL_FOOD"}
+{"property":"P527","source":"LOCAL_POOL","target":"LOCAL_WORKERS"}
+{"property":"P527","source":"LOCAL_CUP","target":"LOCAL_WINE"}
 {"property":"P176","source":"LOCAL_SYMPHONY","target":"LOCAL_ORCHESTRA"}

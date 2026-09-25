@@ -723,6 +723,11 @@ main = do
     , ("canister -> shot", canisterContext containerSnapshot, shotEntity)
     , ("barrel -> wine", barrelContext containerSnapshot, wineEntity)
     , ("extinguisher -> foam", extinguisherContext containerSnapshot, foamEntity)
+    , ("syringe -> drug", syringeContext containerSnapshot, drugEntity)
+    , ("reservoir -> water", reservoirContext containerSnapshot, waterEntity)
+    , ("platter -> food", platterContext containerSnapshot, foodEntity)
+    , ("pool -> workers", poolContext containerSnapshot, workersEntity)
+    , ("cup -> wine", cupContext containerSnapshot, wineEntity)
     ]
 
   case contextualFiberChecked containerSnapshot [Produces] 1 (orchestraContext containerSnapshot) of

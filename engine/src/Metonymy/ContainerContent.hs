@@ -37,6 +37,11 @@ module Metonymy.ContainerContent
   , canisterContext
   , barrelContext
   , extinguisherContext
+  , syringeContext
+  , reservoirContext
+  , platterContext
+  , poolContext
+  , cupContext
   , glassEntity
   , rumEntity
   , cartonEntity
@@ -55,6 +60,14 @@ module Metonymy.ContainerContent
   , wineEntity
   , extinguisherEntity
   , foamEntity
+  , syringeEntity
+  , drugEntity
+  , reservoirEntity
+  , platterEntity
+  , foodEntity
+  , poolEntity
+  , workersEntity
+  , cupEntity
   ) where
 
 import Metonymy.Contextual
@@ -200,3 +213,32 @@ barrelEntity = EntityId "LOCAL_BARREL"
 wineEntity = EntityId "LOCAL_WINE"
 extinguisherEntity = EntityId "LOCAL_EXTINGUISHER"
 foamEntity = EntityId "LOCAL_FOAM"
+
+-- Scale batch 7: five more real ConMeC CONTAINER examples:
+--   "she decides to administer a syringe of drugs to end his life" ->
+--   syringe -> Contains -> drug
+--   "Jonesy... steps on the final alien larva before it can contaminate
+--   the reservoir" -> reservoir -> Contains -> water
+--   "Janella cooked... an antipasto platter for starters" -> platter ->
+--   Contains -> food
+--   "the labor pool dried up" -> pool -> Contains -> workers (the one
+--   example in this module where the content is a HumanGroup, not a
+--   substance)
+--   ceremonial "this cup was sipped by the leader" (Thanksgiving/Seder
+--   sentences) -> cup -> Contains -> wine
+syringeContext, reservoirContext, platterContext, poolContext, cupContext :: Snapshot -> Context
+syringeContext snapshot = emptyContext snapshot syringeEntity "syringe"
+reservoirContext snapshot = emptyContext snapshot reservoirEntity "reservoir"
+platterContext snapshot = emptyContext snapshot platterEntity "platter"
+poolContext snapshot = emptyContext snapshot poolEntity "pool"
+cupContext snapshot = emptyContext snapshot cupEntity "cup"
+
+syringeEntity, drugEntity, reservoirEntity, platterEntity, foodEntity, poolEntity, workersEntity, cupEntity :: EntityId
+syringeEntity = EntityId "LOCAL_SYRINGE"
+drugEntity = EntityId "LOCAL_DRUG"
+reservoirEntity = EntityId "LOCAL_RESERVOIR"
+platterEntity = EntityId "LOCAL_PLATTER"
+foodEntity = EntityId "LOCAL_FOOD"
+poolEntity = EntityId "LOCAL_POOL"
+workersEntity = EntityId "LOCAL_WORKERS"
+cupEntity = EntityId "LOCAL_CUP"

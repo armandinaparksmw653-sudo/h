@@ -2,6 +2,8 @@
 {"id":"LOCAL_BEER","labels":["beer"]}
 {"id":"LOCAL_CANISTER","labels":["the canister"]}
 {"id":"LOCAL_CARTON","labels":["the carton"]}
+{"id":"LOCAL_CUP","labels":["the cup"]}
+{"id":"LOCAL_DRUG","labels":["drug"]}
 {"id":"LOCAL_EXTINGUISHER","labels":["the extinguisher"]}
 {"id":"LOCAL_FOAM","labels":["foam"]}
 {"id":"LOCAL_GLASS","labels":["the glass"]}
@@ -10,8 +12,14 @@
 {"id":"LOCAL_ORCHESTRA","labels":["the orchestra"]}
 {"id":"LOCAL_OXYGEN","labels":["oxygen"]}
 {"id":"LOCAL_PACK","labels":["a pack"]}
+{"id":"LOCAL_PLATTER","labels":["the platter"]}
+{"id":"LOCAL_FOOD","labels":["food"]}
+{"id":"LOCAL_POOL","labels":["the pool"]}
+{"id":"LOCAL_WORKERS","labels":["workers"]}
+{"id":"LOCAL_RESERVOIR","labels":["the reservoir"]}
 {"id":"LOCAL_RUM","labels":["rum"]}
 {"id":"LOCAL_SHOT","labels":["shot"]}
+{"id":"LOCAL_SYRINGE","labels":["the syringe"]}
 {"id":"LOCAL_SYMPHONY","labels":["the symphony"]}
 {"id":"LOCAL_TANK","labels":["the tank"]}
 {"id":"LOCAL_WATER","labels":["water"]}
