@@ -25,7 +25,7 @@ anchor :: String -> String -> String -> Int -> Int -> LexicalAnchor
 anchor constructor lemma surface start end =
   LexicalAnchor constructor lemma surface start end
 
-cathedralContext :: Snapshot -> EntityId -> String -> Int -> Int -> String -> Context
+cathedralContext :: Snapshot -> EntityId -> String -> Int -> String -> String -> Context
 cathedralContext snapshot source placeName placeEnd noun context =
   Context
     { contextTree =
