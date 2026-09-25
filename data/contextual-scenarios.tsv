@@ -41,3 +41,7 @@ milan-team	Q490	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|6|1
 toronto-team	Q172	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|8|17|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|20|26|requires|HasSort SportsOrganization|wimcor:real:toronto-team-season
 krasnodar-team	Q3646	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|10|19|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|22|28|requires|HasSort SportsOrganization|wimcor:real:krasnodar-team-season
 groningen-team	Q749	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|10|19|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|22|28|requires|HasSort SportsOrganization|wimcor:real:groningen-team-season
+leeds-artifact	Q2460124	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|12|18|requires|HasSort Artifact|wimcor:real:leeds-castle-garden
+ascot-artifact	Q2197644	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|12|18|requires|HasSort Artifact|wimcor:real:ascot-racecourse-garden
+hackney-artifact	Q205679	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|14|20|requires|HasSort Artifact|wimcor:real:hackney-empire-garden
+campbelltown-artifact	Q1030585	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|19|25|requires|HasSort Artifact|wimcor:real:campbelltown-stadium-garden

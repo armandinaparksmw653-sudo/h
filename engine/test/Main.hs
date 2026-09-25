@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 42)
+    (length loadedContextScenarios == 46)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -453,6 +453,45 @@ main = do
     , ("toronto-team", "Q327238")
     , ("krasnodar-team", "Q220854")
     , ("groningen-team", "Q24711")
+    ]
+
+  -- Scale batch 10: four more real WiMCor ARTIFACT examples. Thirteen
+  -- fresh candidates were checked this round; only these four matched
+  -- their real P131 target (Bangor Cathedral, Blackfriars Theatre,
+  -- Denali, Everglades, Aberdeen Proving Ground, Acadia, Darlington
+  -- Raceway, Deepdale, and Battersea Power Station were all real
+  -- mismatches -- the WiMCor surface names a neighbourhood, borough, or
+  -- state that is not the artifact's own real P131 target). All three of
+  -- Leeds Castle/Ascot Racecourse/Hackney Empire happened to reuse
+  -- already-registered Artifact types from earlier batches (Highclere's
+  -- English country house, Epsom's horse racing venue, Chichester's
+  -- theatre building); only Campbelltown Stadium needed a new one
+  -- (generic "stadium", Q483110).
+  mapM_
+    ( \(name, artifact) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real artifact, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [artifact])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("leeds-artifact", "Q746876")
+    , ("ascot-artifact", "Q723336")
+    , ("hackney-artifact", "Q5637363")
+    , ("campbelltown-artifact", "Q5028227")
     ]
 
   assert
