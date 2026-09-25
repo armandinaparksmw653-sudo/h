@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 24)
+    (length loadedContextScenarios == 30)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -350,6 +350,38 @@ main = do
     , ("guadalajara-university", "Q164028")
     , ("aberystwyth-university", "Q319761")
     , ("standrews-university", "Q216273")
+    ]
+
+  -- Scale batch 6: six more real WiMCor TEAM examples, same lighter
+  -- tier. All six real P31 values were already Q476028, so no new type
+  -- registration was needed this round.
+  mapM_
+    ( \(name, club) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real club, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [club])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("laspalmas-team", "Q11979")
+    , ("helsingborg-team", "Q207503")
+    , ("sedan-team", "Q608988")
+    , ("odense-team", "Q211912")
+    , ("shimizu-team", "Q823384")
+    , ("bandung-team", "Q1630834")
     ]
 
   assert

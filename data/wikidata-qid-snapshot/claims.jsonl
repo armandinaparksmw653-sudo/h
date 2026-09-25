@@ -73,3 +73,15 @@
 {"property":"P31","source":"Q319761","target":"Q875538"}
 {"property":"P131","source":"Q216273","target":"Q207736"}
 {"property":"P31","source":"Q216273","target":"Q875538"}
+{"property":"P159","source":"Q11979","target":"Q11974"}
+{"property":"P31","source":"Q11979","target":"Q476028"}
+{"property":"P159","source":"Q207503","target":"Q25411"}
+{"property":"P31","source":"Q207503","target":"Q476028"}
+{"property":"P159","source":"Q608988","target":"Q184371"}
+{"property":"P31","source":"Q608988","target":"Q476028"}
+{"property":"P159","source":"Q211912","target":"Q25331"}
+{"property":"P31","source":"Q211912","target":"Q476028"}
+{"property":"P159","source":"Q823384","target":"Q1203168"}
+{"property":"P31","source":"Q823384","target":"Q476028"}
+{"property":"P159","source":"Q1630834","target":"Q10389"}
+{"property":"P31","source":"Q1630834","target":"Q476028"}
