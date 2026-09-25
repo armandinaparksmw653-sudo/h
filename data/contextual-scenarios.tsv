@@ -1,3 +1,9 @@
 scenario	source_qid	action	role	max_depth	bridge_relations	constraints
 waterloo	Q639408	announce	SubjectHole	1	InstitutionOf	Verb|announce|announced|9|18|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|physics|physics|38|45|relation|Conducts|Q413|context-template:programme-in-topic:v1
 molde	Q104095	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|6|15|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|51|57|requires|HasSort SportsOrganization|wimcor:real:molde-fk-season;;Noun|loan|loan|30|34|some|PlaysInLeague|HasSort Entity|wimcor:real:molde-fk-on-loan
+houston-university	Q16555	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|14|20|requires|HasSort University|wimcor:real:houston-university-campus
+exeter-university	Q21886091	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:exeter-university-campus
+rochester-university	Q49218	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|16|22|requires|HasSort University|wimcor:real:rochester-university-campus
+durham-university	Q179815	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:durham-university-campus
+bath-university	Q22889	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|11|17|requires|HasSort University|wimcor:real:bath-university-campus
+derby-university	Q21885980	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|12|18|requires|HasSort University|wimcor:real:derby-university-campus

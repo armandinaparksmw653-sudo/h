@@ -183,8 +183,8 @@ main = do
     "snapshot alias layer resolves Waterloo to its QID"
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
-    "contextual scenario file has exactly the waterloo and molde rows"
-    (length loadedContextScenarios == 2)
+    "contextual scenario file has the expected number of rows"
+    (length loadedContextScenarios == 8)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -203,6 +203,46 @@ main = do
             && contextConstraints (contextScenarioContext scenario) == contextConstraints moldeContext
         Nothing -> False
     )
+
+  -- Six real, single-signal WiMCor University-of-X examples, loaded
+  -- straight from data/contextual-scenarios.tsv rather than individual
+  -- Haskell modules -- the scale tier: minimal curated snapshot (the one
+  -- real InstitutionOf edge each, no per-city decoy search the way
+  -- Molde/Rijeka got), so uniqueness here reflects that curation choice,
+  -- not a claim that no other organization exists in that city on real
+  -- Wikidata. Two of the six needed their real P31 values registered as
+  -- University (Q875538 "public university", Q38723 "higher education
+  -- institution") rather than assuming Q3918 -- checked via live
+  -- wbgetentities, not assumed uniform across all six.
+  mapM_
+    ( \(name, university) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real university, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [university])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("houston-university", "Q1472358")
+    , ("exeter-university", "Q1414861")
+    , ("rochester-university", "Q149990")
+    , ("durham-university", "Q458393")
+    , ("bath-university", "Q1422458")
+    , ("derby-university", "Q3183295")
+    ]
+
   assert
     "tower rejects a context bound to another snapshot"
     ( contextualFiber
