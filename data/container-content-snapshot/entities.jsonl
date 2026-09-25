@@ -5,15 +5,24 @@
 {"id":"LOCAL_CUP","labels":["the cup"]}
 {"id":"LOCAL_DRUG","labels":["drug"]}
 {"id":"LOCAL_EXTINGUISHER","labels":["the extinguisher"]}
+{"id":"LOCAL_FLASK","labels":["the flask"]}
 {"id":"LOCAL_FOAM","labels":["foam"]}
 {"id":"LOCAL_GLASS","labels":["the glass"]}
+{"id":"LOCAL_HOSE","labels":["the hose"]}
+{"id":"LOCAL_JAR","labels":["the jar"]}
 {"id":"LOCAL_KETTLE","labels":["the kettle"]}
+{"id":"LOCAL_LIQUOR","labels":["liquor"]}
+{"id":"LOCAL_COFFEE","labels":["coffee"]}
 {"id":"LOCAL_MILK","labels":["milk"]}
+{"id":"LOCAL_MUG","labels":["the mug"]}
 {"id":"LOCAL_ORCHESTRA","labels":["the orchestra"]}
 {"id":"LOCAL_OXYGEN","labels":["oxygen"]}
 {"id":"LOCAL_PACK","labels":["a pack"]}
+{"id":"LOCAL_PITCHER","labels":["the pitcher"]}
 {"id":"LOCAL_PLATTER","labels":["the platter"]}
 {"id":"LOCAL_FOOD","labels":["food"]}
+{"id":"LOCAL_BOWL","labels":["the bowl"]}
+{"id":"LOCAL_SOUP","labels":["soup"]}
 {"id":"LOCAL_POOL","labels":["the pool"]}
 {"id":"LOCAL_WORKERS","labels":["workers"]}
 {"id":"LOCAL_RESERVOIR","labels":["the reservoir"]}

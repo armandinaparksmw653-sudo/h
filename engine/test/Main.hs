@@ -838,6 +838,12 @@ main = do
     , ("platter -> food", platterContext containerSnapshot, foodEntity)
     , ("pool -> workers", poolContext containerSnapshot, workersEntity)
     , ("cup -> wine", cupContext containerSnapshot, wineEntity)
+    , ("flask -> liquor", flaskContext containerSnapshot, liquorEntity)
+    , ("pitcher -> water", pitcherContext containerSnapshot, waterEntity)
+    , ("jar -> beer", jarContext containerSnapshot, beerEntity)
+    , ("mug -> coffee", mugContext containerSnapshot, coffeeEntity)
+    , ("bowl -> soup", bowlContext containerSnapshot, soupEntity)
+    , ("hose -> water", hoseContext containerSnapshot, waterEntity)
     ]
 
   case contextualFiberChecked containerSnapshot [Produces] 1 (orchestraContext containerSnapshot) of

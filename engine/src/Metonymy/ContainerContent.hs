@@ -42,6 +42,12 @@ module Metonymy.ContainerContent
   , platterContext
   , poolContext
   , cupContext
+  , flaskContext
+  , pitcherContext
+  , jarContext
+  , mugContext
+  , bowlContext
+  , hoseContext
   , glassEntity
   , rumEntity
   , cartonEntity
@@ -68,6 +74,15 @@ module Metonymy.ContainerContent
   , poolEntity
   , workersEntity
   , cupEntity
+  , flaskEntity
+  , liquorEntity
+  , pitcherEntity
+  , jarEntity
+  , mugEntity
+  , coffeeEntity
+  , bowlEntity
+  , soupEntity
+  , hoseEntity
   ) where
 
 import Metonymy.Contextual
@@ -242,3 +257,31 @@ foodEntity = EntityId "LOCAL_FOOD"
 poolEntity = EntityId "LOCAL_POOL"
 workersEntity = EntityId "LOCAL_WORKERS"
 cupEntity = EntityId "LOCAL_CUP"
+
+-- Scale batch 11: six more real ConMeC CONTAINER examples:
+--   "Roman complies and drinks the flask" -> flask -> Contains -> liquor
+--   "He was challenged... to drink the pitcher" -> pitcher -> Contains
+--   -> water
+--   "he drinks the occasional jar in pubs" -> jar -> Contains -> beer
+--   (Irish/British informal usage: "a jar" = a pint of beer)
+--   "tap the keg and properly pour a mug" -> mug -> Contains -> coffee
+--   "Singari cooks a bowl and serves it" -> bowl -> Contains -> soup
+--   "direct a hose on to the roof" -> hose -> Contains -> water
+flaskContext, pitcherContext, jarContext, mugContext, bowlContext, hoseContext :: Snapshot -> Context
+flaskContext snapshot = emptyContext snapshot flaskEntity "flask"
+pitcherContext snapshot = emptyContext snapshot pitcherEntity "pitcher"
+jarContext snapshot = emptyContext snapshot jarEntity "jar"
+mugContext snapshot = emptyContext snapshot mugEntity "mug"
+bowlContext snapshot = emptyContext snapshot bowlEntity "bowl"
+hoseContext snapshot = emptyContext snapshot hoseEntity "hose"
+
+flaskEntity, liquorEntity, pitcherEntity, jarEntity, mugEntity, coffeeEntity, bowlEntity, soupEntity, hoseEntity :: EntityId
+flaskEntity = EntityId "LOCAL_FLASK"
+liquorEntity = EntityId "LOCAL_LIQUOR"
+pitcherEntity = EntityId "LOCAL_PITCHER"
+jarEntity = EntityId "LOCAL_JAR"
+mugEntity = EntityId "LOCAL_MUG"
+coffeeEntity = EntityId "LOCAL_COFFEE"
+bowlEntity = EntityId "LOCAL_BOWL"
+soupEntity = EntityId "LOCAL_SOUP"
+hoseEntity = EntityId "LOCAL_HOSE"
