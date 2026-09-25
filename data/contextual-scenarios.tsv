@@ -18,3 +18,8 @@ highclere-artifact	Q5757909	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|
 epsom-artifact	Q257577	have	SubjectHole	1	InstitutionOf	Noun|track|track|12|17|requires|HasSort Artifact|wimcor:real:epsom-downs-racecourse-track
 elescorial-artifact	Q371748	have	SubjectHole	1	InstitutionOf	Noun|chapel|chapel|18|24|requires|HasSort Artifact|wimcor:real:el-escorial-chapel
 chichester-artifact	Q207639	have	SubjectHole	1	InstitutionOf	Noun|stage|stage|17|22|requires|HasSort Artifact|wimcor:real:chichester-festival-theatre-stage
+birmingham-university	Q79867	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|17|23|requires|HasSort University|wimcor:real:birmingham-university-campus
+pisa-university	Q13375	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|11|17|requires|HasSort University|wimcor:real:pisa-university-campus
+guadalajara-university	Q9022	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|18|24|requires|HasSort University|wimcor:real:guadalajara-university-campus
+aberystwyth-university	Q213154	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|18|24|requires|HasSort University|wimcor:real:aberystwyth-university-campus
+standrews-university	Q207736	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|17|23|requires|HasSort University|wimcor:real:st-andrews-university-campus

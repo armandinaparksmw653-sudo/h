@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 19)
+    (length loadedContextScenarios == 24)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -314,6 +314,42 @@ main = do
     , ("epsom-artifact", "Q5383997")
     , ("elescorial-artifact", "Q9067094")
     , ("chichester-artifact", "Q5095994")
+    ]
+
+  -- Scale batch 5: five more real WiMCor University-of-X examples,
+  -- same lighter tier. Of eleven candidates checked this round (six here
+  -- plus five more not kept), only five matched: Monmouth (P131 is
+  -- Illinois, the state), Webster (P131 is "Webster Groves", not exactly
+  -- "Webster"), Azusa (P131 is California, the state), Kyoto (P131 is
+  -- Sakyo-ku, a ward), and George Mason (the WiMCor surface is the
+  -- university's own name, not a place at all) were all dropped as real
+  -- mismatches or miscategorized candidates, not forced through.
+  mapM_
+    ( \(name, university) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real university, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [university])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("birmingham-university", "Q1472663")
+    , ("pisa-university", "Q645663")
+    , ("guadalajara-university", "Q164028")
+    , ("aberystwyth-university", "Q319761")
+    , ("standrews-university", "Q216273")
     ]
 
   assert
