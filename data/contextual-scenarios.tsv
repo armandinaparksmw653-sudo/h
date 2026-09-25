@@ -29,3 +29,8 @@ sedan-team	Q184371	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|
 odense-team	Q25331	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|7|16|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|19|25|requires|HasSort SportsOrganization|wimcor:real:odense-team-season
 shimizu-team	Q1203168	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|8|17|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|20|26|requires|HasSort SportsOrganization|wimcor:real:shimizu-team-season
 bandung-team	Q10389	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|8|17|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|20|26|requires|HasSort SportsOrganization|wimcor:real:bandung-team-season
+wellesley-university	Q533317	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|16|22|requires|HasSort University|wimcor:real:wellesley-college-campus
+freiburg-university	Q2833	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|15|21|requires|HasSort University|wimcor:real:freiburg-university-campus
+boston-university	Q100	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:boston-university-campus
+york-university	Q42462	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|11|17|requires|HasSort University|wimcor:real:york-university-campus
+brighton-university	Q1022488	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|15|21|requires|HasSort University|wimcor:real:brighton-university-campus

@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 30)
+    (length loadedContextScenarios == 35)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -382,6 +382,42 @@ main = do
     , ("odense-team", "Q211912")
     , ("shimizu-team", "Q823384")
     , ("bandung-team", "Q1630834")
+    ]
+
+  -- Scale batch 8: five more real WiMCor University-of-X examples. Two
+  -- speculative candidates (Reading, Belfast) were checked and dropped
+  -- during this round for a different reason than the usual P131
+  -- mismatch: neither one actually came from the real WiMCor mining this
+  -- session did earlier (subject-candidates.txt) -- they were picked by
+  -- general knowledge, not found in the corpus, so kept out to hold the
+  -- same real-corpus-attested discipline as every other scale-batch
+  -- example.
+  mapM_
+    ( \(name, university) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real university, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [university])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("wellesley-university", "Q49205")
+    , ("freiburg-university", "Q153987")
+    , ("boston-university", "Q49110")
+    , ("york-university", "Q967165")
+    , ("brighton-university", "Q3056813")
     ]
 
   assert
