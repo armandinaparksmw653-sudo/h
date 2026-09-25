@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 14)
+    (length loadedContextScenarios == 19)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -276,6 +276,44 @@ main = do
     , ("barcelona-team", "Q7156")
     , ("lyon-team", "Q704")
     , ("casablanca-team", "Q1051514")
+    ]
+
+  -- Scale batch 3: five real WiMCor ARTIFACT examples, same lighter,
+  -- no-decoy-search tier. Each needed its own real P31 type registered
+  -- (national park, English country house, horse racing venue, the
+  -- Spanish heritage term "Real Sitio", theatre building) -- none of
+  -- these five real entities happened to share a P31 value with each
+  -- other or with Gloucester/Ely Cathedral's Q56242250, checked
+  -- individually rather than assumed. Two other real WiMCor ARTIFACT
+  -- candidates (Doncaster Racecourse, Ibrox Stadium) were dropped after
+  -- checking: Doncaster has no P131 claim at all, and Ibrox's P131 is
+  -- Glasgow (the neighbourhood, not the WiMCor surface).
+  mapM_
+    ( \(name, artifact) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real artifact, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [artifact])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("banff-artifact", "Q41858")
+    , ("highclere-artifact", "Q1508450")
+    , ("epsom-artifact", "Q5383997")
+    , ("elescorial-artifact", "Q9067094")
+    , ("chichester-artifact", "Q5095994")
     ]
 
   assert

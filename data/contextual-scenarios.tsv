@@ -13,3 +13,8 @@ portland-team	Q6106	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces
 barcelona-team	Q1492	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|10|19|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|22|28|requires|HasSort SportsOrganization|wimcor:real:barcelona-team-season
 lyon-team	Q456	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|5|14|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|17|23|requires|HasSort SportsOrganization|wimcor:real:lyon-team-season
 casablanca-team	Q7903	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|11|20|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|23|29|requires|HasSort SportsOrganization|wimcor:real:casablanca-team-season
+banff-artifact	Q58337	have	SubjectHole	1	InstitutionOf	Noun|trail|trail|12|17|requires|HasSort Artifact|wimcor:real:banff-national-park-trail
+highclere-artifact	Q5757909	have	SubjectHole	1	InstitutionOf	Noun|garden|garden|16|22|requires|HasSort Artifact|wimcor:real:highclere-castle-garden
+epsom-artifact	Q257577	have	SubjectHole	1	InstitutionOf	Noun|track|track|12|17|requires|HasSort Artifact|wimcor:real:epsom-downs-racecourse-track
+elescorial-artifact	Q371748	have	SubjectHole	1	InstitutionOf	Noun|chapel|chapel|18|24|requires|HasSort Artifact|wimcor:real:el-escorial-chapel
+chichester-artifact	Q207639	have	SubjectHole	1	InstitutionOf	Noun|stage|stage|17|22|requires|HasSort Artifact|wimcor:real:chichester-festival-theatre-stage
