@@ -6,6 +6,7 @@ import Metonymy.Contextual
 import Metonymy.ContextualChecked
 import Metonymy.ContextSpec
 import Metonymy.Cathedrals
+import Metonymy.Eswatini
 import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
@@ -409,6 +410,24 @@ main = do
     [ ("Gloucester -> Gloucester Cathedral", gloucesterContext waterlooSnapshot, gloucesterCathedral)
     , ("Ely -> Ely Cathedral", elyContext waterlooSnapshot, elyCathedral)
     ]
+
+  -- Real Government-domain example: "The cabinet of eSwatini was placed
+  -- in quarantine..." (see Metonymy.Eswatini). Requires (HasSort
+  -- Government) narrows the real 88-entity P1001 neighborhood down to
+  -- the two real cabinet formations on record; unlike Molde, no further
+  -- lexical signal in this sentence distinguishes which one (the real
+  -- distinguishing fact is a date, not a word), so this stays an honest
+  -- two-candidate result, the same shape as Waterloo.
+  case contextualFiberChecked waterlooSnapshot [GovernedBy] 1 (eswatiniContext waterlooSnapshot) of
+    Right stages ->
+      assert
+        "Eswatini's cabinet narrows to the two real cabinet formations, Agda-checked"
+        ( sort (map unEntityId (stageTargets (last stages)))
+            == sort (map unEntityId [ambroseMandvuloDlaminiCabinet, russellDlaminiCabinet])
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: Eswatini cabinet fiber: " <> errorMessage)
+      exitFailure
 
   -- Three real, corpus-attested container-for-content examples (ConMeC
   -- CONTAINER category -- see Metonymy.ContainerContent's module
