@@ -323,6 +323,34 @@ main = do
       putStrLn ("FAIL: unique Waterloo contraction: " <> errorMessage)
       exitFailure
 
+  -- Real two-hop walk (maxDepth=2), genuinely untested at that depth
+  -- until now: Waterloo -InstitutionOf-> University of Waterloo
+  -- -AffiliatedWith-> Institute for Quantum Computing (Q3799227, real
+  -- P361 claim, already P31=Q31855 ResearchInstitution -- the same QID
+  -- already registered from Perimeter Institute). The initial graph
+  -- layer at depth 2 finds this fourth, more-distant real candidate that
+  -- depth 1 cannot reach; the existing physics/Conducts constraint still
+  -- correctly excludes it in the end (it has no P101 claim at all), so
+  -- going deeper finds more raw candidates without losing precision.
+  case
+      contextualFiberChecked
+        waterlooSnapshot
+        [InstitutionOf, AffiliatedWith]
+        2
+        waterlooContext of
+    Left errorMessage -> do
+      putStrLn ("FAIL: depth-2 Waterloo fiber: " <> errorMessage)
+      exitFailure
+    Right stages -> do
+      assert
+        "depth-2 graph layer reaches the real second-hop candidate that depth 1 cannot"
+        ( sort (map unEntityId (stageTargets (stages !! 0)))
+            == sort (map unEntityId [EntityId "Q1049470", EntityId "Q2004561", EntityId "Q3799227", EntityId "Q7974219"])
+        )
+      assert
+        "the existing physics constraint still excludes the deeper candidate correctly"
+        (stageTargets (last stages) == map EntityId ["Q1049470", "Q2004561"])
+
   -- Real, three-signal tower: "Molde announced ... signed Kamara on loan
   -- for the ... season" (real WiMCor sentence, live-Wikidata-verified,
   -- see Metonymy.MoldeFK's module docstring). Unlike Waterloo, one
