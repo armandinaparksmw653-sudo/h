@@ -145,3 +145,7 @@
 {"property":"P31","source":"Q540672","target":"Q3918"}
 {"property":"P131","source":"Q519427","target":"Q16554"}
 {"property":"P31","source":"Q519427","target":"Q15936437"}
+{"property":"P50","source":"Q128670","target":"Q60684"}
+{"property":"P31","source":"Q128670","target":"Q7725634"}
+{"property":"P50","source":"Q58178849","target":"Q60684"}
+{"property":"P31","source":"Q58178849","target":"Q7725634"}

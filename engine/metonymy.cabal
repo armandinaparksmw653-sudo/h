@@ -26,6 +26,8 @@ library
       Metonymy.Eswatini
       Metonymy.Rijeka
       Metonymy.Busan
+      Metonymy.AuthorWork
+      Metonymy.PartWhole
       Metonymy.ContainerContent
       Metonymy.SyntheticTowers
       Metonymy.Elaborator

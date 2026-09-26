@@ -51,3 +51,5 @@
 {"id":"LOCAL_TANK","labels":["the tank"]}
 {"id":"LOCAL_WATER","labels":["water"]}
 {"id":"LOCAL_WINE","labels":["wine"]}
+{"id":"LOCAL_ARTILLERY","labels":["artillery"]}
+{"id":"LOCAL_EGYPTIAN_MILITARY","labels":["the Egyptian military"]}

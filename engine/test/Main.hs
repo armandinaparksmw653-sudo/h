@@ -9,6 +9,8 @@ import Metonymy.Cathedrals
 import Metonymy.Eswatini
 import Metonymy.Rijeka
 import Metonymy.Busan
+import Metonymy.AuthorWork
+import Metonymy.PartWhole
 import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
@@ -937,6 +939,29 @@ main = do
       putStrLn ("FAIL: Rijeka fiber: " <> errorMessage)
       exitFailure
 
+  -- First real, live-Wikidata-verified Author-for-work example (see
+  -- Metonymy.AuthorWork): "...he studied the Romantic poet Novalis,
+  -- whose Hymns to the Night left a great impression on him" (real
+  -- ConMeC METONYMIC/PRODUCER-category sentence). Requires (HasSort
+  -- LiteraryWork) on the governing verb "study" walks the real Authored
+  -- (inverse P50) bridge from Novalis to his two real, P31-typed
+  -- literary works; no further lexical signal in this sentence
+  -- distinguishes which one (the real sentence's own disambiguation is
+  -- same-sentence coreference to a literally named work, not a
+  -- type/relation signal this mechanism can consume), so this stays an
+  -- honest two-candidate result, the same shape as Waterloo/Rijeka/
+  -- Eswatini.
+  case contextualFiberChecked waterlooSnapshot [Authored] 1 (novalisContext waterlooSnapshot) of
+    Right stages ->
+      assert
+        "Novalis's studied poetry narrows to his two real literary works, Agda-checked"
+        ( sort (map unEntityId (stageTargets (last stages)))
+            == sort (map unEntityId [hymnsToTheNight, heinrichVonOfterdingen])
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: Novalis fiber: " <> errorMessage)
+      exitFailure
+
   -- Three real, corpus-attested container-for-content examples (ConMeC
   -- CONTAINER category -- see Metonymy.ContainerContent's module
   -- docstring). A different transfer mechanism from location-for-
@@ -1027,6 +1052,22 @@ main = do
     , ("playwright -> play", playwrightContext containerSnapshot, playEntity)
     ]
 
+  -- First real, corpus-attested Part-for-whole (synecdoche) example (see
+  -- Metonymy.PartWhole): "Egyptian artillery shelled the Israeli bridge
+  -- over the canal..." (real ConMeC METONYMIC/POSSESSED-category
+  -- sentence, target word "artillery"). A third distinct transfer
+  -- mechanism (AffiliatedWith, not InstitutionOf/GovernedBy or
+  -- Contains/Produces); exactly one real affiliation edge, so this
+  -- narrows to a unique candidate through the graph walk alone.
+  case contextualFiberChecked containerSnapshot [AffiliatedWith] 1 (artilleryContext containerSnapshot) of
+    Right stages ->
+      assert
+        "artillery -> the Egyptian military, Agda-checked"
+        (map unEntityId (stageTargets (last stages)) == [unEntityId egyptianMilitary])
+    Left errorMessage -> do
+      putStrLn ("FAIL: artillery -> Egyptian military: " <> errorMessage)
+      exitFailure
+
   -- Honest reject tests for the three newer, non-location-for-
   -- institution mechanisms (Container, Producer, Government): each
   -- graph only has the one real edge from its own source, so asking the
@@ -1060,6 +1101,18 @@ main = do
       , [GovernedBy]
       , eswatiniContext waterlooSnapshot
       , gloucesterCathedral
+      )
+    , ( "Novalis's studied poetry correctly rejects Novalis himself (the author, not a work)"
+      , waterlooSnapshot
+      , [Authored]
+      , novalisContext waterlooSnapshot
+      , novalisSource
+      )
+    , ( "artillery correctly rejects rum (belongs to a glass, not the artillery)"
+      , containerSnapshot
+      , [AffiliatedWith]
+      , artilleryContext containerSnapshot
+      , rumEntity
       )
     ]
 

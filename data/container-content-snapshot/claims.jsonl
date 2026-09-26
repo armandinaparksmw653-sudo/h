@@ -28,3 +28,4 @@
 {"property":"P176","source":"LOCAL_MUSIC","target":"LOCAL_BAND"}
 {"property":"P176","source":"LOCAL_POEMS","target":"LOCAL_POET"}
 {"property":"P176","source":"LOCAL_PLAY","target":"LOCAL_PLAYWRIGHT"}
+{"property":"P361","source":"LOCAL_ARTILLERY","target":"LOCAL_EGYPTIAN_MILITARY"}

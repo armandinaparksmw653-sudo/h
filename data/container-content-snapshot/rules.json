@@ -1,1 +1,1 @@
-{"version":"container-content-rules-2","relations":[{"property":"P527","internal":"Contains","direction":"forward"},{"property":"P176","internal":"Produces","direction":"inverse"}],"types":[]}
+{"version":"container-content-rules-3","relations":[{"property":"P527","internal":"Contains","direction":"forward"},{"property":"P176","internal":"Produces","direction":"inverse"},{"property":"P361","internal":"AffiliatedWith","direction":"forward"}],"types":[]}
