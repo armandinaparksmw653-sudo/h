@@ -8,3 +8,4 @@ _build/
 *.pgf
 __pycache__/
 *.pyc
+.pytest_cache/

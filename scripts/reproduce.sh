@@ -25,16 +25,15 @@ require_min_version \
 ./scripts/bootstrap.sh
 make evaluation-test
 make qid-fiber-test
-make contextual-corpus-test
-make contextual-ablations
 make framenet-generated-check
 make formal-artifact
+make report
 
 git diff --exit-code -- \
-  grammar/GeneratedMetonymy.gf \
-  grammar/GeneratedMetonymyEng.gf \
-  data/contextual-gf-actions.json \
-  data/contextual-gf-nouns.json \
-  data/framenet-role-capabilities.json
+  auxiliary/grammar/GeneratedMetonymy.gf \
+  auxiliary/grammar/GeneratedMetonymyEng.gf \
+  auxiliary/data/contextual-gf-actions.json \
+  auxiliary/data/contextual-gf-nouns.json \
+  auxiliary/data/framenet-role-capabilities.json
 
 printf '%s\n' "publication artifact verified"

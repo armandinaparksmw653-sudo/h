@@ -1,7 +1,7 @@
 name: pilot-decode-evaluation
 
 # Manual only: runs the small, checked-in metonymy-*decoding* pilot
-# fixture (evaluation/pilot-decode-wimcor/, two real WiMCor sentences
+# fixture (auxiliary/evaluation/pilot-decode-wimcor/, two real WiMCor sentences
 # each with an explicit correct-answer QID) through the real formal
 # contextual tower, scored with the same exact-QID-in-fiber tool
 # (score_qid_fibers.py) the checked-in silver/audited fixtures use.
@@ -9,7 +9,7 @@ name: pilot-decode-evaluation
 # metonymic reading, does the tower's graph search actually recover the
 # *specific* real-world entity being referred to (not just "yes it's
 # metonymic somehow"), and does Agda accept that derivation? See
-# evaluation/pilot-decode-wimcor/README.md for the two examples and why
+# auxiliary/evaluation/pilot-decode-wimcor/README.md for the two examples and why
 # each source QID is deliberately the literal place, never the answer
 # itself.
 #
@@ -65,14 +65,14 @@ jobs:
         run: ./scripts/reproduce.sh
 
       - name: Install dependency-frontend toolchain (Stanza)
-        run: ./scripts/bootstrap_dependency_frontend.sh
+        run: ./auxiliary/scripts/bootstrap_dependency_frontend.sh
 
       - name: Run the contextual tower on the decode pilot fixture
         run: |
-          python3 scripts/evaluation/run_contextual_corpus.py \
-            --dataset evaluation/pilot-decode-wimcor/pilot-inputs.jsonl \
+          python3 auxiliary/scripts/evaluation/run_contextual_corpus.py \
+            --dataset auxiliary/evaluation/pilot-decode-wimcor/pilot-inputs.jsonl \
             --engine build/metonymy \
-            --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
+            --snapshot auxiliary/evaluation/pilot-decode-wimcor/wikidata-snapshot \
             --workers 2 \
             --allow-failures \
             --print-failures \
@@ -80,16 +80,16 @@ jobs:
 
       - name: Score exact-QID decoding accuracy
         run: |
-          python3 scripts/evaluation/score_qid_fibers.py \
+          python3 auxiliary/scripts/evaluation/score_qid_fibers.py \
             --inference build/evaluation/pilot-decode.tower-inference.jsonl \
-            --gold evaluation/pilot-decode-wimcor/pilot-gold.jsonl \
+            --gold auxiliary/evaluation/pilot-decode-wimcor/pilot-gold.jsonl \
             --output build/evaluation/pilot-decode.tower-report.json
 
       - name: Summarize
         run: |
           {
             echo "## Metonymy-decoding pilot (2 real WiMCor sentences)"
-            echo "See evaluation/pilot-decode-wimcor/README.md for what each row tests."
+            echo "See auxiliary/evaluation/pilot-decode-wimcor/README.md for what each row tests."
             echo '```json'
             python3 -m json.tool "build/evaluation/pilot-decode.tower-report.json"
             echo '```'

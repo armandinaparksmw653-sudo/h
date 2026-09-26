@@ -1,7 +1,7 @@
 name: pilot-curated-evaluation
 
 # Manual only: runs the small, checked-in hand-curated pilot fixture
-# (evaluation/pilot-curated-wimcor/, four real WiMCor sentences whose
+# (auxiliary/evaluation/pilot-curated-wimcor/, four real WiMCor sentences whose
 # metonymy target resolves to one real Wikidata entity) through the real
 # formal contextual tower -- constraint derivation, layered
 # ContextConstraint filtering, Agda-checked runtimeCheck -- to answer
@@ -11,7 +11,7 @@ name: pilot-curated-evaluation
 # runtime and never scans the live Wikidata API -- the fixture and its
 # snapshot are both small, already checked in, and safe (four real
 # sentences reproduced under WiMCor's CC BY-SA 3.0 terms, not a bulk
-# corpus dump; see evaluation/pilot-curated-wimcor/README.md).
+# corpus dump; see auxiliary/evaluation/pilot-curated-wimcor/README.md).
 
 on:
   workflow_dispatch:
@@ -60,14 +60,14 @@ jobs:
         run: ./scripts/reproduce.sh
 
       - name: Install dependency-frontend toolchain (Stanza)
-        run: ./scripts/bootstrap_dependency_frontend.sh
+        run: ./auxiliary/scripts/bootstrap_dependency_frontend.sh
 
       - name: Run the contextual tower on the pilot fixture
         run: |
-          python3 scripts/evaluation/run_contextual_corpus.py \
-            --dataset evaluation/pilot-curated-wimcor/pilot-sentences.jsonl \
+          python3 auxiliary/scripts/evaluation/run_contextual_corpus.py \
+            --dataset auxiliary/evaluation/pilot-curated-wimcor/pilot-sentences.jsonl \
             --engine build/metonymy \
-            --snapshot evaluation/pilot-curated-wimcor/wikidata-snapshot \
+            --snapshot auxiliary/evaluation/pilot-curated-wimcor/wikidata-snapshot \
             --workers 2 \
             --allow-failures \
             --print-failures \
@@ -75,16 +75,16 @@ jobs:
 
       - name: Score metonymic-vs-literal detection
         run: |
-          python3 scripts/evaluation/score_contextual_detection.py \
+          python3 auxiliary/scripts/evaluation/score_contextual_detection.py \
             --inference build/evaluation/pilot-curated.tower-inference.jsonl \
-            --gold evaluation/pilot-curated-wimcor/pilot-gold.jsonl \
+            --gold auxiliary/evaluation/pilot-curated-wimcor/pilot-gold.jsonl \
             --output build/evaluation/pilot-curated.tower-detection-report.json
 
       - name: Summarize
         run: |
           {
             echo "## Hand-curated pilot evaluation (4 real WiMCor sentences)"
-            echo "See evaluation/pilot-curated-wimcor/README.md for what each row is."
+            echo "See auxiliary/evaluation/pilot-curated-wimcor/README.md for what each row is."
             echo '```json'
             python3 -m json.tool "build/evaluation/pilot-curated.tower-detection-report.json"
             echo '```'

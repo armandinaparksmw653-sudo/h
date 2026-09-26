@@ -8,91 +8,99 @@ RGL_PATH = $(RGL_LIB)/alltenses:$(RGL_LIB)/prelude
 
 .PHONY: all grammar formal formal-artifact checker engine test evaluation-test \
 	generated-check verbnet-generated-check verify \
-	framenet-generated-check qid-fiber-test contextual-corpus-test \
-	contextual-ablations reproduce clean
+	framenet-generated-check qid-fiber-test report reproduce clean
 
 all: grammar formal checker engine
 
 grammar:
-	./scripts/generate_gf_lexicon.py
-	$(GF) -path="$(RGL_PATH)" -make grammar/GeneratedMetonymyEng.gf
+	./auxiliary/scripts/generate_gf_lexicon.py
+	$(GF) -path="$(RGL_PATH)" -make auxiliary/grammar/GeneratedMetonymyEng.gf
 
 formal:
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/Soundness.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/PublicationTheorems.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/Contextual.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/ContextualTower.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/ContextualModel.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/FilteredContext.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/CompilerSoundness.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/FilteredRuntime.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/TwoTruncatedContext.agda
-	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal \
-		formal/Metonymy/TwoTruncatedRuntime.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/Soundness.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/PublicationTheorems.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/Contextual.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/ContextualTower.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/ContextualModel.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/FilteredContext.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/CompilerSoundness.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/FilteredRuntime.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/TwoTruncatedContext.agda
+	$(AGDA) $(AGDA_RTS) --safe -i "$(CUBICAL_LIB)" -i formal-verification \
+		formal-verification/Metonymy/TwoTruncatedRuntime.agda
 
 formal-artifact: formal
 	command -v rg >/dev/null || \
 		{ echo "formal-artifact requires ripgrep (rg) to check for postulates" >&2; exit 1; }
 	! rg -n \
 		'(^|[[:space:]])(postulate|TERMINATING|NON_TERMINATING|NO_POSITIVITY)([[:space:]]|$$)' \
-		formal/Metonymy --glob '*.agda'
-	python3 formal/Metonymy/generate_manifest.py --check
+		formal-verification/Metonymy --glob '*.agda'
+	python3 formal-verification/Metonymy/generate_manifest.py --check
 
 checker:
 	mkdir -p build/agda
 	$(AGDA) $(AGDA_RTS) --safe --compile --no-main --compile-dir=build/agda \
 		--ghc-flag=-Wno-star-is-type \
-		-i formal formal/Metonymy/Checker.agda
-	python3 scripts/generate_malonzo_api.py \
+		-i formal-verification formal-verification/Metonymy/Checker.agda
+	python3 auxiliary/scripts/generate_malonzo_api.py \
 		--source build/agda/MAlonzo/Code/Metonymy/Checker.hs \
 		--output build/agda/Metonymy/CheckerAPI.hs
 
 engine: checker
 	mkdir -p build/engine build/test
 	$(GHC) --make -XGHC2021 -XDerivingStrategies -O1 -Wall -Wcompat -Widentities \
-		-iengine/src -ibuild/agda \
+		-itower/engine/src -ibuild/agda \
 		-outputdir build/engine \
-		engine/app/Main.hs \
+		tower/engine/app/Main.hs \
 		-o build/metonymy
 	$(GHC) --make -XGHC2021 -XDerivingStrategies -O1 -Wall -Wcompat -Widentities \
-		-iengine/src -ibuild/agda \
+		-itower/engine/src -ibuild/agda \
+		-outputdir build/engine \
+		tower/engine/app/Report.hs \
+		-o build/metonymy-report
+	$(GHC) --make -XGHC2021 -XDerivingStrategies -O1 -Wall -Wcompat -Widentities \
+		-itower/engine/src -ibuild/agda \
 		-outputdir build/test \
-		engine/test/Main.hs \
+		tower/engine/test/Main.hs \
 		-o build/metonymy-tests
 
 test: all
 	./build/metonymy-tests
 
+report: all
+	mkdir -p build/evaluation
+	./build/metonymy-report --output build/evaluation/tower-report.txt
+
 evaluation-test:
-	python3 -m unittest discover -s tests/evaluation -p 'test_*.py'
+	python3 -m unittest discover -s auxiliary/tests/evaluation -p 'test_*.py'
 
 generated-check:
-	./scripts/generate_gf_lexicon.py
+	./auxiliary/scripts/generate_gf_lexicon.py
 	git diff --exit-code -- \
-		grammar/GeneratedMetonymy.gf \
-		grammar/GeneratedMetonymyEng.gf \
-		data/contextual-gf-actions.json \
-		data/contextual-gf-nouns.json
+		auxiliary/grammar/GeneratedMetonymy.gf \
+		auxiliary/grammar/GeneratedMetonymyEng.gf \
+		auxiliary/data/contextual-gf-actions.json \
+		auxiliary/data/contextual-gf-nouns.json
 
 framenet-generated-check:
-	python3 scripts/generate_framenet_capabilities.py
-	git diff --exit-code -- data/framenet-role-capabilities.json
+	python3 auxiliary/scripts/generate_framenet_capabilities.py
+	git diff --exit-code -- auxiliary/data/framenet-role-capabilities.json
 
 verbnet-generated-check:
-	./scripts/import_verbnet.py
+	./auxiliary/scripts/import_verbnet.py
 	git diff --exit-code -- \
-		data/verbnet-predicates.tsv \
-		data/verbnet-actions.tsv \
-		data/verbnet-action-roles.tsv
+		auxiliary/data/verbnet-predicates.tsv \
+		auxiliary/data/verbnet-actions.tsv \
+		auxiliary/data/verbnet-action-roles.tsv
 
 verify:
 	$(MAKE) test
@@ -100,62 +108,24 @@ verify:
 	$(MAKE) generated-check
 	$(MAKE) framenet-generated-check
 	$(MAKE) qid-fiber-test
+	$(MAKE) report
 
 qid-fiber-test: engine
-	python3 scripts/extract_wikidata_snapshot.py verify \
-		--snapshot data/wikidata-qid-snapshot
-	python3 scripts/evaluation/extract_qid_fibers.py \
-		--dataset evaluation/qid-fiber/waterloo-dataset.jsonl \
+	python3 auxiliary/scripts/extract_wikidata_snapshot.py verify \
+		--snapshot tower/data/wikidata-qid-snapshot
+	python3 auxiliary/scripts/evaluation/extract_qid_fibers.py \
+		--dataset auxiliary/evaluation/qid-fiber/waterloo-dataset.jsonl \
 		--engine build/metonymy \
 		--output build/evaluation/waterloo-contextual-inference.jsonl
-	python3 scripts/evaluation/score_qid_fibers.py \
+	python3 auxiliary/scripts/evaluation/score_qid_fibers.py \
 		--inference build/evaluation/waterloo-contextual-inference.jsonl \
-		--gold evaluation/qid-fiber/waterloo-gold.jsonl \
+		--gold auxiliary/evaluation/qid-fiber/waterloo-gold.jsonl \
 		--output build/evaluation/waterloo-contextual-report.json
-
-contextual-corpus-test: engine
-	python3 scripts/evaluation/run_contextual_corpus.py \
-		--dataset evaluation/contextual-multidomain/silver-inputs.jsonl \
-		--engine build/metonymy \
-		--snapshot data/wikidata-openalex-snapshot \
-		--print-failures \
-		--output build/evaluation/contextual-silver-inference.jsonl
-	python3 scripts/evaluation/score_qid_fibers.py \
-		--inference build/evaluation/contextual-silver-inference.jsonl \
-		--gold evaluation/contextual-multidomain/silver-gold.jsonl \
-		--output build/evaluation/contextual-silver-report.json
-	python3 scripts/evaluation/run_contextual_corpus.py \
-		--dataset evaluation/contextual-multidomain/audited-inputs.jsonl \
-		--engine build/metonymy \
-		--snapshot data/wikidata-openalex-snapshot \
-		--print-failures \
-		--output build/evaluation/contextual-audited-inference.jsonl
-	python3 scripts/evaluation/score_qid_fibers.py \
-		--inference build/evaluation/contextual-audited-inference.jsonl \
-		--gold evaluation/contextual-multidomain/audited-gold.jsonl \
-		--output build/evaluation/contextual-audited-report.json
-	python3 scripts/evaluation/assert_json_equal.py \
-		build/evaluation/contextual-silver-report.json \
-		evaluation/contextual-multidomain/silver-summary.json
-	python3 scripts/evaluation/assert_json_equal.py \
-		build/evaluation/contextual-audited-report.json \
-		evaluation/contextual-multidomain/audited-summary.json
-
-contextual-ablations: engine
-	python3 scripts/evaluation/run_contextual_ablations.py \
-		--dataset evaluation/contextual-multidomain/audited-inputs.jsonl \
-		--gold evaluation/contextual-multidomain/audited-gold.jsonl \
-		--engine build/metonymy \
-		--snapshot data/wikidata-openalex-snapshot \
-		--output-dir build/evaluation/contextual-ablations
-	python3 scripts/evaluation/assert_json_equal.py \
-		build/evaluation/contextual-ablations/comparison.json \
-		evaluation/contextual-multidomain/ablation-summary.json
 
 reproduce:
 	./scripts/reproduce.sh
 
 clean:
 	rm -rf build dist-newstyle
-	rm -f grammar/*.gfo grammar/*.pgf Metonymy.pgf GeneratedMetonymy.pgf
-	rm -f formal/Metonymy/*.agdai
+	rm -f auxiliary/grammar/*.gfo auxiliary/grammar/*.pgf Metonymy.pgf GeneratedMetonymy.pgf
+	rm -f formal-verification/Metonymy/*.agdai

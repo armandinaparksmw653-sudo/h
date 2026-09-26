@@ -5,7 +5,7 @@ name: pilot-decode-direct-evaluation
 # construction, legacy GF-parser fallback -- exactly like a real corpus
 # run), this workflow bypasses all of that and drives the Haskell
 # engine's own `contextual-fiber` CLI command directly against a
-# hand-built scenario TSV (evaluation/pilot-decode-wimcor/pilot-scenarios.tsv,
+# hand-built scenario TSV (auxiliary/evaluation/pilot-decode-wimcor/pilot-scenarios.tsv,
 # the same low-level format Metonymy.ContextSpec reads for the checked-in
 # silver/audited fixtures).
 #
@@ -70,15 +70,15 @@ jobs:
         run: |
           {
             echo "## Direct formal-layer test (bypasses the frontend entirely)"
-            echo "Scenario file: evaluation/pilot-decode-wimcor/pilot-scenarios.tsv"
+            echo "Scenario file: auxiliary/evaluation/pilot-decode-wimcor/pilot-scenarios.tsv"
             echo
             echo "### Baseline (single weak constraint: attend's Prefers HasSort Entity)"
             for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton; do
               echo "#### $scenario"
               echo '```'
               build/metonymy \
-                --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
-                --scenarios evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
+                --snapshot auxiliary/evaluation/pilot-decode-wimcor/wikidata-snapshot \
+                --scenarios auxiliary/evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
                 contextual-fiber "$scenario" || echo "(FAILED -- see message above)"
               echo '```'
             done
@@ -87,8 +87,8 @@ jobs:
               echo "#### $scenario"
               echo '```'
               build/metonymy \
-                --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
-                --scenarios evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
+                --snapshot auxiliary/evaluation/pilot-decode-wimcor/wikidata-snapshot \
+                --scenarios auxiliary/evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
                 contextual-fiber "$scenario" || echo "(FAILED -- see message above)"
               echo '```'
             done
@@ -100,8 +100,8 @@ jobs:
           for scenario in pomona leicester elon amherst tartu stirling valparaiso haifa princeton amherst-with-degree-context valparaiso-with-degree-context haifa-with-degree-context; do
             echo "=== $scenario ===" >> build/evaluation/pilot-decode-direct.txt
             build/metonymy \
-              --snapshot evaluation/pilot-decode-wimcor/wikidata-snapshot \
-              --scenarios evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
+              --snapshot auxiliary/evaluation/pilot-decode-wimcor/wikidata-snapshot \
+              --scenarios auxiliary/evaluation/pilot-decode-wimcor/pilot-scenarios.tsv \
               contextual-fiber "$scenario" >> build/evaluation/pilot-decode-direct.txt 2>&1 || true
           done
 

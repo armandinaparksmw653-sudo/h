@@ -1,5 +1,8 @@
 # Cubical type theory for proof-carrying metonymy
 
+See [`STRUCTURE.md`](STRUCTURE.md) for how this repository is organized
+(`formal-verification/`, `tower/`, `auxiliary/`, `trash/`).
+
 Research prototype positioning metonymy (predicate transfer) as an
 application of **Cubical Agda**: a metonymic reading is a *quotient* of a
 context-indexed fiber of candidate referents by a contextual compatibility
@@ -12,7 +15,7 @@ not a heuristic rewrite. The system combines:
 - a Haskell engine (the **contextual tower**: `Metonymy.Contextual`/
   `ContextualChecked`/`ContextSpec`) that stacks context-derived constraints
   as successive layers, each independently re-verified;
-- Cubical Agda for the higher-inductive quotient (`formal/Metonymy/
+- Cubical Agda for the higher-inductive quotient (`formal-verification/Metonymy/
   FilteredContext.agda`'s `CoarseFiber`), the metonymic path constructor,
   and the compiled `contextLayerCheck` that is the sole authorization
   boundary — nothing Haskell proposes is trusted until Agda accepts it.
@@ -38,7 +41,7 @@ Cupertino signed the commercial agreement.
    BusinessOrganization)
 ```
 
-See [docs/contextual-tower.md](docs/contextual-tower.md) for the full
+See [auxiliary/docs/contextual-tower.md](auxiliary/docs/contextual-tower.md) for the full
 worked history of these and the other curated examples (Haifa, Pisa, UCLA,
 Berklee, Padgate, Winchester, Phoenix, Loughborough, and the synthetic
 multi-domain tower fixtures), including the ones that were searched for and
@@ -110,7 +113,7 @@ RGL_LIB=/path/to/compiled-rgl ./scripts/check.sh
 
 ## Running the tower
 
-Run a hand-built scenario (the Waterloo fixture, `data/contextual-scenarios.tsv`)
+Run a hand-built scenario (the Waterloo fixture, `tower/tower/data/contextual-scenarios.tsv`)
 directly through the compiled Agda checker:
 
 ```bash
@@ -119,48 +122,48 @@ directly through the compiled Agda checker:
 ```
 
 Run a real sentence end to end (GF tree → constraints → tower → Agda), the
-same pipeline the curated examples in `evaluation/pilot-decode-wimcor/` and
-`evaluation/contextual-multidomain/` are verified with:
+same pipeline the curated examples in `auxiliary/evaluation/pilot-decode-wimcor/` and
+`trash/evaluation/contextual-multidomain/` are verified with:
 
 ```bash
-python3 scripts/run_automatic_contextual_pipeline.py \
+python3 auxiliary/scripts/run_automatic_contextual_pipeline.py \
   --engine build/metonymy \
-  --snapshot data/wikidata-openalex-snapshot \
+  --snapshot auxiliary/data/wikidata-openalex-snapshot \
   --sentence "Cupertino signed the commercial agreement" \
   --source Cupertino
 ```
 
 `./build/metonymy parse`/`linearize` remain available as GF-only diagnostic
-commands (no engine/Agda involvement) — see `docs/contextual-tower.md`.
+commands (no engine/Agda involvement) — see `auxiliary/docs/contextual-tower.md`.
 
 **Legacy pipelines**: two earlier, independent engines (a flat
 `open-evaluate`/`open-batch` positional-heuristic frontend, and a separate
 "Automatic" `expand`/`contract`/`list` demo engine with its own hand-written
 knowledge base) have been moved to [`trash/`](trash/) — not deleted, kept
 for reference, but no longer built, tested, or run in CI. See
-`docs/contextual-tower.md`'s cleanup section for exactly what moved and why.
+`auxiliary/docs/contextual-tower.md`'s cleanup section for exactly what moved and why.
 
 ## Knowledge data
 
 The tower resolves entities against a small, hash-verified Wikidata-style
-snapshot (`data/wikidata-qid-snapshot/`, `data/wikidata-openalex-snapshot/`,
-or the fully fictional `data/synthetic-towers-snapshot/` used only for
+snapshot (`tower/data/wikidata-qid-snapshot/`, `auxiliary/auxiliary/data/wikidata-openalex-snapshot/`,
+or the fully fictional `tower/data/synthetic-towers-snapshot/` used only for
 engine-level mechanism tests) — 5 files each (`entities.jsonl`,
 `aliases.jsonl`, `claims.jsonl`, `rules.json`, `manifest.json`), verified by
 `extract_wikidata_snapshot.py verify` before every use. It also loads:
 
 ```text
-data/predicates.tsv            hand-audited argument types for a small verb set
+auxiliary/data/predicates.tsv            hand-audited argument types for a small verb set
 data/verbnet-predicates.tsv    imported VerbNet selectional preferences
 data/verbnet-actions.tsv       sense-preserving VerbNet action identities
 data/verbnet-action-roles.tsv  structured Action×Role requirements
-data/contextual-context-triggers.json  (lemma, tree-relation) → constraint
+auxiliary/data/contextual-context-triggers.json  (lemma, tree-relation) → constraint
 data/contextual-language-rules.json    morphology, composition, frame rules
 data/wordnet-context-rules.json        lexical/adjective sort mappings
 ```
 
 Adding a manually audited verb is a data operation: add its GF expression
-and argument types to `data/predicates.tsv`, then run `make grammar`. The
+and argument types to `auxiliary/data/predicates.tsv`, then run `make grammar`. The
 open frontend also indexes every executable subject/object realization in
 the pinned VerbNet Action×Role snapshot. Multiple senses are preserved and
 searched rather than collapsed to one lemma-level row.
@@ -182,7 +185,7 @@ licensing, and extraction policy.
 
 ## Formal model
 
-`formal/Metonymy/Core.agda` defines:
+`formal-verification/Metonymy/Core.agda` defines:
 
 ```text
 BridgePath     directed semantic transitions
@@ -195,13 +198,13 @@ Derivation     implicit and explicit grammatical derivations
 metonymy       a path from the implicit to an explicit derivation
 ```
 
-`formal/Metonymy/Soundness.agda` checks:
+`formal-verification/Metonymy/Soundness.agda` checks:
 
 - admissible fine meanings have the same compressed image;
 - the original fine meaning remains an expansion after contraction;
 - metonymic paths are preserved by grammatical contexts.
 
-`formal/Metonymy/Checker.agda` is the executable trusted kernel. It
+`formal-verification/Metonymy/Checker.agda` is the executable trusted kernel. It
 independently checks:
 
 ```text
@@ -230,7 +233,7 @@ certificates but cannot authorize one.
 The strengthened publication-oriented development—raw grammar, directed
 bridges, coherent 2-cells, witnessed compression, semantic factorization,
 checker reflection, preference promotion, conservativity, and
-non-collapse—is indexed in `formal/Metonymy/PublicationTheorems.agda`.
+non-collapse—is indexed in `formal-verification/Metonymy/PublicationTheorems.agda`.
 See [docs/mathematics.md](docs/mathematics.md) for the exact theorem-to-file
 map and assumptions, and [docs/main-theorem.md](docs/main-theorem.md) for a
 concise statement of the main theorem (contextual homotopy fiber, filtered
@@ -238,8 +241,8 @@ family, proof-carrying paths, decidable lifting, safe contraction) with its
 scope explicitly bounded.
 
 The self-contained formal source directory is
-[`formal/Metonymy`](formal/Metonymy). Its publication-facing theorem index is
-[`formal/Metonymy/THEOREMS.md`](formal/Metonymy/THEOREMS.md); verify all source
+[`formal-verification/Metonymy`](formal-verification/Metonymy). Its publication-facing theorem index is
+[`formal-verification/Metonymy/THEOREMS.md`](formal-verification/Metonymy/THEOREMS.md); verify all source
 hashes and safe Agda checks with:
 
 ```bash
@@ -259,7 +262,7 @@ make reproduce
 CI runs the same command. Exact commits and artifact hashes are recorded in
 [`toolchain.lock.json`](toolchain.lock.json); third-party terms are listed
 in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The paper-facing
-claim map is [`docs/claims.md`](docs/claims.md).
+claim map is [`formal-verification/claims.md`](formal-verification/claims.md).
 
 ## Current scope
 
@@ -268,8 +271,8 @@ metonymy, not a general semantic parser and not a metonymy detector. The
 GF grammar covers a bounded set of English constructions (SVO, adjective+
 noun composition, a closed set of prepositions, relative clauses); a
 sentence outside that coverage is declined, not guessed at. Every
-constraint that reaches the tower — whether from `data/predicates.tsv`,
-imported VerbNet preferences, or `data/contextual-context-triggers.json`'s
+constraint that reaches the tower — whether from `auxiliary/data/predicates.tsv`,
+imported VerbNet preferences, or `auxiliary/data/contextual-context-triggers.json`'s
 (lemma, construction) dictionary — is `Requires` or `Prefers` labeled with
 honest, per-entry provenance (real corpus + live Wikidata verification
 where done, explicitly marked synthetic where not); only `Requires`
@@ -279,12 +282,12 @@ the compiled Agda `contextLayerCheck`.
 Candidate ranking is deterministic; there is no statistical or LLM scorer
 establishing formal admissibility anywhere in the trusted path (an LLM can
 propose a *tree structure* as a third, untrusted GF-tree-source tier — see
-`scripts/llm_propose_clause_structure.py` — but never a constraint or a
+`auxiliary/scripts/llm_propose_clause_structure.py` — but never a constraint or a
 certificate).
 
 ## Waterloo fixture walkthrough
 
-`data/contextual-scenarios.tsv`'s one hand-written scenario illustrates the
+`tower/tower/data/contextual-scenarios.tsv`'s one hand-written scenario illustrates the
 tower's stage-by-stage narrowing end to end:
 
 ```bash
