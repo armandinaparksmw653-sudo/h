@@ -69,3 +69,5 @@ york-attend	Q42462	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|re
 dundee-attend	Q2357511	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:dundee-attend
 glasgow-attend	Q55934339	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:glasgow-attend
 denver-attend	Q16554	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:denver-attend
+aberystwyth-offer	Q213154	offer	SubjectHole	1	InstitutionOf	Verb|offer|offers|12|18|requires|HasSort University|wimcor:real:aberystwyth-offers-degree
+york-publish	Q42462	publish	SubjectHole	1	InstitutionOf	Verb|publish|publishes|5|14|requires|HasSort University|wimcor:real:york-publishes-study

@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 70)
+    (length loadedContextScenarios == 72)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -607,6 +607,37 @@ main = do
     , ("dundee-attend", "Q1249005")
     , ("glasgow-attend", "Q192775")
     , ("denver-attend", "Q519427")
+    ]
+
+  -- Diversity pass 2: two real-verb variants (offer/publish, new V2s,
+  -- verified against the local gf.exe/pinned gf-rgl build) instead of
+  -- the uniform "has a campus" template -- each grounded in the actual
+  -- real WiMCor sentence for that place ("Aber offers a degree scheme",
+  -- "David Jesson of York published a series of annual studies"), not
+  -- just reapplied to more places without that backing.
+  mapM_
+    ( \(name, university) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real university, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [university])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("aberystwyth-offer", "Q319761")
+    , ("york-publish", "Q967165")
     ]
 
   assert

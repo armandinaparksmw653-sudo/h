@@ -245,6 +245,8 @@ abstract Metonymy = {
     Mark : V2 ;
     Empty : V2 ;
     Attend : V2 ;
+    Offer : V2 ;
+    Publish : V2 ;
     -- Study/Review/Translate/Eat/ListenTo/Watch/Wear/Hear deliberately
     -- NOT declared here: scripts/generate_gf_lexicon.py already emits a
     -- `fun X : V2` (and its `mkV2 "..."` linearization, straight from
