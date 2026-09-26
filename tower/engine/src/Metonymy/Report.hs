@@ -23,7 +23,7 @@ module Metonymy.Report
   , reconstructSentence
   ) where
 
-import Data.List (sortOn)
+import Data.List (intercalate, sortOn)
 import Metonymy.Contextual
 import Metonymy.ContextualChecked (ContextualContraction (..))
 import Metonymy.Ontology (KnowledgeBase, entityLabel, lookupEntity)
@@ -47,7 +47,7 @@ renderStage formalFiltering render stage =
       <> " constraint="
       <> maybe "graph-related" renderConstraint (stageConstraint stage)
   , "  survivors="
-      <> show (map (render . fineTarget . contextualFineMeaning) (stageCandidates stage))
+      <> bracketed (map (render . fineTarget . contextualFineMeaning) (stageCandidates stage))
   , "  agda-layer-check="
       <> if formalFiltering then "true" else "disabled"
   ]
@@ -56,7 +56,7 @@ renderStage formalFiltering render stage =
       Just constraint
         | payloadIsPreference (constraintPayload constraint) ->
             [ "  preferred="
-                <> show
+                <> bracketed
                   ( map
                       (render . fineTarget . contextualFineMeaning)
                       (stagePreferredCandidates stage)
@@ -66,6 +66,14 @@ renderStage formalFiltering render stage =
                 (("  preference-miss=" <>) . show)
                 (stagePreferenceMisses stage)
       _ -> []
+
+-- | Renders a list of already-rendered entity strings as a bracketed,
+-- comma-joined list with no quoting -- "[Q1,Q2]", not "[\"Q1\",\"Q2\"]".
+-- 'show' on '[String]' would add per-element quotes (Haskell's String
+-- Show instance), which the CLI's original '[EntityId]' rendering never
+-- had (its custom 'Show EntityId' instance is just the bare id).
+bracketed :: [String] -> String
+bracketed xs = "[" <> intercalate "," xs <> "]"
 
 renderConstraint :: ContextConstraint -> String
 renderConstraint constraint =
@@ -91,7 +99,7 @@ renderContractionStage formalFiltering render stage =
       <> " constraint="
       <> maybe "graph-related" renderConstraint (stageConstraint stage)
   , "  survivors="
-      <> show (map render (stageTargets stage))
+      <> bracketed (map render (stageTargets stage))
   , "  agda-layer-check="
       <> if formalFiltering then "true" else "disabled"
   ]
@@ -99,7 +107,7 @@ renderContractionStage formalFiltering render stage =
       Just constraint
         | payloadIsPreference (constraintPayload constraint) ->
             [ "  preferred="
-                <> show
+                <> bracketed
                   ( map
                       (render . fineTarget . contextualFineMeaning)
                       (stagePreferredCandidates stage)
