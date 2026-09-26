@@ -64,15 +64,22 @@ Sample output shape, one block per example:
 
 ```
 === waterloo (flagship) ===
-source=Q639408 action=announce role=SubjectHole
+sentence="Waterloo announced a programme in physics"
+source=Waterloo (Q639408) action=announce role=SubjectHole
 stage=0 constraint=graph-related
   survivors=[...]
   agda-layer-check=true
 stage=1 constraint=Requires (AnyOf [...])@announce
-  survivors=[Q1049470,Q2004561]
+  survivors=[University of Waterloo (Q1049470),Perimeter Institute (Q2004561)]
   agda-layer-check=true
 ...
 ```
+
+The `sentence=` line is reconstructed directly from the Context's own
+LexicalTree (every anchor's surface form, in source order) -- the same
+lexicalized representation the formal checker verifies against, not a
+separately-maintained transcription that could drift from it. Entity
+ids are rendered with their real snapshot label alongside the QID.
 
 ## The 123-example database
 

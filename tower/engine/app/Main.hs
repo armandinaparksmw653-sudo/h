@@ -49,7 +49,7 @@ runContextualFiber formalFiltering snapshot scenario =
     Left message -> die ("contextual fiber failed: " <> message)
     Right stages -> do
       putStrLn ("graph_sha256=" <> snapshotHash snapshot)
-      mapM_ putStrLn (renderFiberReport formalFiltering context stages)
+      mapM_ putStrLn (renderFiberReport formalFiltering (snapshotKnowledgeBase snapshot) context stages)
   where
     context = contextScenarioContext scenario
     allowedRelations = contextScenarioRelations scenario
@@ -87,7 +87,7 @@ runContextualContraction formalFiltering snapshot scenario target =
       die ("contextual contraction rejected: " <> message)
     Right result -> do
       putStrLn ("graph_sha256=" <> snapshotHash snapshot)
-      mapM_ putStrLn (renderContractionReport formalFiltering result)
+      mapM_ putStrLn (renderContractionReport formalFiltering (snapshotKnowledgeBase snapshot) result)
 
 runParse :: String -> IO ()
 runParse sentence = do
