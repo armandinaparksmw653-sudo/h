@@ -24,7 +24,7 @@ import Metonymy.ContextSpec
 import Metonymy.Contextual
 import Metonymy.ContextualChecked
 import Metonymy.ExampleDatabase
-import Metonymy.Report (reconstructSentence, renderFiberReport)
+import Metonymy.Report (reconstructSentence, renderFiberReportLabeled)
 import Metonymy.Snapshot
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -106,7 +106,7 @@ renderExample qidSnapshot containerSnapshot entryValue =
         Nothing ->
           case contextualFiberChecked snapshot relations depth context of
             Left message -> (Left message, False)
-            Right stages -> (Right (renderFiberReport True kb context stages), True)
+            Right stages -> (Right (renderFiberReportLabeled True kb context stages), True)
         Just target ->
           case contextualContractionChecked snapshot relations depth context target of
             Left message ->
@@ -152,7 +152,7 @@ renderScenario snapshot scenario =
         (contextScenarioMaxDepth scenario)
         context of
         Left message -> (Left message, False)
-        Right stages -> (Right (renderFiberReport True kb context stages), True)
+        Right stages -> (Right (renderFiberReportLabeled True kb context stages), True)
 
 outputPath :: [String] -> Maybe String
 outputPath ("--output" : path : _) = Just path

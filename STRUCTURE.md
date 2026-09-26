@@ -31,7 +31,11 @@ pipeline consumes (`auxiliary/data/`), small real-corpus regression
 fixtures (`auxiliary/evaluation/pilot-*`, `auxiliary/evaluation/
 qid-fiber/`), and the Python test suite for all of it
 (`auxiliary/tests/`). None of this needs to compile or check for
-`formal-verification/` or `tower/` to be valid.
+`formal-verification/` or `tower/` to be valid. It tests a separate,
+earlier research direction — the automatic Stanza-based frontend, not
+the curated 123-example publication database — and is not required to
+verify the formal-verification contribution; see `trash/.github/
+workflows/` below for the workflows that used to run it in CI.
 
 ## Root-level orchestration
 
