@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 60)
+    (length loadedContextScenarios == 70)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -567,6 +567,46 @@ main = do
     , ("salamanca-university", "Q308963")
     , ("auburn-university", "Q540672")
     , ("denver-university", "Q519427")
+    ]
+
+  -- Diversity pass 1: ten ObjectHole variants of already-verified
+  -- University-of-X places ("he attends X", new Attend V2, verified
+  -- against the local gf.exe/pinned gf-rgl build first), reusing the
+  -- same real QIDs -- the resolution mechanism does not consult
+  -- contextRole at all, so this specifically tests hole-role diversity
+  -- (every scale-tier example so far was SubjectHole) rather than
+  -- re-verifying anything about the underlying graph.
+  mapM_
+    ( \(name, university) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " (ObjectHole) contracts uniquely to its real university, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [university])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("houston-attend", "Q1472358")
+    , ("exeter-attend", "Q1414861")
+    , ("rochester-attend", "Q149990")
+    , ("pisa-attend", "Q645663")
+    , ("guadalajara-attend", "Q164028")
+    , ("wellesley-attend", "Q49205")
+    , ("york-attend", "Q967165")
+    , ("dundee-attend", "Q1249005")
+    , ("glasgow-attend", "Q192775")
+    , ("denver-attend", "Q519427")
     ]
 
   assert

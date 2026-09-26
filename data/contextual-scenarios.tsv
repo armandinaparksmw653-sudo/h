@@ -59,3 +59,13 @@ heidelberg-university	Q2966	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|
 salamanca-university	Q15695	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|16|22|requires|HasSort University|wimcor:real:salamanca-university-campus
 auburn-university	Q79728	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:auburn-university-campus
 denver-university	Q16554	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:denver-university-campus
+houston-attend	Q16555	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:houston-attend
+exeter-attend	Q21886091	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:exeter-attend
+rochester-attend	Q49218	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:rochester-attend
+pisa-attend	Q13375	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:pisa-attend
+guadalajara-attend	Q9022	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:guadalajara-attend
+wellesley-attend	Q533317	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:wellesley-attend
+york-attend	Q42462	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:york-attend
+dundee-attend	Q2357511	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:dundee-attend
+glasgow-attend	Q55934339	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:glasgow-attend
+denver-attend	Q16554	attend	ObjectHole	1	InstitutionOf	Verb|attend|attends|3|10|requires|HasSort University|wimcor:real:denver-attend
