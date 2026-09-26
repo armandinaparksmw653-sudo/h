@@ -58,6 +58,8 @@ module Metonymy.ContainerContent
   , bandContext
   , poetContext
   , playwrightContext
+  , journalistContext
+  , philosopherContext
   , glassEntity
   , rumEntity
   , cartonEntity
@@ -111,6 +113,10 @@ module Metonymy.ContainerContent
   , poemsEntity
   , playwrightEntity
   , playEntity
+  , journalistEntity
+  , articlesEntity
+  , philosopherEntity
+  , theoryEntity
   ) where
 
 import Metonymy.Contextual
@@ -382,13 +388,24 @@ producerContext snapshot source verbLemma verbSurface noun =
     , contextRuleProvenance = ["local:selectional-lexicon"]
     }
 
-pianistContext, bandContext, poetContext, playwrightContext :: Snapshot -> Context
+-- Scale-tier diversity: two more real ConMeC PRODUCER-category
+-- sentences, each a different verb/family from the four above --
+-- "As the forerunner of today's popular advice columnists, Dix was
+-- America's highest paid and most widely read female journalist at the
+-- time of her death" (reading a journalist -> reading her columns, not
+-- literally the person) and "Avicenna's commentaries on Aristotle often
+-- criticized the philosopher, encouraging a lively debate in the spirit
+-- of ijtihad" (criticizing a philosopher -> criticizing his theory, not
+-- literally the long-dead person).
+pianistContext, bandContext, poetContext, playwrightContext, journalistContext, philosopherContext :: Snapshot -> Context
 pianistContext snapshot = producerContext snapshot pianistEntity "hear" "hears" "pianist"
 bandContext snapshot = producerContext snapshot bandEntity "hear" "hears" "band"
 poetContext snapshot = producerContext snapshot poetEntity "read" "reads" "poet"
 playwrightContext snapshot = producerContext snapshot playwrightEntity "read" "reads" "playwright"
+journalistContext snapshot = producerContext snapshot journalistEntity "read" "reads" "journalist"
+philosopherContext snapshot = producerContext snapshot philosopherEntity "criticize" "criticizes" "philosopher"
 
-pianistEntity, performanceEntity, bandEntity, musicEntity, poetEntity, poemsEntity, playwrightEntity, playEntity :: EntityId
+pianistEntity, performanceEntity, bandEntity, musicEntity, poetEntity, poemsEntity, playwrightEntity, playEntity, journalistEntity, articlesEntity, philosopherEntity, theoryEntity :: EntityId
 pianistEntity = EntityId "LOCAL_PIANIST"
 performanceEntity = EntityId "LOCAL_PERFORMANCE"
 bandEntity = EntityId "LOCAL_BAND"
@@ -397,3 +414,7 @@ poetEntity = EntityId "LOCAL_POET"
 poemsEntity = EntityId "LOCAL_POEMS"
 playwrightEntity = EntityId "LOCAL_PLAYWRIGHT"
 playEntity = EntityId "LOCAL_PLAY"
+journalistEntity = EntityId "LOCAL_JOURNALIST"
+articlesEntity = EntityId "LOCAL_ARTICLES"
+philosopherEntity = EntityId "LOCAL_PHILOSOPHER"
+theoryEntity = EntityId "LOCAL_THEORY"

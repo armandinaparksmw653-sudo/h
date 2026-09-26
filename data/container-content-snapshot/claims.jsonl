@@ -31,3 +31,10 @@
 {"property":"P361","source":"LOCAL_ARTILLERY","target":"LOCAL_EGYPTIAN_MILITARY"}
 {"property":"P828","source":"LOCAL_TRUMPET","target":"LOCAL_TRUMPET_SOUND"}
 {"property":"P1269","source":"LOCAL_BRASS","target":"LOCAL_BRASS_SECTION"}
+{"property":"P828","source":"LOCAL_SIREN","target":"LOCAL_SIREN_SOUND"}
+{"property":"P828","source":"LOCAL_ORGAN","target":"LOCAL_ORGAN_SOUND"}
+{"property":"P828","source":"LOCAL_HORN","target":"LOCAL_HORN_SOUND"}
+{"property":"P361","source":"LOCAL_NORTH_KOREAN_ARTILLERY","target":"LOCAL_NORTH_KOREAN_MILITARY"}
+{"property":"P361","source":"LOCAL_CONFEDERATE_ARTILLERY","target":"LOCAL_CONFEDERATE_ARMY"}
+{"property":"P176","source":"LOCAL_ARTICLES","target":"LOCAL_JOURNALIST"}
+{"property":"P176","source":"LOCAL_THEORY","target":"LOCAL_PHILOSOPHER"}

@@ -57,3 +57,17 @@
 {"id":"LOCAL_TRUMPET_SOUND","labels":["the sound of the trumpet"]}
 {"id":"LOCAL_BRASS","labels":["the brass"]}
 {"id":"LOCAL_BRASS_SECTION","labels":["the brass section"]}
+{"id":"LOCAL_SIREN","labels":["a siren"]}
+{"id":"LOCAL_SIREN_SOUND","labels":["the sound of the siren"]}
+{"id":"LOCAL_ORGAN","labels":["the organ"]}
+{"id":"LOCAL_ORGAN_SOUND","labels":["the sound of the organ"]}
+{"id":"LOCAL_HORN","labels":["a horn"]}
+{"id":"LOCAL_HORN_SOUND","labels":["the sound of the horn"]}
+{"id":"LOCAL_NORTH_KOREAN_ARTILLERY","labels":["North Korean artillery"]}
+{"id":"LOCAL_NORTH_KOREAN_MILITARY","labels":["the North Korean military"]}
+{"id":"LOCAL_CONFEDERATE_ARTILLERY","labels":["Confederate artillery"]}
+{"id":"LOCAL_CONFEDERATE_ARMY","labels":["the Confederate States Army"]}
+{"id":"LOCAL_JOURNALIST","labels":["the journalist"]}
+{"id":"LOCAL_ARTICLES","labels":["her columns"]}
+{"id":"LOCAL_PHILOSOPHER","labels":["the philosopher"]}
+{"id":"LOCAL_THEORY","labels":["his theory"]}

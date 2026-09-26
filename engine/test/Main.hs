@@ -1034,9 +1034,10 @@ main = do
       putStrLn ("FAIL: orchestra -> symphony: " <> errorMessage)
       exitFailure
 
-  -- Scale-tier diversity pass 3: four more real ConMeC PRODUCER
-  -- examples, split between "hear" (performers) and "read" (writers) --
-  -- see Metonymy.ContainerContent's module docstring.
+  -- Scale-tier diversity pass 3 (+4): six real ConMeC PRODUCER
+  -- examples, split between "hear" (performers), "read" (writers), and
+  -- "criticize" (philosopher) -- see Metonymy.ContainerContent's module
+  -- docstring.
   mapM_
     ( \(label, context, expected) ->
         case contextualFiberChecked containerSnapshot [Produces] 1 context of
@@ -1052,39 +1053,57 @@ main = do
     , ("band -> music", bandContext containerSnapshot, musicEntity)
     , ("poet -> poems", poetContext containerSnapshot, poemsEntity)
     , ("playwright -> play", playwrightContext containerSnapshot, playEntity)
+    , ("journalist -> articles", journalistContext containerSnapshot, articlesEntity)
+    , ("philosopher -> theory", philosopherContext containerSnapshot, theoryEntity)
     ]
 
-  -- First real, corpus-attested Part-for-whole (synecdoche) example (see
-  -- Metonymy.PartWhole): "Egyptian artillery shelled the Israeli bridge
-  -- over the canal..." (real ConMeC METONYMIC/POSSESSED-category
-  -- sentence, target word "artillery"). A third distinct transfer
-  -- mechanism (AffiliatedWith, not InstitutionOf/GovernedBy or
-  -- Contains/Produces); exactly one real affiliation edge, so this
-  -- narrows to a unique candidate through the graph walk alone.
-  case contextualFiberChecked containerSnapshot [AffiliatedWith] 1 (artilleryContext containerSnapshot) of
-    Right stages ->
-      assert
-        "artillery -> the Egyptian military, Agda-checked"
-        (map unEntityId (stageTargets (last stages)) == [unEntityId egyptianMilitary])
-    Left errorMessage -> do
-      putStrLn ("FAIL: artillery -> Egyptian military: " <> errorMessage)
-      exitFailure
+  -- Real, corpus-attested Part-for-whole (synecdoche) examples (see
+  -- Metonymy.PartWhole): flagship "Egyptian artillery shelled the
+  -- Israeli bridge over the canal...", plus two more real, historically
+  -- distinct sentences (the 2010 Bombardment of Yeonpyeong; a Civil War
+  -- battle account). A third distinct transfer mechanism
+  -- (AffiliatedWith, not InstitutionOf/GovernedBy or Contains/Produces);
+  -- each has exactly one real affiliation edge, so each narrows to a
+  -- unique candidate through the graph walk alone.
+  mapM_
+    ( \(label, context, expected) ->
+        case contextualFiberChecked containerSnapshot [AffiliatedWith] 1 context of
+          Right stages ->
+            assert
+              (label <> ", Agda-checked")
+              (map unEntityId (stageTargets (last stages)) == [unEntityId expected])
+          Left errorMessage -> do
+            putStrLn ("FAIL: " <> label <> ": " <> errorMessage)
+            exitFailure
+    )
+    [ ("artillery -> the Egyptian military", artilleryContext containerSnapshot, egyptianMilitary)
+    , ("North Korean artillery -> the North Korean military", northKoreanArtilleryContext containerSnapshot, northKoreanMilitary)
+    , ("Confederate artillery -> the Confederate States Army", confederateArtilleryContext containerSnapshot, confederateArmy)
+    ]
 
-  -- First real, corpus-attested Cause-for-effect example (see
-  -- Metonymy.CauseEffect): "A trumpet is also heard in the song right
-  -- after this line is sung" (real ConMeC METONYMIC/CAUSER-category
-  -- sentence). A fourth distinct transfer mechanism (Causes, not
-  -- InstitutionOf/GovernedBy, Contains/Produces, or AffiliatedWith);
-  -- exactly one real causal edge, so this narrows to a unique candidate
-  -- through the graph walk alone.
-  case contextualFiberChecked containerSnapshot [Causes] 1 (trumpetContext containerSnapshot) of
-    Right stages ->
-      assert
-        "trumpet -> the sound of the trumpet, Agda-checked"
-        (map unEntityId (stageTargets (last stages)) == [unEntityId trumpetSound])
-    Left errorMessage -> do
-      putStrLn ("FAIL: trumpet -> trumpet sound: " <> errorMessage)
-      exitFailure
+  -- Real, corpus-attested Cause-for-effect examples (see
+  -- Metonymy.CauseEffect): flagship "A trumpet is also heard in the
+  -- song right after this line is sung", plus three more real
+  -- sentences (siren/organ/horn). A fourth distinct transfer mechanism
+  -- (Causes, not InstitutionOf/GovernedBy, Contains/Produces, or
+  -- AffiliatedWith); each has exactly one real causal edge, so each
+  -- narrows to a unique candidate through the graph walk alone.
+  mapM_
+    ( \(label, context, expected) ->
+        case contextualFiberChecked containerSnapshot [Causes] 1 context of
+          Right stages ->
+            assert
+              (label <> ", Agda-checked")
+              (map unEntityId (stageTargets (last stages)) == [unEntityId expected])
+          Left errorMessage -> do
+            putStrLn ("FAIL: " <> label <> ": " <> errorMessage)
+            exitFailure
+    )
+    [ ("trumpet -> the sound of the trumpet", trumpetContext containerSnapshot, trumpetSound)
+    , ("siren -> the sound of the siren", sirenContext containerSnapshot, sirenSound)
+    , ("organ -> the sound of the organ", organContext containerSnapshot, organSound)
+    , ("horn -> the sound of the horn", hornContext containerSnapshot, hornSound)
+    ]
 
   -- First real, corpus-attested Material-for-object example (see
   -- Metonymy.MaterialObject): "...the brass play a citation of the Jazz
