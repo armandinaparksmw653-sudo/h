@@ -3,6 +3,7 @@ name: publication-artifact
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -39,3 +40,11 @@ jobs:
 
       - name: Verify publication artifact
         run: ./scripts/reproduce.sh
+
+      - name: Upload the full 123-example tower report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tower-report
+          path: build/evaluation/tower-report.txt
+          retention-days: 30
