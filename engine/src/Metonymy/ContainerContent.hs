@@ -54,6 +54,10 @@ module Metonymy.ContainerContent
   , caskContext
   , containerContext2
   , potContext
+  , pianistContext
+  , bandContext
+  , poetContext
+  , playwrightContext
   , glassEntity
   , rumEntity
   , cartonEntity
@@ -99,6 +103,14 @@ module Metonymy.ContainerContent
   , liquidEntity
   , potEntity
   , stewEntity
+  , pianistEntity
+  , performanceEntity
+  , bandEntity
+  , musicEntity
+  , poetEntity
+  , poemsEntity
+  , playwrightEntity
+  , playEntity
   ) where
 
 import Metonymy.Contextual
@@ -332,3 +344,56 @@ container2Entity = EntityId "LOCAL_CONTAINER"
 liquidEntity = EntityId "LOCAL_LIQUID"
 potEntity = EntityId "LOCAL_POT"
 stewEntity = EntityId "LOCAL_STEW"
+
+-- Scale-tier diversity pass 3: four more real ConMeC PRODUCER examples
+-- (the same mechanism as orchestra -> symphony, not container-for-
+-- content), splitting between the two verbs the real sentences actually
+-- use: "hear" for performers ("I have never heard such a pianist
+-- before...", "the great Earl Hines band") and the base grammar's own
+-- "Read" V2 for writers ("he studied the Romantic poet Novalis",
+-- "cited the playwright Trevor Griffiths") -- the same Producer graph
+-- shape (Contains a real P176 producer->product edge), reached through
+-- two different real verbs rather than always "hear".
+producerContext :: Snapshot -> EntityId -> String -> String -> String -> Context
+producerContext snapshot source verbLemma verbSurface noun =
+  Context
+    { contextTree =
+        LexicalApply
+          "Pred"
+          [ LexicalLeaf (anchor "HePN" "he" "he" 0 2) []
+          , LexicalApply
+              "Compl"
+              [ LexicalLeaf
+                  (anchor "Verb" verbLemma verbSurface 3 8)
+                  [Prefers (HasSort Entity)]
+              , LexicalLeaf (anchor "Noun" noun noun 13 (13 + length noun)) []
+              ]
+          ]
+    , contextSnapshotHash = snapshotHash snapshot
+    , contextSource = source
+    , contextAction = verbLemma
+    , contextRole = ObjectHole
+    , contextConstraints =
+        [ ContextConstraint
+            (anchor "Verb" verbLemma verbSurface 3 8)
+            (Prefers (HasSort Entity))
+            "local:selectional-lexicon"
+        ]
+    , contextRuleProvenance = ["local:selectional-lexicon"]
+    }
+
+pianistContext, bandContext, poetContext, playwrightContext :: Snapshot -> Context
+pianistContext snapshot = producerContext snapshot pianistEntity "hear" "hears" "pianist"
+bandContext snapshot = producerContext snapshot bandEntity "hear" "hears" "band"
+poetContext snapshot = producerContext snapshot poetEntity "read" "reads" "poet"
+playwrightContext snapshot = producerContext snapshot playwrightEntity "read" "reads" "playwright"
+
+pianistEntity, performanceEntity, bandEntity, musicEntity, poetEntity, poemsEntity, playwrightEntity, playEntity :: EntityId
+pianistEntity = EntityId "LOCAL_PIANIST"
+performanceEntity = EntityId "LOCAL_PERFORMANCE"
+bandEntity = EntityId "LOCAL_BAND"
+musicEntity = EntityId "LOCAL_MUSIC"
+poetEntity = EntityId "LOCAL_POET"
+poemsEntity = EntityId "LOCAL_POEMS"
+playwrightEntity = EntityId "LOCAL_PLAYWRIGHT"
+playEntity = EntityId "LOCAL_PLAY"

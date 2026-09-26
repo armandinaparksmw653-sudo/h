@@ -24,3 +24,7 @@
 {"property":"P527","source":"LOCAL_CONTAINER","target":"LOCAL_LIQUID"}
 {"property":"P527","source":"LOCAL_POT","target":"LOCAL_STEW"}
 {"property":"P176","source":"LOCAL_SYMPHONY","target":"LOCAL_ORCHESTRA"}
+{"property":"P176","source":"LOCAL_PERFORMANCE","target":"LOCAL_PIANIST"}
+{"property":"P176","source":"LOCAL_MUSIC","target":"LOCAL_BAND"}
+{"property":"P176","source":"LOCAL_POEMS","target":"LOCAL_POET"}
+{"property":"P176","source":"LOCAL_PLAY","target":"LOCAL_PLAYWRIGHT"}

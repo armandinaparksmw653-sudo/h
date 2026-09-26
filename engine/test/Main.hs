@@ -1007,6 +1007,26 @@ main = do
       putStrLn ("FAIL: orchestra -> symphony: " <> errorMessage)
       exitFailure
 
+  -- Scale-tier diversity pass 3: four more real ConMeC PRODUCER
+  -- examples, split between "hear" (performers) and "read" (writers) --
+  -- see Metonymy.ContainerContent's module docstring.
+  mapM_
+    ( \(label, context, expected) ->
+        case contextualFiberChecked containerSnapshot [Produces] 1 context of
+          Right stages ->
+            assert
+              (label <> " narrows to its one real product, Agda-checked")
+              (map unEntityId (stageTargets (last stages)) == [unEntityId expected])
+          Left errorMessage -> do
+            putStrLn ("FAIL: " <> label <> ": " <> errorMessage)
+            exitFailure
+    )
+    [ ("pianist -> performance", pianistContext containerSnapshot, performanceEntity)
+    , ("band -> music", bandContext containerSnapshot, musicEntity)
+    , ("poet -> poems", poetContext containerSnapshot, poemsEntity)
+    , ("playwright -> play", playwrightContext containerSnapshot, playEntity)
+    ]
+
   -- Honest reject tests for the three newer, non-location-for-
   -- institution mechanisms (Container, Producer, Government): each
   -- graph only has the one real edge from its own source, so asking the
