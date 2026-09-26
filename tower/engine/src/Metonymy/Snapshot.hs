@@ -42,7 +42,7 @@ loadSnapshot directory = do
   (verificationStatus, _, verificationError) <-
     readProcessWithExitCode
       "python3"
-      [ "scripts/extract_wikidata_snapshot.py"
+      [ "auxiliary/scripts/extract_wikidata_snapshot.py"
       , "verify"
       , "--snapshot"
       , directory
