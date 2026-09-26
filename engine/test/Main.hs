@@ -184,7 +184,7 @@ main = do
     (lookup "Waterloo" waterlooAliases == Just (EntityId "Q639408"))
   assert
     "contextual scenario file has the expected number of rows"
-    (length loadedContextScenarios == 51)
+    (length loadedContextScenarios == 60)
   assert
     "Waterloo contextual scenario is loaded from versioned data"
     ( case find ((== "waterloo") . contextScenarioName) loadedContextScenarios of
@@ -526,6 +526,47 @@ main = do
     , ("thun-team", "Q464775")
     , ("morelia-team", "Q1480985")
     , ("sabadell-team", "Q12260")
+    ]
+
+  -- Scale batch 14 (final batch of this round): nine more real WiMCor
+  -- University-of-X examples, closing this scale-up out at exactly 80
+  -- lighter-tier examples on top of the 20 flagship ones (100 total).
+  -- Ten candidates were checked; only Oakland University was dropped
+  -- (its real P131 targets -- Rochester Hills, Auburn Hills, Oakland
+  -- County, Michigan -- are all real places in Michigan, but none is
+  -- literally "Oakland"). Utrecht and Heidelberg both rely solely on
+  -- Q62078547 ("public research university"), now also registered as
+  -- University alongside its existing Organization registration.
+  mapM_
+    ( \(name, university) ->
+        case find ((== name) . contextScenarioName) loadedContextScenarios of
+          Nothing -> do
+            putStrLn ("FAIL: scenario not loaded: " <> name)
+            exitFailure
+          Just scenario ->
+            case
+                contextualFiberChecked
+                  waterlooSnapshot
+                  (contextScenarioRelations scenario)
+                  (contextScenarioMaxDepth scenario)
+                  (contextScenarioContext scenario) of
+              Right stages ->
+                assert
+                  (name <> " contracts uniquely to its real university, Agda-checked")
+                  (map unEntityId (stageTargets (last stages)) == [university])
+              Left errorMessage -> do
+                putStrLn ("FAIL: " <> name <> ": " <> errorMessage)
+                exitFailure
+    )
+    [ ("dundee-university", "Q1249005")
+    , ("utrecht-university", "Q221653")
+    , ("glasgow-university", "Q192775")
+    , ("delft-university", "Q752663")
+    , ("liverpool-university", "Q499510")
+    , ("heidelberg-university", "Q151510")
+    , ("salamanca-university", "Q308963")
+    , ("auburn-university", "Q540672")
+    , ("denver-university", "Q519427")
     ]
 
   assert

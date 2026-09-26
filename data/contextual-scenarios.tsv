@@ -50,3 +50,12 @@ lugo-team	Q11125	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|5|
 thun-team	Q68978	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|5|14|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|17|23|requires|HasSort SportsOrganization|wimcor:real:thun-team-season
 morelia-team	Q200252	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|8|17|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|20|26|requires|HasSort SportsOrganization|wimcor:real:morelia-team-season
 sabadell-team	Q12258	announce	SubjectHole	1	InstitutionOf	Verb|announce|announces|9|18|requires|AnyOf [HasSort Animate,HasSort Organization]|VerbNet:say-37.7;;Noun|season|season|21|27|requires|HasSort SportsOrganization|wimcor:real:sabadell-team-season
+dundee-university	Q2357511	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:dundee-university-campus
+utrecht-university	Q803	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|14|20|requires|HasSort University|wimcor:real:utrecht-university-campus
+glasgow-university	Q55934339	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|14|20|requires|HasSort University|wimcor:real:glasgow-university-campus
+delft-university	Q690	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|12|18|requires|HasSort University|wimcor:real:delft-university-campus
+liverpool-university	Q21665571	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|16|22|requires|HasSort University|wimcor:real:liverpool-university-campus
+heidelberg-university	Q2966	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|17|23|requires|HasSort University|wimcor:real:heidelberg-university-campus
+salamanca-university	Q15695	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|16|22|requires|HasSort University|wimcor:real:salamanca-university-campus
+auburn-university	Q79728	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:auburn-university-campus
+denver-university	Q16554	have	SubjectHole	1	InstitutionOf	Noun|campus|campus|13|19|requires|HasSort University|wimcor:real:denver-university-campus
