@@ -127,5 +127,5 @@ reproduce:
 
 clean:
 	rm -rf build dist-newstyle
-	rm -f auxiliary/grammar/*.gfo auxiliary/grammar/*.pgf Metonymy.pgf GeneratedMetonymy.pgf
+	rm -f auxiliary/grammar/*.gfo Metonymy.pgf GeneratedMetonymy.pgf
 	rm -f formal-verification/Metonymy/*.agdai

@@ -12,7 +12,7 @@ import System.Environment (getArgs)
 import System.Exit (die)
 
 pgfPath :: FilePath
-pgfPath = "auxiliary/grammar/GeneratedMetonymy.pgf"
+pgfPath = "GeneratedMetonymy.pgf"
 
 main :: IO ()
 main = do
