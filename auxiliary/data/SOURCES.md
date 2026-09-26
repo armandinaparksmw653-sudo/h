@@ -190,13 +190,14 @@ any treebank-derived artifact (as opposed to the model weights themselves).
 Model downloads are not committed to this repository and are not fetched by
 the default `scripts/bootstrap.sh` path, so the base reproducibility
 guarantee (`make test`) never depends on network access to Stanza's model
-registry. See `docs/evaluation.md` for the opt-in install step.
+registry. The opt-in install step, `scripts/bootstrap_dependency_frontend.sh`,
+was retired to `trash/` along with the workflow that was its only caller.
 
 ## Wikidata live-API runtime index (entity linking at scale)
 
-`scripts/build_wikidata_api_index.py` populates the exact same offline
-SQLite schema as `scripts/build_wikidata_runtime_index.py build` (the
-full-dump indexer), but sources it from Wikidata's live
+`scripts/build_wikidata_api_index.py` (retired to `trash/`) populated the
+exact same offline SQLite schema as `scripts/build_wikidata_runtime_index.py
+build` (the full-dump indexer, still in use), but sourced it from Wikidata's live
 `wbsearchentities`/`wbgetentities`/SPARQL endpoints instead of a 100+ GB
 local dump. It resolves a bounded seed set of corpus mention surfaces
 (exact label/alias match only; an ambiguous surface yields every exact
