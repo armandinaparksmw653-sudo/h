@@ -87,7 +87,7 @@ Split narratively into a 17-row flagship tier (each row demonstrates a
 distinct capability — a new mechanism, a new Sort target, a new
 relation, an honest reject-test, a multi-hop walk — never two rows of
 the same shape) and a 106-row scale tier (breadth: more domains, more
-sentences, per already-covered mechanisms). See the example-database
-report (linked from the repository root `STRUCTURE.md`) for the full
-per-row breakdown and the audit trail behind every inclusion/exclusion
-decision.
+sentences, per already-covered mechanisms). `Metonymy.ExampleDatabase`
+and `engine/test/Main.hs` are the per-row source of truth (name, tier,
+relations, expected resolution); `metonymy-report`'s output is the
+per-row breakdown itself.

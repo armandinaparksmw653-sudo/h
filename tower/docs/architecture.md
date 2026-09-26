@@ -1,247 +1,146 @@
 # Architecture and trust boundaries
 
+This describes the engine as it actually exists in `tower/engine/src/Metonymy/`
+today: the lexicalized **contextual-fiber tower**
+(`Metonymy.Contextual`/`ContextualChecked`), not the earlier
+certificate/bridge-path engine (`Metonymy.Resolution`'s `Automatic`-era
+CLI, `expand`/`contract`/`list`) that this document used to describe —
+that engine has been retired to [`trash/`](../../trash/), and its
+`Metonymy.Resolution.expandFiber`/`contractTarget` functions now serve
+only as the untrusted fiber-search primitive the current tower calls
+internally (step 4 below), not as a standalone command.
+
 ## Pipeline
 
-### 1. Grammatical analysis
+### 1. Grammatical analysis (optional, diagnostic-only)
 
-`grammar/Metonymy.gf` defines a compact abstract syntax.
-`grammar/MetonymyEng.gf` is implemented with the standard GF English
-Resource Grammar Library (`SyntaxEng` and `ParadigmsEng`). The RGL supplies
-English inflection, agreement, noun phrase construction, parsing, and clause
-linearization. GF parses surface text into abstract trees and regenerates
-surface text after transformation.
+`auxiliary/grammar/Metonymy.gf`/`MetonymyEng.gf` define a small,
+hand-curated abstract syntax over the standard GF English Resource
+Grammar Library. `Metonymy.GF.parseEnglish`/`linearize` expose this as
+the CLI's `parse`/`linearize` commands — useful for checking that a
+hand-built `LexicalTree` (below) actually corresponds to something GF
+can parse/linearize, but neither command feeds the tower directly: the
+123 curated examples build their `Context` values by hand
+(`tower/engine/src/Metonymy/Waterloo.hs` and its 12 sibling modules) or
+from `tower/data/contextual-scenarios.tsv`, not from a live GF parse.
 
-GF deliberately uses the broad category `NP`. Semantic sorts such as
-`Human`, `Readable`, and `Agent` belong to the elaboration layer.
+### 2. Lexicalized context
 
-The CLI accepts surface sentences. It asks GF for all abstract parses and
-passes every `Pred subject (Compl verb object)` tree to the generic
-type-directed resolver. Scenario identifiers remain only for regression
-tests and debugging; free-text resolution does not select a predeclared
-metonymy scenario.
+`Metonymy.Contextual` defines the shared vocabulary every example is
+built from:
 
-For corpus evaluation, the open-GF elaborator is target-aware and
-construction-bounded. It maps unknown lexical material to the declared
-`OpenSourceNP`, `OpenTargetNP`, and `OpenContextNP` constructors. The marked
-target position is paired with the nearest matching local or VerbNet action
-realization to infer `SubjectHole` or `ObjectHole`; every compatible sense is
-then passed to the generic typed fiber search. This is not an unrestricted
-dependency parser: coordination, passives, and long-distance dependencies
-remain fail-closed or heuristic. Legacy lexical triggers only rank
-type-compatible bridge paths.
+- `LexicalAnchor` — one token's GF constructor, lemma, surface form,
+  and character span;
+- `LexicalTree` — `LexicalLeaf`/`LexicalApply`, the constituent shape
+  used only for `validateContext`'s well-formedness checks and for
+  `Metonymy.Report.reconstructSentence`'s sentence reconstruction;
+- `ContextConstraint` — a `LexicalAnchor` paired with a
+  `ConstraintPayload` (`Requires`/`RequiresRelation`/`RequiresSome`, or
+  their `Prefers*` soft-preference counterparts) and a provenance
+  string (which VerbNet/FrameNet/Wikidata/hand-audited rule justifies
+  it);
+- `Context` — a source `EntityId`, the surface action, which argument
+  position is metonymic (`HoleRole`), and the ordered list of
+  constraints that narrow it, one lexical trigger at a time.
 
-An alternative frontend, `analyzeOpenAtWithDependencyHint`, replaces this
-positional heuristic with an offline Universal Dependencies parse
-(`scripts/annotate_dependency_hints.py`) for locating the governing verb and
-determining subject/object role, rather than comparing character offsets.
-It is exactly as untrusted as the legacy frontend: it only ever proposes a
-candidate, and `runtimeCheck` re-derives admissibility identically for
-either frontend's output. It abstains explicitly, rather than guessing,
-when the target is a modifier nested inside a noun phrase (e.g. the
-possessor in "Tolstoy's books") rather than a direct clause argument —
-correctly resolving that case requires widening the checked construction
-vocabulary below, which remains future work. A parser failure on a given
-sentence falls back to the legacy frontend for that sentence, so a
-dependency-frontend run is never worse than the legacy baseline on
-sentences the parser cannot handle. See `evaluation/README.md` for the
-parallel evaluation pipeline and `data/SOURCES.md` for parser/model
-provenance and licensing.
+`Metonymy.Elaborator.elaborateContext` can derive a `Context`'s
+constraint list from a `LexicalTree` mechanically
+(`collectConstraints`); the curated flagship/scale examples instead
+construct both fields directly so each carries real, per-constraint
+provenance (see `Metonymy.Contextual`'s own module comment for exactly
+why these two representations are kept separate rather than one being
+computed from the other).
 
-### 2. Semantic elaboration
+### 3. Knowledge base
 
-`Metonymy.Types` associates each predicate argument with a `Requirement`.
-For example:
+`Metonymy.Ontology` holds a `KnowledgeBase`: named entities
+(`EntityInfo`), typed assertions, and relation assertions, each with
+provenance. `Metonymy.Snapshot.loadSnapshot` reads one of the three
+on-disk snapshots the tower runs against
+(`tower/data/wikidata-qid-snapshot/`,
+`tower/data/container-content-snapshot/`, or the fully synthetic
+`tower/data/synthetic-towers-snapshot/` used only by five
+diagnostic-only multi-constraint fixtures) — five files each
+(`entities.jsonl`, `aliases.jsonl`, `claims.jsonl`, `rules.json`,
+`manifest.json`), hash-verified before use. `proveRequirement` returns
+a `Proof`, not a bare `Bool`, carrying the rule and premise that
+justified it.
 
-```text
-Read.object = HasSort Readable
-Sign.subject = HasSort Agent
-```
+### 4. Fiber search (untrusted proposer)
 
-A `HoleRole` identifies whether the metonymic phrase fills the subject or
-object position. The same resolution engine therefore handles both
-`read Tolstoy` and `Moscow signs the agreement`.
+`Metonymy.Resolution.expandFiber` performs the actual graph search:
+every entity reachable from the context's source via the allowed
+`Relation`s, up to `fiberMaxDepth` hops, that also satisfies the
+current stage's requirement. This is ordinary, unchecked Haskell —
+useful for *proposing* candidates quickly, but nothing downstream
+trusts its result without independent re-verification (step 6).
 
-The production predicate table combines manually audited
-`data/predicates.tsv` entries with generated
-`data/verbnet-predicates.tsv` entries. `Metonymy.Automatic` compares both
-supplied arguments with their requested types. It launches bridge search
-only at positions whose literal entity does not already prove the
-requirement or preference.
+### 5. Stage-by-stage narrowing
 
-Manual requirements and imported VerbNet preferences remain distinguished
-by `RequirementStrength`. VerbNet tendencies can propose and rank a
-metonymic path, but are not represented as claims that all other objects are
-grammatically impossible. Requirements support nested `AllOf`, `AnyOf`, and
-`Not`; the Agda checker evaluates the same structure. Negative requirements
-use a closed-world interpretation over the frozen knowledge base. Every
-action sense and role stores its source provenance.
+`Metonymy.Contextual.contextualFiber` applies a `Context`'s
+`contextConstraints` one at a time: starting from every graph-related
+candidate, each successive `Requires*` constraint drops candidates
+that fail it (recorded as a `SnapshotObstruction`), while each
+`Prefers*` constraint reorders survivors without eliminating any
+(recorded separately as `stagePreferredCandidates`/
+`stagePreferenceMisses`). The result is a `[FiberStage]`: one entry per
+constraint, each showing exactly which candidates survived, which were
+obstructed and why, and which were merely preferred.
 
-### 3. Proof-producing ontology
+### 6. Independent Agda re-verification (the trust boundary)
 
-`Metonymy.Ontology` stores:
+`Metonymy.ContextualChecked.contextualFiberChecked` is the production
+entry point (`Metonymy.ContextualChecked.contextualContractionChecked`
+for the inverse, target-to-source direction). For **every stage**, it
+re-derives the prefix context up to that point and independently
+re-checks, against the compiled Agda `contextLayerCheck`
+(`Metonymy.Verified.verifyContextLayerWithAgda`, calling into
+`Metonymy.CheckerAPI` — MAlonzo code compiled from
+`formal-verification/Metonymy/Checker.agda`):
 
-- named entities and their GF terms;
-- typed assertions with provenance;
-- relation assertions with provenance;
-- subsort rules.
+- that every candidate Haskell's search accepted is *also* accepted by
+  Agda (`agda-rejected-survivor-at-stage-N` otherwise);
+- that every candidate Haskell's search obstructed is *also* rejected
+  by Agda (`agda-accepted-obstruction-at-stage-N` otherwise);
+- the same, symmetrically, for the preference layer via
+  `verifyPreferenceLayerWithAgda`.
 
-`proveRequirement` returns a `Proof`, not a Boolean. Derived type evidence
-retains the rule and premise provenance.
+Haskell's graph search is therefore an untrusted proposer only: nothing
+it proposes — acceptance or rejection — reaches a caller unless the
+independently compiled Agda checker agrees, at every single stage, not
+just at the final answer.
 
-External knowledge sources should be translated into these assertions:
+### 7. Cubical formal core
 
-```text
-WordNet/RuWordNet → lexical sorts and subsort rules
-FrameNet/VerbNet  → predicate requirements and semantic roles
-Wikidata          → named relation assertions
-discourse         → temporary assertions and salience
-```
-
-Small regression fixtures remain in `Metonymy.Examples`. Larger entity and
-predicate layers are loaded from
-`data/wikidata-author-works.tsv`; `Metonymy.Data` turns each row into:
-
-```text
-author       : Writer
-named work   : LiteraryWork
-generic works class : LiteraryWork
-author --Authored--> named work
-author --Authored--> generic works class
-```
-
-The same snapshot generates `GeneratedMetonymy.gf` and
-`GeneratedMetonymyEng.gf`. GF and the semantic engine therefore share
-Wikidata QIDs instead of attempting label-based joins at runtime.
-
-`semantic-entities.tsv` and `semantic-relations.tsv` exercise additional
-ontology branches:
-
-```text
-Mozart    --Created--> MusicalWork --subsort--> Audible
-Spielberg --Created--> Film        --subsort--> Watchable
-plate     --Contains--> Food       --subsort--> Edible
-Chanel    --ProducedBy--> Clothing --subsort--> Wearable
-```
-
-The arrows marked `subsort` are loaded from `data/subsorts.tsv`; adding an
-ontology inheritance edge does not require recompiling the Haskell source.
-
-### 4. Fiber search
-
-`Metonymy.Resolution.expandFiber` evaluates:
-
-```text
-Σ y.
-  BridgePath(source,y)
-  × Requirement(hole,y)
-```
-
-Search is bounded by `fiberMaxDepth`, tracks visited entities, and pushes
-the type requirement onto each endpoint. Automatic resolution currently
-uses paths of at most two bridge edges.
-
-### 5. Expansion
-
-Expansion fixes the coarse source and enumerates admissible fine targets:
-
-```text
-Tolstoy --Authored--> works-of-tolstoy : Readable
-Tolstoy --Authored--> war-and-peace    : Readable
-Tolstoy --Authored--> anna-karenina    : Readable
-```
-
-The generic target receives the highest deterministic score. A contextual
-ranker can later prefer a named work without changing validity.
-
-### 6. Contraction
-
-Contraction performs the inverse graph query: it fixes an explicit target
-and searches incoming bridge paths. Graph reversibility does not imply
-safe linguistic contraction.
-
-The Haskell `certificateSafeToForget` precheck permits generic class
-representatives and rejects named works. The Agda `runtimeCheck`
-independently re-derives this condition by requiring the contraction target
-to inhabit `GenericReading`. It also checks structured flags for
-quantification, restrictive modification, polarity, focus, anaphora, and
-temporal restriction. Those flags are supplied by the frontend: the checker
-proves safety relative to them, not that they were correctly extracted from
-arbitrary English syntax.
-
-### 7. Certificate verification
-
-Haskell `verifyCertificate` is a non-authoritative fast precheck. The
-runtime then converts the complete KB, predicate table, lexeme/entity
-bindings, source and target GF clauses, direction, and raw certificate to
-the types generated from `Metonymy.Checker` and invokes the MAlonzo
-function compiled from Agda.
-
-The Agda kernel independently checks:
-
-- that the bridge starts and ends at the claimed entities;
-- every step exists in the knowledge base;
-- that the path is non-empty and connected;
-- the target still inhabits the hole requirement.
-- predicate identity, selected argument type, strength, and provenance.
-- source/target GF functions denote the certificate endpoints;
-- the predicate and unchanged argument agree in both trees;
-- contraction forgets only a checked generic reading.
-
-Hard search results are untrusted until `runtimeCheck` succeeds. Preference
-results use `preferenceRuntimeCheck` and remain candidate-only until
-`checkPromotion` validates matching target salience with non-empty
-discourse provenance.
-
-### 8. Cubical interpretation
-
-`formal/Metonymy/Core.agda` is the mathematical kernel:
-
-```text
-Fine Γ K x
-  = Σ y. Admissible Γ K x y
-
-Coarse Γ K x
-  = Fine Γ K x / SameMetonymicClass
-
-Expansion coarse
-  = Σ fine. contract fine = coarse
-```
-
-The quotient path constructor glues admissible fine meanings only after
-compression. It never asserts equality between the original entities.
-
-`Derivation` is a higher-inductive type with:
-
-```text
-implicit
-explicit y certificate
-metonymy y certificate : implicit = explicit y certificate
-```
-
-`Checker.agda` implements the decidable certificate checker.
-`EndToEnd.agda` proves that `check kb raw ≡ true` constructs an
-`Admissible kb raw` witness and hence a path between the corresponding
-implicit and explicit derivations. The executable checker is compiled
-through MAlonzo and called directly by Haskell.
+`Checker.agda`'s Boolean-reflected `contextLayerCheck` is proven sound
+and complete against the dependent, Cubical-type-theoretic construction
+in `formal-verification/Metonymy/FilteredContext.agda`, via
+`Metonymy.FilteredRuntime.runtimeFiberCheckerEquivalence` — so running
+an example through `contextualFiberChecked` genuinely exercises the
+proven theorems, not a separate, less-connected checker. See
+[`formal-verification/OVERVIEW.md`](../../formal-verification/OVERVIEW.md)
+for what exactly is proven and
+[`formal-verification/Metonymy/THEOREMS.md`](../../formal-verification/Metonymy/THEOREMS.md)
+for the exact theorem-to-file map, including the explicit non-claims.
 
 ## Trust model
 
-Formally checked:
+Formally checked (in `formal-verification/`, zero `postulate`s,
+`--safe` mode, CI-enforced):
 
-- the definition of the quotient and its path constructor;
-- contraction round-trip membership;
-- compositional propagation of a metonymic path;
-- runtime certificate consistency against the loaded knowledge base;
-- rejection of forged targets, relations, requirements, provenance, and
-  empty paths.
+- the dependent, quotient-based construction the compiled checker is
+  proven equivalent to;
+- that every accepted candidate at every stage genuinely satisfies its
+  constraint, and every rejected one genuinely fails it;
+- that safe contraction only forgets a checked generic reading.
 
-Not formally claimed:
+Not formally claimed (see THEOREMS.md's "Explicit non-claims" for the
+exact list): correctness/completeness of GF parsing arbitrary text;
+factual correctness or completeness of the underlying Wikidata/WordNet/
+VerbNet snapshots; uniqueness of the intended pragmatic reading beyond
+what a given constraint set actually forces; competitive NLP recall.
 
-- completeness of the knowledge base;
-- linguistic correctness of external facts;
-- uniqueness of a metonymic reading;
-- optimality of candidate ranking;
-- safety of arbitrary open-domain contraction.
-
-This boundary prevents a statistical scorer from inventing a path, while
-avoiding the false claim that type checking alone resolves pragmatics.
+This boundary prevents an unchecked graph search or a statistical
+scorer from inventing an admissible reading, while avoiding the false
+claim that type-checking alone resolves pragmatics or guarantees
+broad-coverage recall.
