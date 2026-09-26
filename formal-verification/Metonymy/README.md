@@ -13,7 +13,7 @@ From the repository root:
 
 ```bash
 make formal
-./formal/Metonymy/check.sh
+./formal-verification/Metonymy/check.sh
 ```
 
 `THEOREMS.md` states the publication-facing claims, assumptions, and exact
