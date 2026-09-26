@@ -29,3 +29,5 @@
 {"property":"P176","source":"LOCAL_POEMS","target":"LOCAL_POET"}
 {"property":"P176","source":"LOCAL_PLAY","target":"LOCAL_PLAYWRIGHT"}
 {"property":"P361","source":"LOCAL_ARTILLERY","target":"LOCAL_EGYPTIAN_MILITARY"}
+{"property":"P828","source":"LOCAL_TRUMPET","target":"LOCAL_TRUMPET_SOUND"}
+{"property":"P1269","source":"LOCAL_BRASS","target":"LOCAL_BRASS_SECTION"}

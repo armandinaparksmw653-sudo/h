@@ -53,3 +53,7 @@
 {"id":"LOCAL_WINE","labels":["wine"]}
 {"id":"LOCAL_ARTILLERY","labels":["artillery"]}
 {"id":"LOCAL_EGYPTIAN_MILITARY","labels":["the Egyptian military"]}
+{"id":"LOCAL_TRUMPET","labels":["a trumpet"]}
+{"id":"LOCAL_TRUMPET_SOUND","labels":["the sound of the trumpet"]}
+{"id":"LOCAL_BRASS","labels":["the brass"]}
+{"id":"LOCAL_BRASS_SECTION","labels":["the brass section"]}

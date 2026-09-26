@@ -11,6 +11,8 @@ import Metonymy.Rijeka
 import Metonymy.Busan
 import Metonymy.AuthorWork
 import Metonymy.PartWhole
+import Metonymy.CauseEffect
+import Metonymy.MaterialObject
 import Metonymy.ContainerContent
 import Metonymy.Elaborator
 import Metonymy.GF
@@ -1068,6 +1070,39 @@ main = do
       putStrLn ("FAIL: artillery -> Egyptian military: " <> errorMessage)
       exitFailure
 
+  -- First real, corpus-attested Cause-for-effect example (see
+  -- Metonymy.CauseEffect): "A trumpet is also heard in the song right
+  -- after this line is sung" (real ConMeC METONYMIC/CAUSER-category
+  -- sentence). A fourth distinct transfer mechanism (Causes, not
+  -- InstitutionOf/GovernedBy, Contains/Produces, or AffiliatedWith);
+  -- exactly one real causal edge, so this narrows to a unique candidate
+  -- through the graph walk alone.
+  case contextualFiberChecked containerSnapshot [Causes] 1 (trumpetContext containerSnapshot) of
+    Right stages ->
+      assert
+        "trumpet -> the sound of the trumpet, Agda-checked"
+        (map unEntityId (stageTargets (last stages)) == [unEntityId trumpetSound])
+    Left errorMessage -> do
+      putStrLn ("FAIL: trumpet -> trumpet sound: " <> errorMessage)
+      exitFailure
+
+  -- First real, corpus-attested Material-for-object example (see
+  -- Metonymy.MaterialObject): "...the brass play a citation of the Jazz
+  -- tune Topsy" (real ConMeC METONYMIC/CAUSER-category sentence, target
+  -- word "brass" -- the material standing for the instrument section
+  -- made of it). A fifth distinct transfer mechanism (Represents, not
+  -- Causes/InstitutionOf/GovernedBy/Contains/Produces/AffiliatedWith);
+  -- exactly one real edge, so this narrows to a unique candidate through
+  -- the graph walk alone.
+  case contextualFiberChecked containerSnapshot [Represents] 1 (brassContext containerSnapshot) of
+    Right stages ->
+      assert
+        "brass -> the brass section, Agda-checked"
+        (map unEntityId (stageTargets (last stages)) == [unEntityId brassSection])
+    Left errorMessage -> do
+      putStrLn ("FAIL: brass -> brass section: " <> errorMessage)
+      exitFailure
+
   -- Honest reject tests for the three newer, non-location-for-
   -- institution mechanisms (Container, Producer, Government): each
   -- graph only has the one real edge from its own source, so asking the
@@ -1112,6 +1147,18 @@ main = do
       , containerSnapshot
       , [AffiliatedWith]
       , artilleryContext containerSnapshot
+      , rumEntity
+      )
+    , ( "trumpet correctly rejects rum (belongs to a glass, not the trumpet)"
+      , containerSnapshot
+      , [Causes]
+      , trumpetContext containerSnapshot
+      , rumEntity
+      )
+    , ( "brass correctly rejects rum (belongs to a glass, not the brass)"
+      , containerSnapshot
+      , [Represents]
+      , brassContext containerSnapshot
       , rumEntity
       )
     ]
