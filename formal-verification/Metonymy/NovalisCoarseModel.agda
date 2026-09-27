@@ -151,9 +151,10 @@ heinrichFiber = heinrichCandidate , heinrichAdmissible , tt
 -- (here: only) edge of a candidate's certificate, if any.
 firstEdgeKey :
   RuntimeCandidate novalisKB beforeClause → Maybe (String × String)
-firstEdgeKey candidate with rawEdges (candidateCertificate candidate)
+firstEdgeKey candidate
+  with RawCertificate.rawEdges (candidateCertificate candidate)
 ... | [] = nothing
-... | (e ∷ _) = just (edgeRelation e , edgeSource e)
+... | (e ∷ _) = just (Edge.edgeRelation e , Edge.edgeSource e)
 
 maybeKeyEqual : Maybe (String × String) → Maybe (String × String) → Bool
 maybeKeyEqual nothing nothing = true
