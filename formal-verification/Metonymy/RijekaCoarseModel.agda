@@ -227,11 +227,11 @@ realizeCompatibility₂ rijekaCoherence₂
 ------------------------------------------------------------------------
 
 hnkOrijentIdentified :
-  compress₂ {compatibility = rijekaCompatibility} hnkFiber
-    ≡ compress₂ {compatibility = rijekaCompatibility} orijentFiber
+  compress₂ {system = rijekaSystem} {compatibility = rijekaCompatibility} {Γ = rijekaΓ} hnkFiber
+    ≡ compress₂ {system = rijekaSystem} {compatibility = rijekaCompatibility} {Γ = rijekaΓ} orijentFiber
 hnkOrijentIdentified =
   cong
-    (include₂ {system = rijekaSystem} {compatibility = rijekaCompatibility})
+    (include₂ {system = rijekaSystem} {compatibility = rijekaCompatibility} {Γ = rijekaΓ})
     (eq/ hnkFiber orijentFiber hnkOrijentCompatible)
 
 rijekaContextual₂Tower :
