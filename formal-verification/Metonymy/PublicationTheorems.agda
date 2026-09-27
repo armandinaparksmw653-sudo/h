@@ -76,6 +76,16 @@ import Metonymy.TwoTruncatedRuntime
 -- same-relation) compatibility relation, with 2-cell coherence realized.
 import Metonymy.NovalisCoarseModel
 
+-- A second such instance: Eswatini's two real cabinet formations
+-- (GovernedBy), identified at the coarse level by the same shape of
+-- compatibility relation.
+import Metonymy.EswatiniCoarseModel
+
+-- A third such instance, at a non-empty context: HNK Rijeka and NK
+-- Orijent (InstitutionOf), identified at the coarse level once the
+-- sentence's own "season" constraint is already satisfied by both.
+import Metonymy.RijekaCoarseModel
+
 -- Concrete directed ontology with two coherent expansion routes and a
 -- compatibility quotient that provably separates an unrelated reading.
 import Metonymy.ConcreteOntology

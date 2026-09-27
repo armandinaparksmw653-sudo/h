@@ -172,18 +172,38 @@ The first quotient retains generated compatibility paths. Cubical
 | Non-trivial real-data compatibility (Novalis's two works) | `NovalisCoarseModel.novalisCompatibility` |
 | Non-trivial 2-cell coherence, realized | `NovalisCoarseModel.novalisCoherence₂` |
 | Two distinct real entities identified at the coarse level | `NovalisCoarseModel.hymnsHeinrichIdentified` |
+| Non-trivial real-data compatibility (Eswatini's two cabinets) | `EswatiniCoarseModel.eswatiniCompatibility` |
+| Non-trivial 2-cell coherence, realized | `EswatiniCoarseModel.eswatiniCoherence₂` |
+| Two distinct real entities identified at the coarse level | `EswatiniCoarseModel.ambroseRussellIdentified` |
+| Non-trivial real-data compatibility (Rijeka's two football clubs) | `RijekaCoarseModel.rijekaCompatibility` |
+| Non-trivial 2-cell coherence, realized | `RijekaCoarseModel.rijekaCoherence₂` |
+| Two distinct real entities identified at the coarse level, at a non-empty context | `RijekaCoarseModel.hnkOrijentIdentified` |
 
 `TwoTruncatedRuntime`'s own runtime compatibility is bare equality, which
-identifies nothing beyond what was already equal.
-`NovalisCoarseModel` instantiates the same 2-truncated tower against real
-Wikidata data (Novalis, Q60684, and his two attested literary works,
-Q128670 and Q58178849) with a genuinely non-trivial relation --
-"reached from the same source by the same bridge relation" -- and proves
-the two distinct works are identified at the coarse level, with 2-cell
-coherence realized for that relation. This is the same fixture the
-Haskell engine's test suite already treats as a real, non-unique
-two-candidate result (`Metonymy.AuthorWork`); this module supplies its
-coarse-reading counterpart.
+identifies nothing beyond what was already equal. Three modules
+instantiate the same 2-truncated tower against real Wikidata data with a
+genuinely non-trivial relation -- "reached from the same source by the
+same bridge relation" -- for every currently-known genuinely non-unique
+example in the curated database:
+`NovalisCoarseModel` (Novalis, Q60684, and his two attested literary
+works, Q128670 and Q58178849; the certificate's own requirement, at the
+empty context); `EswatiniCoarseModel` (Eswatini, Q1050, and its two
+attested cabinet formations, Q114513825 and Q123554307; same shape);
+`RijekaCoarseModel` (Rijeka, Q1647, and its two attested football clubs,
+Q318969 and Q1447572; at a *non-empty* context, since the sentence's own
+"season" constraint is a second, separate layer on top of the
+certificate's requirement -- compression is shown here to apply only once
+narrowing from the sentence itself is already exhausted, not to compete
+with it). Each proves the two distinct real entities are identified at
+the coarse level, with 2-cell coherence realized for that relation. These
+are the same fixtures the Haskell engine's test suite already treats as
+real, non-unique two-candidate results (`Metonymy.AuthorWork`,
+`Metonymy.Eswatini`, `Metonymy.Rijeka`); these three modules supply their
+coarse-reading counterpart. (Waterloo's own three-way non-uniqueness is
+narrowed to a unique candidate by a second real lexical signal --
+"in physics" -- within the same sentence, so it never reaches this
+situation; these three are the ones for which the sentence itself
+supplies no such further signal.)
 
 `Coarse₂Pseudofunctor` states global identity/composition obligations for an
 arbitrary compatibility system. The canonical construction proves maps,
