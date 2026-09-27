@@ -58,8 +58,8 @@ eswatiniKB =
     []
     ( predicateFact
         "HaveGF"
-        (hasSort "Entity")
         (hasSort "Government")
+        (hasSort "Entity")
         "HardRequirement"
         "conmec:real:eswatini-cabinet-quarantine"
     ∷ []
