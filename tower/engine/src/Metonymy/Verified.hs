@@ -1,6 +1,7 @@
 module Metonymy.Verified
   ( verifyContextLayerWithAgda
   , verifyPreferenceLayerWithAgda
+  , verifyCompatibilityWithAgda
   ) where
 
 import qualified Data.Text as Text
@@ -27,6 +28,35 @@ verifyPreferenceLayerWithAgda snapshot constraint candidate =
     (toAgdaKnowledgeBase (snapshotKnowledgeBase snapshot) [])
     (toAgdaContextConstraint constraint)
     (text (show candidate))
+
+-- | Independently re-verifies, via the compiled Agda
+-- Checker.compatibilityCheck, that two candidates reached from the same
+-- source by the same bridge relation, and selected by the same single
+-- HasSort requirement, may be reported as one coarse reading -- the
+-- engine's own proposal is untrusted until Agda agrees, exactly as for
+-- 'verifyContextLayerWithAgda'. Only the two fields compatibilityCheck
+-- actually reads (the requirement and the first bridge edge) need to be
+-- real; the certificate's other fields are unused by that check and
+-- filled with harmless placeholders.
+verifyCompatibilityWithAgda ::
+  Requirement -> EntityId -> Relation -> EntityId -> Relation -> EntityId -> Bool
+verifyCompatibilityWithAgda requirement source leftRelation leftTarget rightRelation rightTarget =
+  Agda.compatibilityCheck
+    (minimalCertificate leftRelation leftTarget)
+    (minimalCertificate rightRelation rightTarget)
+  where
+    minimalCertificate relation target =
+      Agda.rawCertificate
+        Agda.expand
+        (Agda.forgetContext False False False False False False False)
+        (text "")
+        Agda.objectHole
+        (text (show source))
+        (text (show target))
+        (toAgdaRequirement requirement)
+        (text "")
+        (text "")
+        [Agda.edge (text (show relation)) (text (show source)) (text (show target))]
 
 toAgdaContext :: Context -> Agda.RawContext
 toAgdaContext context =

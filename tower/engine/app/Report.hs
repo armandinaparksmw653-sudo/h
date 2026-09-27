@@ -106,7 +106,17 @@ renderExample qidSnapshot containerSnapshot entryValue =
         Nothing ->
           case contextualFiberChecked snapshot relations depth context of
             Left message -> (Left message, False)
-            Right stages -> (Right (renderFiberReportLabeled True kb context stages), True)
+            Right stages ->
+              ( Right
+                  ( renderFiberReportLabeled
+                      True
+                      kb
+                      context
+                      stages
+                      (contextualCoarseReading snapshot relations context stages)
+                  )
+              , True
+              )
         Just target ->
           case contextualContractionChecked snapshot relations depth context target of
             Left message ->
@@ -152,7 +162,22 @@ renderScenario snapshot scenario =
         (contextScenarioMaxDepth scenario)
         context of
         Left message -> (Left message, False)
-        Right stages -> (Right (renderFiberReportLabeled True kb context stages), True)
+        Right stages ->
+          ( Right
+              ( renderFiberReportLabeled
+                  True
+                  kb
+                  context
+                  stages
+                  ( contextualCoarseReading
+                      snapshot
+                      (contextScenarioRelations scenario)
+                      context
+                      stages
+                  )
+              )
+          , True
+          )
 
 outputPath :: [String] -> Maybe String
 outputPath ("--output" : path : _) = Just path

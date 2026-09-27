@@ -9,14 +9,17 @@ module Metonymy.ContextualChecked
   , ContextualContraction (..)
   , contextualContractionChecked
   , contextualContractionUnchecked
+  , CoarseReading (..)
+  , contextualCoarseReading
   ) where
 
 import Metonymy.Contextual
-import Metonymy.Ontology (proveRequirement)
+import Metonymy.Ontology (proveRequirement, relationStepsFrom)
 import Metonymy.Resolution (contractTarget)
 import Metonymy.Types
 import Metonymy.Verified
-  ( verifyContextLayerWithAgda
+  ( verifyCompatibilityWithAgda
+  , verifyContextLayerWithAgda
   , verifyPreferenceLayerWithAgda
   )
 
@@ -170,3 +173,66 @@ finishContraction snapshot relations maxDepth context target stages = do
                 then "unique-contextual-fiber"
                 else "generic-reading"
           }
+
+-- | Whether the fiber's final stage -- if it left more than one survivor
+-- -- can be honestly reported as one coarse reading rather than an
+-- unresolved list. This never competes with narrowing: it only looks at
+-- what remains once every constraint the sentence itself supplied has
+-- already been applied.
+--
+-- The final stage must have been narrowed by a single, specific
+-- @Requires (HasSort _)@ -- never @AnyOf@/@AllOf@/a negation -- because
+-- only a single declared kind guarantees every survivor is genuinely the
+-- same *kind* of thing (see Checker.isSingleHasSort's own comment for
+-- why a broad disjunction, e.g. Waterloo's "announce" requirement before
+-- its narrowing "in physics" signal, must never be treated this way).
+-- Every survivor must also have been reached from the context's source
+-- by the same single bridge relation, and every pairing is independently
+-- re-verified against the compiled Agda @compatibilityCheck@ -- this
+-- function only ever *proposes* a coarse reading; Agda decides.
+data CoarseReading = CoarseReading
+  { coarseReadingSort :: Sort
+  , coarseReadingMembers :: [EntityId]
+  }
+  deriving stock (Eq, Show)
+
+contextualCoarseReading ::
+  Snapshot ->
+  [Relation] ->
+  Context ->
+  [FiberStage] ->
+  Maybe CoarseReading
+contextualCoarseReading snapshot relations context stages = do
+  finalStage <- case reverse stages of
+    stage : _ -> Just stage
+    [] -> Nothing
+  constraint <- stageConstraint finalStage
+  sort <- case constraintPayload constraint of
+    Requires (HasSort candidateSort) -> Just candidateSort
+    _ -> Nothing
+  case stageTargets finalStage of
+    targets@(_ : _ : _) -> do
+      let kb = snapshotKnowledgeBase snapshot
+          steps = relationStepsFrom kb relations (contextSource context)
+          relationTo t =
+            case [bridgeRelation step | step <- steps, bridgeTarget step == t] of
+              relation : _ -> Just relation
+              [] -> Nothing
+      pairs <- traverse (\t -> (,) t <$> relationTo t) targets
+      case pairs of
+        [] -> Nothing
+        (firstTarget, firstRelation) : _ ->
+          if all
+              ( \(target, relation) ->
+                  verifyCompatibilityWithAgda
+                    (HasSort sort)
+                    (contextSource context)
+                    firstRelation
+                    firstTarget
+                    relation
+                    target
+              )
+              pairs
+            then Just (CoarseReading sort targets)
+            else Nothing
+    _ -> Nothing

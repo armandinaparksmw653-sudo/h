@@ -25,7 +25,7 @@ module Metonymy.Report
 
 import Data.List (intercalate, sortOn)
 import Metonymy.Contextual
-import Metonymy.ContextualChecked (ContextualContraction (..))
+import Metonymy.ContextualChecked (CoarseReading (..), ContextualContraction (..))
 import Metonymy.Ontology (KnowledgeBase, entityLabel, lookupEntity)
 import Metonymy.Types
 
@@ -144,8 +144,9 @@ labelFor kb identifier =
     Just info -> entityLabel info <> " (" <> unEntityId identifier <> ")"
     Nothing -> unEntityId identifier
 
-renderFiberReportLabeled :: Bool -> KnowledgeBase -> Context -> [FiberStage] -> [String]
-renderFiberReportLabeled formalFiltering kb context stages =
+renderFiberReportLabeled ::
+  Bool -> KnowledgeBase -> Context -> [FiberStage] -> Maybe CoarseReading -> [String]
+renderFiberReportLabeled formalFiltering kb context stages coarseReading =
   [ "sentence=" <> show (reconstructSentence context)
   , "source="
       <> labelFor kb (contextSource context)
@@ -155,6 +156,22 @@ renderFiberReportLabeled formalFiltering kb context stages =
       <> show (contextRole context)
   ]
     <> concatMap (renderStage formalFiltering (labelFor kb)) stages
+    <> renderCoarseReading kb coarseReading
+
+-- | Only printed when 'Metonymy.ContextualChecked.contextualCoarseReading'
+-- proposed a reading AND the compiled Agda checker independently agreed
+-- with every pairing -- see that function's own docs for exactly when
+-- this can happen (a final stage narrowed by a single, specific HasSort,
+-- never a broader AnyOf/AllOf).
+renderCoarseReading :: KnowledgeBase -> Maybe CoarseReading -> [String]
+renderCoarseReading _ Nothing = []
+renderCoarseReading kb (Just reading) =
+  [ "coarse-reading="
+      <> show (coarseReadingSort reading)
+      <> " "
+      <> show (map (labelFor kb) (coarseReadingMembers reading))
+      <> " (Agda-verified)"
+  ]
 
 renderContractionReportLabeled :: Bool -> KnowledgeBase -> ContextualContraction -> [String]
 renderContractionReportLabeled formalFiltering kb result =

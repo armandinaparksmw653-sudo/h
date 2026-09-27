@@ -917,11 +917,24 @@ main = do
   -- distinguishing fact is a date, not a word), so this stays an honest
   -- two-candidate result, the same shape as Waterloo.
   case contextualFiberChecked waterlooSnapshot [GovernedBy] 1 (eswatiniContext waterlooSnapshot) of
-    Right stages ->
+    Right stages -> do
       assert
         "Eswatini's cabinet narrows to the two real cabinet formations, Agda-checked"
         ( sort (map unEntityId (stageTargets (last stages)))
             == sort (map unEntityId [ambroseMandvuloDlaminiCabinet, russellDlaminiCabinet])
+        )
+      -- Two distinct real cabinet formations, both a Government-sort
+      -- reading of "the cabinet of Eswatini": the coarse-reading
+      -- compatibility check (Agda-verified, not just proposed) should
+      -- accept them.
+      assert
+        "Eswatini's two cabinets are reported as one Agda-verified coarse reading"
+        ( case contextualCoarseReading waterlooSnapshot [GovernedBy] (eswatiniContext waterlooSnapshot) stages of
+            Just reading ->
+              coarseReadingSort reading == Government
+                && sort (map unEntityId (coarseReadingMembers reading))
+                  == sort (map unEntityId [ambroseMandvuloDlaminiCabinet, russellDlaminiCabinet])
+            Nothing -> False
         )
     Left errorMessage -> do
       putStrLn ("FAIL: Eswatini cabinet fiber: " <> errorMessage)
@@ -931,11 +944,23 @@ main = do
   -- lexical signal here distinguishes HNK Rijeka from the real decoy NK
   -- Orijent, so this stays an honest two-candidate result too.
   case contextualFiberChecked waterlooSnapshot [InstitutionOf] 1 (rijekaContext waterlooSnapshot) of
-    Right stages ->
+    Right stages -> do
       assert
         "Rijeka's season signal narrows to the two real football clubs, Agda-checked"
         ( sort (map unEntityId (stageTargets (last stages)))
             == sort (map unEntityId [hnkRijeka, nkOrijent])
+        )
+      -- Place-for-team: both clubs are the same kind of thing
+      -- (SportsOrganization), reached by the same relation from the
+      -- same city -- should be an Agda-verified coarse reading.
+      assert
+        "Rijeka's two football clubs are reported as one Agda-verified coarse reading"
+        ( case contextualCoarseReading waterlooSnapshot [InstitutionOf] (rijekaContext waterlooSnapshot) stages of
+            Just reading ->
+              coarseReadingSort reading == SportsOrganization
+                && sort (map unEntityId (coarseReadingMembers reading))
+                  == sort (map unEntityId [hnkRijeka, nkOrijent])
+            Nothing -> False
         )
     Left errorMessage -> do
       putStrLn ("FAIL: Rijeka fiber: " <> errorMessage)
@@ -954,14 +979,59 @@ main = do
   -- honest two-candidate result, the same shape as Waterloo/Rijeka/
   -- Eswatini.
   case contextualFiberChecked waterlooSnapshot [Authored] 1 (novalisContext waterlooSnapshot) of
-    Right stages ->
+    Right stages -> do
       assert
         "Novalis's studied poetry narrows to his two real literary works, Agda-checked"
         ( sort (map unEntityId (stageTargets (last stages)))
             == sort (map unEntityId [hymnsToTheNight, heinrichVonOfterdingen])
         )
+      -- Author-for-work: both texts are the same kind of thing
+      -- (LiteraryWork), reached by Authored from the same author --
+      -- should be an Agda-verified coarse reading ("a work by Novalis").
+      assert
+        "Novalis's two works are reported as one Agda-verified coarse reading"
+        ( case contextualCoarseReading waterlooSnapshot [Authored] (novalisContext waterlooSnapshot) stages of
+            Just reading ->
+              coarseReadingSort reading == LiteraryWork
+                && sort (map unEntityId (coarseReadingMembers reading))
+                  == sort (map unEntityId [hymnsToTheNight, heinrichVonOfterdingen])
+            Nothing -> False
+        )
     Left errorMessage -> do
       putStrLn ("FAIL: Novalis fiber: " <> errorMessage)
+      exitFailure
+
+  -- Negative sanity check for contextualCoarseReading's safety property
+  -- (see its own docs, and Metonymy.GeneralCoarseCompatibility's
+  -- Agda-side universityCouncilNotCompatible): Waterloo's own real data,
+  -- with only the "announce" constraint applied (the "in physics" signal
+  -- dropped), leaves three genuinely heterogeneous survivors -- a
+  -- university, a research institute, a city council -- selected only by
+  -- the broad AnyOf [Animate, Organization] requirement. These must
+  -- never be reported as one coarse reading, and this is checked here
+  -- against the real, running contextualFiberChecked/
+  -- contextualCoarseReading pipeline, not only as a standalone Agda fact.
+  let waterlooAnnounceOnlyContext =
+        waterlooContext
+          { contextConstraints = take 1 (contextConstraints waterlooContext)
+          , contextRuleProvenance = take 1 (contextRuleProvenance waterlooContext)
+          }
+  case contextualFiberChecked waterlooSnapshot [InstitutionOf] 1 waterlooAnnounceOnlyContext of
+    Right stages -> do
+      assert
+        "Waterloo's announce-only constraint leaves three heterogeneous real survivors"
+        (length (stageTargets (last stages)) == 3)
+      assert
+        "Three heterogeneous organizations under a broad AnyOf are NOT reported as one coarse reading"
+        ( contextualCoarseReading
+            waterlooSnapshot
+            [InstitutionOf]
+            waterlooAnnounceOnlyContext
+            stages
+            == Nothing
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: Waterloo announce-only fiber: " <> errorMessage)
       exitFailure
 
   -- Three real, corpus-attested container-for-content examples (ConMeC

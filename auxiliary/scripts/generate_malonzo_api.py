@@ -62,6 +62,7 @@ SYMBOLS = {
     "context_preference_check": r"d_contextPreferenceCheck_\d+",
     "preference_check": r"d_preferenceRuntimeCheck_\d+",
     "promotion_check": r"d_checkPromotion_\d+",
+    "compatibility_check": r"d_compatibilityCheck_\d+",
 }
 
 
@@ -99,6 +100,7 @@ module Metonymy.CheckerAPI
   , RawDiscourseEvidence, targetSalient
   , check, runtimeCheck, contextLayerCheck, contextPreferenceCheck
   , contextualRuntimeCheck, preferenceRuntimeCheck, checkPromotion
+  , compatibilityCheck
   ) where
 
 import Data.Text (Text)
@@ -263,6 +265,9 @@ checkPromotion ::
   Maybe RawDiscourseEvidence ->
   Bool
 checkPromotion = {a}.{symbol["promotion_check"]}
+
+compatibilityCheck :: RawCertificate -> RawCertificate -> Bool
+compatibilityCheck = {a}.{symbol["compatibility_check"]}
 """
 
 
