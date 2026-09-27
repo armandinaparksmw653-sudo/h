@@ -86,6 +86,15 @@ import Metonymy.EswatiniCoarseModel
 -- sentence's own "season" constraint is already satisfied by both.
 import Metonymy.RijekaCoarseModel
 
+-- The general, engine-exposed compatibility checker (Checker.
+-- compatibilityCheck) instantiated as a genuine CompatibilitySystem for
+-- any knowledge base: reproduces the three examples above through one
+-- reusable definition, and proves the safety property that motivated
+-- restricting it to a single HasSort -- Waterloo's own two heterogeneous
+-- organizations (a university, a city council), which satisfy only a
+-- broad AnyOf requirement, are correctly rejected, not merged.
+import Metonymy.GeneralCoarseCompatibility
+
 -- Concrete directed ontology with two coherent expansion routes and a
 -- compatibility quotient that provably separates an unrelated reading.
 import Metonymy.ConcreteOntology

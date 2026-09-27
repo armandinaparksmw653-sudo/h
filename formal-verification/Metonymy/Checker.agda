@@ -971,3 +971,65 @@ promotionSound :
 promotionSound raw evidence checked =
   validatedDiscourseEvidence checked
 
+-- Coarse-reading compatibility: whether two accepted certificates may be
+-- reported as the same coarse ("kind-level") reading rather than two
+-- unrelated fine candidates -- the general, engine-exposed version of
+-- what Metonymy.NovalisCoarseModel/EswatiniCoarseModel/RijekaCoarseModel
+-- each hand-built for one specific real example.
+--
+-- Two certificates are compatible only when the requirement that
+-- selected them both is a single, specific HasSort -- never AnyOf,
+-- AllOf, or a negation. This is deliberate, not an oversight: a broad
+-- disjunction like AnyOf [HasSort Animate, HasSort Organization] (e.g.
+-- the "announce" requirement in the Waterloo fixture, before its second,
+-- narrowing "in physics" signal is applied) can be satisfied by
+-- genuinely heterogeneous entities -- a university, a research
+-- institute, a city council -- that are not the same kind of thing and
+-- must never be reported as one coarse reading. A single HasSort, by
+-- contrast, only ever selects entities that are already the same
+-- declared kind; the two real examples this narrows to (two literary
+-- works, two cabinet formations, two football clubs) differ only in
+-- which specific instance, never in what kind of thing they are.
+isSingleHasSort : Requirement → Bool
+isSingleHasSort (hasSort _) = true
+isSingleHasSort (allOf _) = false
+isSingleHasSort (anyOf _) = false
+isSingleHasSort (notRequirement _) = false
+
+-- Reached from the same entity by the same bridge relation: the first
+-- (and, for every currently-verified real example, only) edge of each
+-- certificate must agree on both endpoints.
+sameFirstEdge : RawCertificate → RawCertificate → Bool
+sameFirstEdge left right with rawEdges left | rawEdges right
+... | (e1 ∷ _) | (e2 ∷ _) =
+  stringEqual (edgeRelation e1) (edgeRelation e2)
+    and stringEqual (edgeSource e1) (edgeSource e2)
+... | _ | _ = false
+
+compatibilityCheck : RawCertificate → RawCertificate → Bool
+compatibilityCheck left right =
+  isSingleHasSort (rawRequirement left)
+    and requirementEqual (rawRequirement left) (rawRequirement right)
+    and sameFirstEdge left right
+
+record CompatibilityAccepted
+  (left right : RawCertificate) : Set where
+  constructor compatibilityAccepted
+  field
+    compatibilityAcceptedProof :
+      compatibilityCheck left right ≡ true
+
+compatibilityCheckSound :
+  (left right : RawCertificate) →
+  compatibilityCheck left right ≡ true →
+  CompatibilityAccepted left right
+compatibilityCheckSound left right checked =
+  compatibilityAccepted checked
+
+compatibilityCheckComplete :
+  (left right : RawCertificate) →
+  CompatibilityAccepted left right →
+  compatibilityCheck left right ≡ true
+compatibilityCheckComplete left right accepted =
+  CompatibilityAccepted.compatibilityAcceptedProof accepted
+
