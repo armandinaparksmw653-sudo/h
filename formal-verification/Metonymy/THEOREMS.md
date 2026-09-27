@@ -169,6 +169,21 @@ The first quotient retains generated compatibility paths. Cubical
 | Runtime identity compatibility | `TwoTruncatedRuntime.runtimeIdentityCompatibility` |
 | Runtime compatibility 2-cell realization | `TwoTruncatedRuntime.runtimeIdentityCoherence₂` |
 | Runtime 2-truncated tower | `TwoTruncatedRuntime.runtimeContextual₂Tower` |
+| Non-trivial real-data compatibility (Novalis's two works) | `NovalisCoarseModel.novalisCompatibility` |
+| Non-trivial 2-cell coherence, realized | `NovalisCoarseModel.novalisCoherence₂` |
+| Two distinct real entities identified at the coarse level | `NovalisCoarseModel.hymnsHeinrichIdentified` |
+
+`TwoTruncatedRuntime`'s own runtime compatibility is bare equality, which
+identifies nothing beyond what was already equal.
+`NovalisCoarseModel` instantiates the same 2-truncated tower against real
+Wikidata data (Novalis, Q60684, and his two attested literary works,
+Q128670 and Q58178849) with a genuinely non-trivial relation --
+"reached from the same source by the same bridge relation" -- and proves
+the two distinct works are identified at the coarse level, with 2-cell
+coherence realized for that relation. This is the same fixture the
+Haskell engine's test suite already treats as a real, non-unique
+two-candidate result (`Metonymy.AuthorWork`); this module supplies its
+coarse-reading counterpart.
 
 `Coarse₂Pseudofunctor` states global identity/composition obligations for an
 arbitrary compatibility system. The canonical construction proves maps,

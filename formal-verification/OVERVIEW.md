@@ -1,7 +1,7 @@
 # Formal verification — overview
 
 This folder is the machine-checked mathematical core of the project: a
-Cubical Agda development (`Metonymy/*.agda`, 25 modules) plus the
+Cubical Agda development (`Metonymy/*.agda`, 26 modules) plus the
 executable, Boolean-reflected checker the Haskell engine actually calls
 at runtime, and the scripts that guard both against silent regression.
 

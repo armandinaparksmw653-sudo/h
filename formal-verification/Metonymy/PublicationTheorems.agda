@@ -70,6 +70,12 @@ import Metonymy.TwoTruncatedContext
 -- coherence between parallel compatibility paths.
 import Metonymy.TwoTruncatedRuntime
 
+-- Concrete real-data instance of 2-truncated compression: two distinct
+-- real Wikidata entities (Novalis's two literary works) genuinely
+-- identified at the coarse level by a non-trivial (same-source,
+-- same-relation) compatibility relation, with 2-cell coherence realized.
+import Metonymy.NovalisCoarseModel
+
 -- Concrete directed ontology with two coherent expansion routes and a
 -- compatibility quotient that provably separates an unrelated reading.
 import Metonymy.ConcreteOntology
