@@ -34,6 +34,7 @@ open import Cubical.Data.List.Base using (List; []; _∷_)
 open import Cubical.Data.Maybe.Base using (Maybe; just; nothing)
 open import Cubical.Data.Sigma using (_×_; _,_)
 open import Cubical.Data.Unit using (tt)
+open import Cubical.HITs.TypeQuotients.Base using (eq/)
 open import Agda.Builtin.Bool
 open import Agda.Builtin.String
 import Agda.Builtin.Equality as Eq
@@ -196,7 +197,7 @@ realizeCompatibility₂ novalisCoherence₂
     (λ compatibilityWitness →
       cong
         (include₂ {system = novalisSystem} {compatibility = novalisCompatibility} {Γ = Γ})
-        (eq/h left right compatibilityWitness))
+        (eq/ left right compatibilityWitness))
     witness
 
 ------------------------------------------------------------------------
@@ -213,7 +214,7 @@ hymnsHeinrichIdentified :
 hymnsHeinrichIdentified =
   cong
     (include₂ {system = novalisSystem} {compatibility = novalisCompatibility})
-    (eq/h hymnsFiber heinrichFiber hymnsHeinrichCompatible)
+    (eq/ hymnsFiber heinrichFiber hymnsHeinrichCompatible)
 
 -- The full bundled 2-truncated tower, instantiated for this real
 -- compatibility relation (contrast
