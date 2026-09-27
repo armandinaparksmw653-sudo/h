@@ -16,7 +16,7 @@ contextual signals — not on large-corpus recall.
 ## Structure
 
 - **[`formal-verification/`](formal-verification/)** — the machine-checked
-  Cubical Agda core (28 modules, zero `postulate`s, `--safe` mode) and the
+  Cubical Agda core (29 modules, zero `postulate`s, `--safe` mode) and the
   scripts that guard it against silent regression. Start at
   [`formal-verification/OVERVIEW.md`](formal-verification/OVERVIEW.md) for
   a summary of what's proven, or

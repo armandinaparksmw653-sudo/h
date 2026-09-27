@@ -2,7 +2,7 @@ name: tower-report
 
 # Manual only: builds the formal checker and the Haskell engine, then
 # runs metonymy-report -- the tool that drives the entire curated
-# 123-example database (17 flagship + 106 scale-tier, both the 51
+# 124-example database (18 flagship + 106 scale-tier, both the 52
 # Haskell-module-driven ones and the 72 TSV-driven scale-tier
 # scenarios) through the real, Agda-checked contextual-fiber tower and
 # prints the per-layer resolution for every one. Exits non-zero if any
@@ -62,7 +62,7 @@ jobs:
       - name: Run the full example database through the formal apparatus
         run: make report
 
-      - name: Upload the full 123-example tower report
+      - name: Upload the full 124-example tower report
         if: always()
         uses: actions/upload-artifact@v4
         with:

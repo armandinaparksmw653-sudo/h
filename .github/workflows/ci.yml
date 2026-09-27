@@ -41,7 +41,7 @@ jobs:
       - name: Verify publication artifact
         run: ./scripts/reproduce.sh
 
-      - name: Upload the full 123-example tower report
+      - name: Upload the full 124-example tower report
         if: always()
         uses: actions/upload-artifact@v4
         with:
