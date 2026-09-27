@@ -20,8 +20,8 @@ Grammar Library. `Metonymy.GF.parseEnglish`/`linearize` expose this as
 the CLI's `parse`/`linearize` commands — useful for checking that a
 hand-built `LexicalTree` (below) actually corresponds to something GF
 can parse/linearize, but neither command feeds the tower directly: the
-123 curated examples build their `Context` values by hand
-(`tower/engine/src/Metonymy/Waterloo.hs` and its 12 sibling modules) or
+124 curated examples build their `Context` values by hand
+(`tower/engine/src/Metonymy/Waterloo.hs` and its 13 sibling modules) or
 from `tower/data/contextual-scenarios.tsv`, not from a live GF parse.
 
 ### 2. Lexicalized context

@@ -149,3 +149,9 @@
 {"property":"P31","source":"Q128670","target":"Q7725634"}
 {"property":"P50","source":"Q58178849","target":"Q60684"}
 {"property":"P31","source":"Q58178849","target":"Q7725634"}
+{"property":"P31","source":"Q610190","target":"Q1110794"}
+{"property":"P31","source":"Q210534","target":"Q1110794"}
+{"property":"P31","source":"Q192621","target":"Q1110794"}
+{"property":"P159","source":"Q610190","target":"Q846686"}
+{"property":"P159","source":"Q210534","target":"Q846686"}
+{"property":"P159","source":"Q192621","target":"Q846686"}

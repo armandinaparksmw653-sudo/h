@@ -5,8 +5,8 @@
 -- the full picture) if any single example fails -- this is a real CI
 -- gate, not just an information-printing step.
 --
--- Covers 122 of the 123 curated examples individually: the 51
--- Haskell-module-driven ones from Metonymy.ExampleDatabase (14
+-- Covers 123 of the 124 curated examples individually: the 52
+-- Haskell-module-driven ones from Metonymy.ExampleDatabase (15
 -- flagship + 37 scale-tier -- see that module's docstring for the one
 -- entry, the Rijeka+glass composition example, deliberately left out)
 -- plus the 72 TSV-driven scale-tier scenarios from

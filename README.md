@@ -24,7 +24,7 @@ contextual signals — not on large-corpus recall.
   for the exact statement and witness of every claim.
 - **[`tower/`](tower/)** — the main workflow: the Haskell engine
   implementing the lexicalized contextual-fiber tower, the curated
-  123-example database it resolves against, and `metonymy-report`, the
+  124-example database it resolves against, and `metonymy-report`, the
   tool that runs every example through the real, Agda-checked apparatus
   and prints its per-layer resolution. Start at
   [`tower/README.md`](tower/README.md).
@@ -52,7 +52,7 @@ is developed on; [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 anything here actually compiles and type-checks, and runs on every push.
 [`.github/workflows/tower-report.yml`](.github/workflows/tower-report.yml)
 is a separate, manually-triggered workflow that exists purely to give a
-reviewer a single "run everything and show me the full 123-example
+reviewer a single "run everything and show me the full 124-example
 breakdown" entry point in the Actions tab.
 
 On a machine with the pinned toolchain (versions and commits recorded in
@@ -62,7 +62,7 @@ matching cloud/background-agent environment):
 ```bash
 ./scripts/bootstrap.sh   # fetches pinned Cubical + GF RGL, builds, runs make test
 make formal-artifact     # type-checks the Agda core, bans postulate, checks the manifest
-make report              # runs metonymy-report over all 123 curated examples
+make report              # runs metonymy-report over all 124 curated examples
 make reproduce           # the exact sequence CI runs end to end
 ```
 

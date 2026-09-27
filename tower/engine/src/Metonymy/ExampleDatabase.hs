@@ -1,4 +1,4 @@
--- | The Haskell-module half of the curated 123-example database (the
+-- | The Haskell-module half of the curated 124-example database (the
 -- other half, 72 scale-tier scenarios, lives in
 -- tower/data/contextual-scenarios.tsv and is loaded at runtime via
 -- Metonymy.ContextSpec.loadContextScenarios -- see
@@ -17,7 +17,7 @@
 --
 -- Deliberately excluded: the five Metonymy.SyntheticTowers fixtures
 -- (fully fictional entities used only to test multi-constraint
--- narrowing mechanics -- not part of the corpus-attested 123-example
+-- narrowing mechanics -- not part of the corpus-attested 124-example
 -- publication database); "Amherst" (lives only in
 -- auxiliary/evaluation/pilot-decode-wimcor/pilot-scenarios.tsv, a
 -- manual-only pilot workflow fixture, never asserted in
@@ -42,6 +42,7 @@ import Metonymy.CauseEffect
 import Metonymy.ContainerContent
 import Metonymy.Contextual
 import Metonymy.Eswatini
+import Metonymy.FleetStreet
 import Metonymy.MaterialObject
 import Metonymy.MoldeFK
 import Metonymy.PartWhole
@@ -68,7 +69,7 @@ data SnapshotChoice = WikidataQid | ContainerContentSnapshot
 
 exampleDatabase :: [ExampleEntry]
 exampleDatabase =
-  -- Flagship (16 Haskell-module entries; the 17th, Aberystwyth/Offer,
+  -- Flagship (15 Haskell-module entries; the 16th, Aberystwyth/Offer,
   -- is TSV-driven and comes from Metonymy.ContextSpec instead).
   [ entry "waterloo" "flagship" WikidataQid [InstitutionOf] 1 waterlooContextFor Nothing
   , entry "waterloo-depth-2" "flagship" WikidataQid [InstitutionOf] 2 waterlooContextFor Nothing
@@ -79,6 +80,7 @@ exampleDatabase =
   , entry "eswatini" "flagship" WikidataQid [GovernedBy] 1 eswatiniContext Nothing
   , entry "busan" "flagship" WikidataQid [InstitutionOf] 1 busanContext Nothing
   , entry "novalis" "flagship" WikidataQid [Authored] 1 novalisContext Nothing
+  , entry "fleet-street" "flagship" WikidataQid [InstitutionOf] 1 fleetStreetContext Nothing
   , entry "artillery" "flagship" ContainerContentSnapshot [AffiliatedWith] 1 artilleryContext Nothing
   , entry "trumpet" "flagship" ContainerContentSnapshot [Causes] 1 trumpetContext Nothing
   , entry "brass" "flagship" ContainerContentSnapshot [Represents] 1 brassContext Nothing

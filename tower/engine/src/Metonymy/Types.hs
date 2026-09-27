@@ -55,6 +55,7 @@ data Sort
   | Political
   | Commercial
   | SportsOrganization
+  | Newspaper
   deriving stock (Eq, Ord, Show, Read, Enum, Bounded)
 
 data Relation

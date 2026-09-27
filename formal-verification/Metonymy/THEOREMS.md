@@ -205,6 +205,22 @@ narrowed to a unique candidate by a second real lexical signal --
 situation; these three are the ones for which the sentence itself
 supplies no such further signal.)
 
+A fourth, three-way case -- `Metonymy.FleetStreet` (Fleet Street,
+Q846686, and the three national newspapers historically headquartered
+there, Q610190/Q210534/Q192621, all sharing the "daily newspaper" sort)
+-- is checked not through a standalone per-entity Agda model but through
+the general, already-proven `GeneralCoarseCompatibility.compatibilityCheck`
+running live inside the Haskell engine's own pipeline
+(`Metonymy.ContextualChecked.contextualCoarseReading`, itself verified
+per-pairing via `Metonymy.Verified.verifyCompatibilityWithAgda`) -- the
+same generic checker the negative Waterloo proof
+(`universityCouncilNotCompatible`) already certifies safe. Unlike the
+three examples above, this one is not grounded in a single attested
+WiMCor/ConMeC corpus sentence: `Metonymy.FleetStreet`'s own docstring
+documents its different evidentiary basis (a cited, documented pattern
+of deliberate collective reference, not a transcribed sentence) and
+should be read alongside that disclosure.
+
 `Coarse₂Pseudofunctor` states global identity/composition obligations for an
 arbitrary compatibility system. The canonical construction proves maps,
 naturality, and laws on quotient generators. A global inhabitant for richer

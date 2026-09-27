@@ -7,6 +7,7 @@ import Metonymy.ContextualChecked
 import Metonymy.ContextSpec
 import Metonymy.Cathedrals
 import Metonymy.Eswatini
+import Metonymy.FleetStreet
 import Metonymy.Rijeka
 import Metonymy.Busan
 import Metonymy.AuthorWork
@@ -1032,6 +1033,38 @@ main = do
         )
     Left errorMessage -> do
       putStrLn ("FAIL: Waterloo announce-only fiber: " <> errorMessage)
+      exitFailure
+
+  -- "Fleet Street ran the story" (see Metonymy.FleetStreet's module
+  -- docstring for exactly what kind of example this is -- a
+  -- representative sentence for a documented, deliberately
+  -- underdetermined collective usage, not a transcribed corpus
+  -- sentence). Requires (HasSort Newspaper) narrows to the three real
+  -- national newspapers historically headquartered on Fleet Street,
+  -- with no further signal in the sentence to distinguish which one --
+  -- and, being deliberately generic, none is meant to.
+  case contextualFiberChecked waterlooSnapshot [InstitutionOf] 1 (fleetStreetContext waterlooSnapshot) of
+    Right stages -> do
+      assert
+        "Fleet Street's story narrows to the three real national newspapers, Agda-checked"
+        ( sort (map unEntityId (stageTargets (last stages)))
+            == sort (map unEntityId [dailyExpress, dailyMail, dailyTelegraph])
+        )
+      -- Three, not two: the same coarse-reading mechanism generalizes
+      -- beyond a pairwise check (verifyCompatibilityWithAgda's every
+      -- survivor is checked against the first, not just checked in
+      -- pairs).
+      assert
+        "Fleet Street's three newspapers are reported as one Agda-verified coarse reading"
+        ( case contextualCoarseReading waterlooSnapshot [InstitutionOf] (fleetStreetContext waterlooSnapshot) stages of
+            Just reading ->
+              coarseReadingSort reading == Newspaper
+                && sort (map unEntityId (coarseReadingMembers reading))
+                  == sort (map unEntityId [dailyExpress, dailyMail, dailyTelegraph])
+            Nothing -> False
+        )
+    Left errorMessage -> do
+      putStrLn ("FAIL: Fleet Street fiber: " <> errorMessage)
       exitFailure
 
   -- Three real, corpus-attested container-for-content examples (ConMeC
