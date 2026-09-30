@@ -83,10 +83,10 @@ ids are rendered with their real snapshot label alongside the QID.
 
 ## The 124-example database
 
-Split narratively into an 18-row flagship tier (each row demonstrates a
+Split narratively into a 16-row flagship tier (each row demonstrates a
 distinct capability — a new mechanism, a new Sort target, a new
 relation, an honest reject-test, a multi-hop walk — never two rows of
-the same shape) and a 106-row scale tier (breadth: more domains, more
+the same shape) and a 108-row scale tier (breadth: more domains, more
 sentences, per already-covered mechanisms). `Metonymy.ExampleDatabase`
 and `engine/test/Main.hs` are the per-row source of truth (name, tier,
 relations, expected resolution); `metonymy-report`'s output is the
